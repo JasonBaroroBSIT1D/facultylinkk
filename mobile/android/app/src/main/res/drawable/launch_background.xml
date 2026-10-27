@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Minimal native launch screen: plain FacultyLink blue, no icon. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/facultylink_launch_blue" />
+</layer-list>

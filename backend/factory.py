@@ -1,0 +1,104 @@
+from flask import Flask, jsonify
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+
+from auth import auth_bp
+from auth.admin_routes import admin_bp
+from documents.routes import admin_docs_bp, faculty_docs_bp, reviewer_docs_bp
+from faculty_routes import faculty_bp
+from reviewer_routes import reviewer_bp
+from auth_models import RevokedToken
+from cli import create_administrator
+from config import Config
+from extensions import cors, db, jwt, migrate
+
+
+def create_app(config_class: type = Config) -> Flask:
+    app = Flask(__name__)
+    app.config.from_object(config_class)
+    app.config["SQLALCHEMY_DATABASE_URI"] = config_class.sqlalchemy_database_uri()
+    app.config["UPLOAD_FOLDER"].mkdir(parents=True, exist_ok=True)
+
+    db.init_app(app)
+    migrate.init_app(app, db)
+    jwt.init_app(app)
+    cors.init_app(
+        app,
+        resources={r"/api/*": {"origins": config_class.CORS_ORIGINS}},
+        supports_credentials=True,
+    )
+
+    import models  # noqa: F401 — register models with SQLAlchemy metadata
+    import auth_models  # noqa: F401
+
+    register_jwt_handlers(app)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(faculty_bp)
+    app.register_blueprint(reviewer_bp)
+    app.register_blueprint(faculty_docs_bp)
+    app.register_blueprint(reviewer_docs_bp)
+    app.register_blueprint(admin_docs_bp)
+    app.cli.add_command(create_administrator)
+
+    register_routes(app)
+    return app
+
+
+def register_jwt_handlers(app: Flask) -> None:
+    from models import User
+
+    @jwt.token_in_blocklist_loader
+    def _token_in_blocklist(_jwt_header, jwt_payload):
+        jti = jwt_payload.get("jti")
+        if not jti:
+            return False
+        return db.session.query(RevokedToken.id).filter_by(jti=jti).first() is not None
+
+    @jwt.token_verification_loader
+    def _verify_epoch(_jwt_header, jwt_payload):
+        public_id = jwt_payload.get("sub")
+        if not public_id:
+            return False
+        user = User.query.filter_by(public_id=public_id).first()
+        if not user or not user.is_active:
+            return False
+        token_epoch = jwt_payload.get("epoch")
+        if token_epoch is None:
+            return True
+        if token_epoch != user.auth_epoch:
+            return False
+        claim_must_change = jwt_payload.get("mustChangePassword")
+        if claim_must_change is not None and claim_must_change != user.must_change_password:
+            return False
+        return True
+
+
+def register_routes(app: Flask) -> None:
+    @app.get("/api/health")
+    def health():
+        payload = {
+            "status": "ok",
+            "application": "FacultyLink API",
+            "message": "Backend is running",
+            "guideline": Config.GUIDELINE_LABEL,
+            "database": "unknown",
+        }
+        try:
+            db.session.execute(text("SELECT 1"))
+            payload["database"] = "connected"
+        except SQLAlchemyError as error:
+            payload["database"] = "error"
+            payload["databaseMessage"] = "Could not reach PostgreSQL. Check DATABASE_URL and that the server is running."
+            app.logger.warning("Database health check failed: %s", error)
+        return jsonify(payload)
+
+    @app.get("/")
+    def root():
+        return jsonify(
+            {
+                "name": "FacultyLink API",
+                "health": "/api/health",
+                "phase": "Phase 3 authentication live under /api/auth. Domain APIs follow in Phase 4+.",
+            }
+        )

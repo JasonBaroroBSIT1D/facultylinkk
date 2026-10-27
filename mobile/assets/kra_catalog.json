@@ -1,0 +1,680 @@
+{
+  "kras": [
+    {
+      "id": "kra1",
+      "mobileKey": "instruction",
+      "code": "KRA I",
+      "name": "Instruction",
+      "criteria": [
+        {
+          "id": "kra1-a",
+          "name": "Criterion A — Teaching Effectiveness",
+          "indicators": [
+            {
+              "id": "kra1-a-student",
+              "name": "Student Evaluation of Teachers (SET) (60%)"
+            },
+            {
+              "id": "kra1-a-supervisor",
+              "name": "Supervisor’s Evaluation of Faculty (SEF) (40%)"
+            }
+          ]
+        },
+        {
+          "id": "kra1-b",
+          "name": "Criterion B — Instructional Materials Development and Academic Programs",
+          "indicators": [
+            {
+              "id": "kra1-b-textbook-sole",
+              "name": "Sole author of a textbook"
+            },
+            {
+              "id": "kra1-b-textbook-co",
+              "name": "Co-author of a textbook"
+            },
+            {
+              "id": "kra1-b-module-sole",
+              "name": "Sole author of a module"
+            },
+            {
+              "id": "kra1-b-module-co",
+              "name": "Co-author of a module"
+            },
+            {
+              "id": "kra1-b-manual-sole",
+              "name": "Sole author of an instructional manual"
+            },
+            {
+              "id": "kra1-b-manual-co",
+              "name": "Co-author of an instructional manual"
+            },
+            {
+              "id": "kra1-b-multimedia-sole",
+              "name": "Sole author of multimedia teaching materials"
+            },
+            {
+              "id": "kra1-b-multimedia-co",
+              "name": "Co-author of multimedia teaching materials"
+            },
+            {
+              "id": "kra1-b-program-lead",
+              "name": "Academic program developed or revised — Lead"
+            },
+            {
+              "id": "kra1-b-program-contributor",
+              "name": "Academic program developed or revised — Contributor"
+            }
+          ]
+        },
+        {
+          "id": "kra1-c",
+          "name": "Criterion C — Research Advising and Mentorship Services",
+          "indicators": [
+            {
+              "id": "kra1-c-adviser-sp",
+              "name": "Adviser — Special Project or Capstone Project"
+            },
+            {
+              "id": "kra1-c-adviser-ut",
+              "name": "Adviser — Undergraduate Thesis"
+            },
+            {
+              "id": "kra1-c-adviser-mt",
+              "name": "Adviser — Master’s Thesis"
+            },
+            {
+              "id": "kra1-c-adviser-dd",
+              "name": "Adviser — Doctoral Dissertation"
+            },
+            {
+              "id": "kra1-c-panel-sp",
+              "name": "Panel — Special Project or Capstone Project"
+            },
+            {
+              "id": "kra1-c-panel-ut",
+              "name": "Panel — Undergraduate Thesis"
+            },
+            {
+              "id": "kra1-c-panel-mt",
+              "name": "Panel — Master’s Thesis"
+            },
+            {
+              "id": "kra1-c-panel-dd",
+              "name": "Panel — Doctoral Dissertation"
+            },
+            {
+              "id": "kra1-c-mentor",
+              "name": "Mentor or coach of a student or team"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kra2",
+      "mobileKey": "research",
+      "code": "KRA II",
+      "name": "Research, Innovation and/or Creative Work",
+      "criteria": [
+        {
+          "id": "kra2-a",
+          "name": "Criterion A — Research Outputs Published",
+          "indicators": [
+            {
+              "id": "kra2-a-book-sole",
+              "name": "Sole author of an academic book"
+            },
+            {
+              "id": "kra2-a-book-co",
+              "name": "Co-author of an academic book"
+            },
+            {
+              "id": "kra2-a-chapter-sole",
+              "name": "Sole author of an edited academic book chapter"
+            },
+            {
+              "id": "kra2-a-chapter-co",
+              "name": "Co-author of an edited academic book chapter"
+            },
+            {
+              "id": "kra2-a-journal-sole",
+              "name": "Sole author of a journal article"
+            },
+            {
+              "id": "kra2-a-journal-co",
+              "name": "Co-author of a journal article"
+            },
+            {
+              "id": "kra2-a-monograph-sole",
+              "name": "Sole author of an academic monograph"
+            },
+            {
+              "id": "kra2-a-monograph-co",
+              "name": "Co-author of an academic monograph"
+            },
+            {
+              "id": "kra2-a-translation-sole",
+              "name": "Research translated into a project, policy, or product — Sole / Lead"
+            },
+            {
+              "id": "kra2-a-translation-co",
+              "name": "Research translated into a project, policy, or product — Co-contributor"
+            },
+            {
+              "id": "kra2-a-cite",
+              "name": "Research publication cited"
+            }
+          ]
+        },
+        {
+          "id": "kra2-b",
+          "name": "Criterion B — Inventions",
+          "indicators": [
+            {
+              "id": "kra2-b-patent-a-sole",
+              "name": "Invention patent — Acceptance (sole inventor)"
+            },
+            {
+              "id": "kra2-b-patent-a-co",
+              "name": "Invention patent — Acceptance (co-inventor)"
+            },
+            {
+              "id": "kra2-b-patent-p-sole",
+              "name": "Invention patent — Publication (sole inventor)"
+            },
+            {
+              "id": "kra2-b-patent-p-co",
+              "name": "Invention patent — Publication (co-inventor)"
+            },
+            {
+              "id": "kra2-b-patent-g-sole",
+              "name": "Invention patent — Grant (sole inventor)"
+            },
+            {
+              "id": "kra2-b-patent-g-co",
+              "name": "Invention patent — Grant (co-inventor)"
+            },
+            {
+              "id": "kra2-b-comm-local",
+              "name": "Commercialized patented product — Local"
+            },
+            {
+              "id": "kra2-b-comm-intl",
+              "name": "Commercialized patented product — International"
+            },
+            {
+              "id": "kra2-b-um-sole",
+              "name": "Utility model — Registration (sole inventor)"
+            },
+            {
+              "id": "kra2-b-um-co",
+              "name": "Utility model — Registration (co-inventor)"
+            },
+            {
+              "id": "kra2-b-id-sole",
+              "name": "Industrial design — Registration (sole inventor)"
+            },
+            {
+              "id": "kra2-b-id-co",
+              "name": "Industrial design — Registration (co-inventor)"
+            },
+            {
+              "id": "kra2-b-sw-new-sole",
+              "name": "New copyrighted and utilized software — Sole developer"
+            },
+            {
+              "id": "kra2-b-sw-new-co",
+              "name": "New copyrighted and utilized software — Co-developer"
+            },
+            {
+              "id": "kra2-b-sw-upd-sole",
+              "name": "Updated copyrighted and utilized software — Sole developer"
+            },
+            {
+              "id": "kra2-b-sw-upd-co",
+              "name": "Updated copyrighted and utilized software — Co-developer"
+            },
+            {
+              "id": "kra2-b-variety-sole",
+              "name": "New plant variety, animal breed, or microbial strain — Sole developer"
+            },
+            {
+              "id": "kra2-b-variety-co",
+              "name": "New plant variety, animal breed, or microbial strain — Co-developer"
+            }
+          ]
+        },
+        {
+          "id": "kra2-c",
+          "name": "Criterion C — Creative Works",
+          "indicators": [
+            {
+              "id": "kra2-c-music-comp-sole",
+              "name": "Musical composition"
+            },
+            {
+              "id": "kra2-c-music-comp-co",
+              "name": "Musical composition — Co-composer"
+            },
+            {
+              "id": "kra2-c-music-arr-sole",
+              "name": "Musical arrangement"
+            },
+            {
+              "id": "kra2-c-music-arr-co",
+              "name": "Musical arrangement — Co-arranger"
+            },
+            {
+              "id": "kra2-c-music-perf",
+              "name": "Musical performance (vocal or instrumental)"
+            },
+            {
+              "id": "kra2-c-conducting",
+              "name": "Conducting"
+            },
+            {
+              "id": "kra2-c-music-prod-sole",
+              "name": "Music production"
+            },
+            {
+              "id": "kra2-c-music-prod-co",
+              "name": "Music production — Co-producer"
+            },
+            {
+              "id": "kra2-c-choreo-sole",
+              "name": "Original choreography"
+            },
+            {
+              "id": "kra2-c-choreo-co",
+              "name": "Original choreography — Co-choreographer"
+            },
+            {
+              "id": "kra2-c-dance-perf",
+              "name": "Dance performance"
+            },
+            {
+              "id": "kra2-c-playwright-sole",
+              "name": "Playwright"
+            },
+            {
+              "id": "kra2-c-playwright-co",
+              "name": "Playwright — Co-author"
+            },
+            {
+              "id": "kra2-c-directing",
+              "name": "Theatrical directing"
+            },
+            {
+              "id": "kra2-c-acting",
+              "name": "Acting"
+            },
+            {
+              "id": "kra2-c-prod-design",
+              "name": "Production design"
+            },
+            {
+              "id": "kra2-c-visual",
+              "name": "Visual arts exhibition (painting, drawing, mixed media, sculpture, photography, digital art)"
+            },
+            {
+              "id": "kra2-c-arch-design",
+              "name": "Architectural, engineering, or interior design (exhibition or juried)"
+            },
+            {
+              "id": "kra2-c-film",
+              "name": "Film (short, feature, documentary, experimental, animated)"
+            },
+            {
+              "id": "kra2-c-novel-sole",
+              "name": "Literary publication — Novel"
+            },
+            {
+              "id": "kra2-c-novel-co",
+              "name": "Literary publication — Novel (co-author)"
+            },
+            {
+              "id": "kra2-c-story-sole",
+              "name": "Literary publication — Short story"
+            },
+            {
+              "id": "kra2-c-story-co",
+              "name": "Literary publication — Short story (co-author)"
+            },
+            {
+              "id": "kra2-c-poetry",
+              "name": "Literary publication — Poetry"
+            },
+            {
+              "id": "kra2-c-essay",
+              "name": "Literary publication — Literary essay"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kra3",
+      "mobileKey": "extension",
+      "code": "KRA III",
+      "name": "Extension Services",
+      "criteria": [
+        {
+          "id": "kra3-a",
+          "name": "Criterion A — Service to the Institution",
+          "indicators": [
+            {
+              "id": "kra3-a-linkage",
+              "name": "Successful linkage, networking, or partnership activity"
+            },
+            {
+              "id": "kra3-a-income-lead-100k",
+              "name": "Income generation — Lead — ₱100,000 and below"
+            },
+            {
+              "id": "kra3-a-income-lead-500k",
+              "name": "Income generation — Lead — ₱100,001 to ₱500,000"
+            },
+            {
+              "id": "kra3-a-income-lead-6m",
+              "name": "Income generation — Lead — ₱500,001 to ₱6,000,000"
+            },
+            {
+              "id": "kra3-a-income-lead-12m",
+              "name": "Income generation — Lead — ₱6,000,001 to ₱12,000,000"
+            },
+            {
+              "id": "kra3-a-income-lead-over",
+              "name": "Income generation — Lead — Above ₱12,000,000"
+            },
+            {
+              "id": "kra3-a-income-co-100k",
+              "name": "Income generation — Contributor — ₱100,000 and below"
+            },
+            {
+              "id": "kra3-a-income-co-500k",
+              "name": "Income generation — Contributor — ₱100,001 to ₱500,000"
+            },
+            {
+              "id": "kra3-a-income-co-6m",
+              "name": "Income generation — Contributor — ₱500,001 to ₱6,000,000"
+            },
+            {
+              "id": "kra3-a-income-co-12m",
+              "name": "Income generation — Contributor — ₱6,000,001 to ₱12,000,000"
+            },
+            {
+              "id": "kra3-a-income-co-over",
+              "name": "Income generation — Contributor — Above ₱12,000,000"
+            }
+          ]
+        },
+        {
+          "id": "kra3-b",
+          "name": "Criterion B — Service to the Community",
+          "indicators": [
+            {
+              "id": "kra3-b-qa-local",
+              "name": "Accreditation, evaluation, or assessment — Local"
+            },
+            {
+              "id": "kra3-b-qa-intl",
+              "name": "Accreditation, evaluation, or assessment — International"
+            },
+            {
+              "id": "kra3-b-judge-research",
+              "name": "Judge or examiner — Research awards"
+            },
+            {
+              "id": "kra3-b-judge-academic",
+              "name": "Judge or examiner — Academic competitions"
+            },
+            {
+              "id": "kra3-b-consult-local",
+              "name": "Short-term consultant or expert — Local"
+            },
+            {
+              "id": "kra3-b-consult-intl",
+              "name": "Short-term consultant or expert — International"
+            },
+            {
+              "id": "kra3-b-column-occasional",
+              "name": "Writer of an occasional newspaper column"
+            },
+            {
+              "id": "kra3-b-column-regular",
+              "name": "Writer of a regular newspaper column"
+            },
+            {
+              "id": "kra3-b-host",
+              "name": "Host of a television or radio program"
+            },
+            {
+              "id": "kra3-b-guest",
+              "name": "Guesting as a technical expert"
+            },
+            {
+              "id": "kra3-b-train-local",
+              "name": "Resource person, convenor, facilitator, moderator, or speaker — Local, per hour"
+            },
+            {
+              "id": "kra3-b-train-intl",
+              "name": "Resource person, convenor, facilitator, moderator, or speaker — International, per hour"
+            },
+            {
+              "id": "kra3-b-ext-head",
+              "name": "Head of an extension or production / ISR project"
+            },
+            {
+              "id": "kra3-b-ext-participant",
+              "name": "Participant in an extension or production / ISR project"
+            }
+          ]
+        },
+        {
+          "id": "kra3-c",
+          "name": "Criterion C — Relevance and Quality of Extension Services",
+          "indicators": [
+            {
+              "id": "kra3-c-satisfaction",
+              "name": "Client satisfaction rating for outreach and extension projects"
+            }
+          ]
+        },
+        {
+          "id": "kra3-d",
+          "name": "Criterion D — Bonus Criterion (Administrative Designation)",
+          "indicators": [
+            {
+              "id": "kra3-d-president",
+              "name": "President or OIC President"
+            },
+            {
+              "id": "kra3-d-vp",
+              "name": "Vice-President"
+            },
+            {
+              "id": "kra3-d-chancellor",
+              "name": "Chancellor"
+            },
+            {
+              "id": "kra3-d-vc",
+              "name": "Vice-Chancellor"
+            },
+            {
+              "id": "kra3-d-campus",
+              "name": "Campus Director or Administrator"
+            },
+            {
+              "id": "kra3-d-regent",
+              "name": "Faculty Trustee or Regent"
+            },
+            {
+              "id": "kra3-d-director",
+              "name": "Office Director"
+            },
+            {
+              "id": "kra3-d-usec",
+              "name": "University or College Secretary"
+            },
+            {
+              "id": "kra3-d-project",
+              "name": "Project Head (institution level)"
+            },
+            {
+              "id": "kra3-d-inst-chair",
+              "name": "Institution-level committee — Chair"
+            },
+            {
+              "id": "kra3-d-inst-member",
+              "name": "Institution-level committee — Member"
+            },
+            {
+              "id": "kra3-d-inst-coord",
+              "name": "Coordinator (institution level)"
+            },
+            {
+              "id": "kra3-d-dean",
+              "name": "Dean"
+            },
+            {
+              "id": "kra3-d-adean",
+              "name": "Associate Dean"
+            },
+            {
+              "id": "kra3-d-csec",
+              "name": "College Secretary"
+            },
+            {
+              "id": "kra3-d-dept",
+              "name": "Department Head"
+            },
+            {
+              "id": "kra3-d-chair",
+              "name": "Program Chair or Project Head (department level)"
+            },
+            {
+              "id": "kra3-d-dept-chair",
+              "name": "Department-level committee — Chair"
+            },
+            {
+              "id": "kra3-d-dept-member",
+              "name": "Department-level committee — Member"
+            },
+            {
+              "id": "kra3-d-dept-coord",
+              "name": "Coordinator (college/department level)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kra4",
+      "mobileKey": "professionalDevelopment",
+      "code": "KRA IV",
+      "name": "Professional Development",
+      "criteria": [
+        {
+          "id": "kra4-a",
+          "name": "Criterion A — Involvement in Professional Organizations",
+          "indicators": [
+            {
+              "id": "kra4-a-member",
+              "name": "Membership and active participation in a registered professional organization"
+            }
+          ]
+        },
+        {
+          "id": "kra4-b",
+          "name": "Criterion B — Continuing Development",
+          "indicators": [
+            {
+              "id": "kra4-b-postmaster",
+              "name": "Post-master diploma or certificate"
+            },
+            {
+              "id": "kra4-b-postdoc",
+              "name": "Post-doctorate diploma or certificate"
+            },
+            {
+              "id": "kra4-b-masters",
+              "name": "Additional master’s degree"
+            },
+            {
+              "id": "kra4-b-doctorate",
+              "name": "Doctorate degree or additional doctorate degree"
+            },
+            {
+              "id": "kra4-b-part-local",
+              "name": "Participation in a conference, seminar, workshop, or capacity-building activity — Local"
+            },
+            {
+              "id": "kra4-b-part-intl",
+              "name": "Participation in a conference, seminar, workshop, or capacity-building activity — International"
+            },
+            {
+              "id": "kra4-b-paper-local",
+              "name": "Paper presentation in a conference — Local"
+            },
+            {
+              "id": "kra4-b-paper-intl",
+              "name": "Paper presentation in a conference — International"
+            }
+          ]
+        },
+        {
+          "id": "kra4-c",
+          "name": "Criterion C — Awards and Recognition",
+          "indicators": [
+            {
+              "id": "kra4-c-inst",
+              "name": "Institutional award"
+            },
+            {
+              "id": "kra4-c-local",
+              "name": "Local and regional award (city, municipality, or province)"
+            },
+            {
+              "id": "kra4-c-national",
+              "name": "National award"
+            }
+          ]
+        },
+        {
+          "id": "kra4-d",
+          "name": "Criterion D — Additional Points for Newly Appointed Faculty",
+          "indicators": [
+            {
+              "id": "kra4-d-pres",
+              "name": "Full-time academic service — President, per year"
+            },
+            {
+              "id": "kra4-d-vp",
+              "name": "Full-time academic service — Vice President, Dean, or Director, per year"
+            },
+            {
+              "id": "kra4-d-head",
+              "name": "Full-time academic service — Department or Program Head, per year"
+            },
+            {
+              "id": "kra4-d-faculty",
+              "name": "Full-time academic service — Faculty member, per year"
+            },
+            {
+              "id": "kra4-d-mgr",
+              "name": "Industry experience — Managerial or supervisory, per year"
+            },
+            {
+              "id": "kra4-d-tech",
+              "name": "Industry experience — Technical and skilled, per year"
+            },
+            {
+              "id": "kra4-d-support",
+              "name": "Industry experience — Support or administrative staff, per year"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
