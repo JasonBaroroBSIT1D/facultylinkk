@@ -23,6 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
+  bool _signInInProgress = false;
 
   @override
   void initState() {
@@ -30,23 +31,42 @@ class _LoginScreenState extends State<LoginScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _tryRestore());
   }
 
+  void _openPasswordChangeRequired() {
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      AppRoutes.changeTemporaryPassword,
+      (_) => false,
+    );
+  }
+
+  void _openMainApp() {
+    Navigator.pushNamedAndRemoveUntil(context, AppRoutes.main, (_) => false);
+  }
+
   Future<void> _tryRestore() async {
-    if (!AppState.instance.sessionRestoreEnabled) return;
+    if (!AppState.instance.sessionRestoreEnabled || _signInInProgress) return;
     if (_loading) return;
     setState(() => _loading = true);
     try {
       final restored = await AppState.instance.tryRestoreSession();
       if (!mounted || !restored) return;
       if (AppState.instance.mustChangePassword) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          AppRoutes.changePassword,
-          (_) => false,
-          arguments: const {'requiredFirstLogin': true},
-        );
+        _openPasswordChangeRequired();
         return;
       }
-      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.main, (_) => false);
+      _openMainApp();
+    } on AppAuthException catch (error) {
+      if (!mounted) return;
+      if (error.isPasswordChangeRequired && AppState.instance.isSignedIn) {
+        AppState.instance.mustChangePassword = true;
+        _openPasswordChangeRequired();
+        return;
+      }
+      if (!error.isPasswordChangeRequired) {
+        showAppSnackBar(context, error.message, error: true);
+      }
+    } catch (_) {
+      /* stale token or offline — stay on login */
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -60,28 +80,30 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate() || _loading) return;
+    _signInInProgress = true;
     setState(() => _loading = true);
     try {
       await AppState.instance.login(_email.text, _password.text);
       if (!mounted) return;
       if (AppState.instance.mustChangePassword) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          AppRoutes.changePassword,
-          (_) => false,
-          arguments: const {'requiredFirstLogin': true},
-        );
+        _openPasswordChangeRequired();
         return;
       }
-      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.main, (_) => false);
+      _openMainApp();
     } on AppAuthException catch (error) {
       if (!mounted) return;
+      if (error.isPasswordChangeRequired && AppState.instance.isSignedIn) {
+        AppState.instance.mustChangePassword = true;
+        _openPasswordChangeRequired();
+        return;
+      }
       showAppSnackBar(context, error.message, error: true);
     } catch (_) {
       if (!mounted) return;
       showAppSnackBar(context, 'Sign-in failed. Please try again.', error: true);
     } finally {
+      _signInInProgress = false;
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -138,12 +160,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Demo (simulated): maria.santos@university.edu.ph / password123',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: AuthPalette.muted, height: 1.35),
           ),
           const SizedBox(height: 16),
           AuthButton(label: 'Sign in', loading: _loading, onPressed: _login),

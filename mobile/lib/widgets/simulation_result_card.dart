@@ -58,6 +58,39 @@ class _SimulationResultCardState extends State<SimulationResultCard>
   @override
   Widget build(BuildContext context) {
     final sim = widget.simulation;
+    if (sim.isPlaceholder) {
+      return Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(widget.compact ? 16 : 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Simulation Result',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+                color: AppColors.navy,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              sim.eligibilityLabel,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     final readiness = (sim.progress * 100).round();
     final kraTotal = sim.currentPoints.toDouble();
     final pad = widget.compact ? 16.0 : 20.0;

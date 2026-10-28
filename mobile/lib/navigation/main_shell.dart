@@ -34,9 +34,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       if (AppState.instance.mustChangePassword) {
         Navigator.pushNamedAndRemoveUntil(
           context,
-          AppRoutes.changePassword,
+          AppRoutes.changeTemporaryPassword,
           (_) => false,
-          arguments: const {'requiredFirstLogin': true},
         );
       }
     });

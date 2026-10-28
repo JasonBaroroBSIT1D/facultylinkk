@@ -18,6 +18,34 @@ class PreparationPeriodCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final period = AppState.instance.preparationPeriod;
+    if (period.isPlaceholder || period.cycleName.trim().isEmpty) {
+      return Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.fromLTRB(compact ? 12 : 14, compact ? 11 : 13, compact ? 12 : 14, compact ? 11 : 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.divider),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Preparation period',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.navy),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'No active evaluation schedule.',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final palette = _statusPalette(period.status);
     final start = formatDisplayDate(period.startDate);
     final end = formatDisplayDate(period.endDate);

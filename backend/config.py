@@ -43,11 +43,24 @@ class Config:
     UPLOAD_FOLDER = _upload if _upload.is_absolute() else BASE_DIR / _upload
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
 
-    CORS_ORIGINS = [
-        origin.strip()
-        for origin in (os.getenv("CORS_ORIGINS") or "http://127.0.0.1:8080,http://localhost:8080").split(",")
-        if origin.strip()
-    ]
+    _CORS_ENV = (
+        os.getenv("CORS_ORIGINS")
+        or "http://127.0.0.1:8080,http://localhost:8080"
+    )
+
+    @classmethod
+    def cors_origins(cls) -> list[str]:
+        """Allowed browser origins for /api/* (includes Flutter Web dev hosts in development)."""
+        origins = [origin.strip() for origin in cls._CORS_ENV.split(",") if origin.strip()]
+        if (os.getenv("FLASK_ENV") or "development").lower() == "development":
+            # Flutter Web uses random localhost ports; admin static site may use :8080.
+            origins.extend(
+                [
+                    r"http://localhost:\d+",
+                    r"http://127\.0\.0\.1:\d+",
+                ]
+            )
+        return origins
 
     GUIDELINE_LABEL = "DBM–CHED Joint Circular No. 01, s. 2026"
 

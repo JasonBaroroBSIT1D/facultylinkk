@@ -279,7 +279,7 @@ class _Header extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Welcome back, ${faculty.firstName}',
+                          'Welcome back, ${_welcomeFirstName(faculty)}',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.72),
                             fontSize: 12,
@@ -288,7 +288,7 @@ class _Header extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          faculty.fullName,
+                          _dashboardDisplayName(faculty),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -572,4 +572,18 @@ class _FeedbackTile extends StatelessWidget {
       ),
     );
   }
+}
+
+String _dashboardDisplayName(FacultyProfile faculty) {
+  if (faculty.fullName.trim().isNotEmpty) return faculty.fullName.trim();
+  final email = AppState.instance.signedInEmail ?? faculty.email;
+  if (email.trim().isNotEmpty) return email.trim();
+  return 'Faculty member';
+}
+
+String _welcomeFirstName(FacultyProfile faculty) {
+  if (faculty.fullName.trim().isNotEmpty) return faculty.firstName;
+  final email = AppState.instance.signedInEmail ?? faculty.email;
+  if (email.contains('@')) return email.split('@').first;
+  return 'Faculty';
 }

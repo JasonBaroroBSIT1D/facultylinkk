@@ -48,6 +48,7 @@ class FacultyProfile {
     required this.department,
     required this.college,
     required this.currentRank,
+    this.targetRank = '',
     required this.highestDegree,
     required this.specialization,
     required this.yearsInService,
@@ -62,6 +63,7 @@ class FacultyProfile {
   final String department;
   final String college;
   final String currentRank;
+  final String targetRank;
   final String highestDegree;
   final String specialization;
   final int yearsInService;
@@ -69,7 +71,29 @@ class FacultyProfile {
   final String campus;
   final String phone;
 
-  String get firstName => fullName.split(' ').first;
+  String get firstName =>
+      fullName.trim().isEmpty ? 'Faculty' : fullName.split(' ').first;
+
+  factory FacultyProfile.fromApi(Map<String, dynamic> json) {
+    String field(String key) => (json[key] as String?)?.trim() ?? '';
+    final employee = field('employeeNo');
+    final facultyId = field('facultyId');
+    return FacultyProfile(
+      fullName: field('fullName'),
+      facultyId: facultyId.isNotEmpty ? facultyId : employee,
+      email: field('email'),
+      department: field('department'),
+      college: field('college'),
+      currentRank: field('currentRank'),
+      targetRank: field('targetRank'),
+      highestDegree: field('highestDegree'),
+      specialization: field('specialization'),
+      yearsInService: (json['yearsInService'] as num?)?.toInt() ?? 0,
+      employmentStatus: field('employmentStatus'),
+      campus: field('campus'),
+      phone: field('phone'),
+    );
+  }
 
   FacultyProfile copyWith({
     String? fullName,
@@ -84,6 +108,7 @@ class FacultyProfile {
       department: department ?? this.department,
       college: college,
       currentRank: currentRank,
+      targetRank: targetRank,
       highestDegree: highestDegree,
       specialization: specialization,
       yearsInService: yearsInService,
@@ -113,6 +138,31 @@ class KraScore {
 
   double get progress =>
       targetPoints == 0 ? 0 : (currentPoints / targetPoints).clamp(0, 1);
+
+  factory KraScore.fromApi(Map<String, dynamic> json) {
+    final kraId = json['kraId'] as String?;
+    final breakdownRaw = json['breakdown'];
+    final breakdown = <KraBreakdownItem>[];
+    if (breakdownRaw is List) {
+      for (final item in breakdownRaw.whereType<Map>()) {
+        breakdown.add(
+          KraBreakdownItem(
+            title: (item['title'] as String?) ?? 'Item',
+            points: (item['points'] as num?)?.toInt() ?? 0,
+            note: (item['note'] as String?) ?? '',
+          ),
+        );
+      }
+    }
+    return KraScore(
+      type: FacultyDocument.kraFromWebId(kraId),
+      currentPoints: (json['currentPoints'] as num?)?.toInt() ?? 0,
+      targetPoints: (json['targetPoints'] as num?)?.toInt() ?? 0,
+      documentCount: (json['documentCount'] as num?)?.toInt() ?? 0,
+      statusLabel: (json['statusLabel'] as String?) ?? 'Not yet calculated',
+      breakdown: breakdown,
+    );
+  }
 }
 
 class KraBreakdownItem {
@@ -389,6 +439,7 @@ class RankSimulation {
         'Weighted Final Score = Σ (KRA points × Table 2.2 rank weight %)',
     this.weightBand = '',
     this.appliedWeights = const {},
+    this.isPlaceholder = false,
   });
 
   final String currentRank;
@@ -401,6 +452,7 @@ class RankSimulation {
   final String scoringFormula;
   final String weightBand;
   final Map<String, num> appliedWeights;
+  final bool isPlaceholder;
 
   double get progress =>
       requiredPoints == 0 ? 0 : (currentPoints / requiredPoints).clamp(0, 1);
@@ -442,6 +494,7 @@ class PreparationPeriod {
     required this.endDate,
     required this.reviewerAvailableUntil,
     required this.status,
+    this.isPlaceholder = false,
   });
 
   final String cycleName;
@@ -449,6 +502,7 @@ class PreparationPeriod {
   final DateTime endDate;
   final DateTime reviewerAvailableUntil;
   final PreparationPeriodStatus status;
+  final bool isPlaceholder;
 }
 
 class DashboardSnapshot {
@@ -463,6 +517,7 @@ class DashboardSnapshot {
     required this.recentActivity,
     required this.recentFeedback,
     required this.simulation,
+    this.isPlaceholder = false,
   });
 
   final int totalPoints;
@@ -475,6 +530,7 @@ class DashboardSnapshot {
   final List<RecentActivity> recentActivity;
   final List<ReviewerFeedbackPreview> recentFeedback;
   final RankSimulation simulation;
+  final bool isPlaceholder;
 
   double get overallProgress =>
       targetPoints == 0 ? 0 : (totalPoints / targetPoints).clamp(0, 1);

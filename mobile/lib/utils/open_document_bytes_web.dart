@@ -1,5 +1,8 @@
-import 'dart:html' as html;
+import 'dart:async';
+import 'dart:js_interop';
 import 'dart:typed_data';
+
+import 'package:web/web.dart';
 
 Future<String?> saveDocumentBytes(Uint8List bytes, String fileName) async {
   // Web has no durable temp path; bytes stay in memory and open via blob URL.
@@ -16,12 +19,17 @@ Future<bool> openDocumentBytesInBrowser(
   final mime = (mimeType ?? '').trim().isEmpty
       ? _guessMime(fileName)
       : mimeType!;
-  final blob = html.Blob([bytes], mime);
-  final url = html.Url.createObjectUrlFromBlob(blob);
-  html.window.open(url, '_blank');
-  Future<void>.delayed(const Duration(seconds: 60), () {
-    html.Url.revokeObjectUrl(url);
-  });
+  final blob = Blob(
+    <BlobPart>[bytes.toJS].toJS,
+    BlobPropertyBag(type: mime),
+  );
+  final url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  unawaited(
+    Future<void>.delayed(const Duration(seconds: 60), () {
+      URL.revokeObjectURL(url);
+    }),
+  );
   return true;
 }
 

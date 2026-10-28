@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
+import 'data/api_config.dart';
 import 'models/enums.dart';
 import 'models/models.dart';
 import 'navigation/app_routes.dart';
 import 'navigation/main_shell.dart';
 import 'screens/auth/forgot_password_screen.dart';
+import 'screens/auth/change_temporary_password_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/splash_screen.dart';
 import 'screens/assessment/assessment_screen.dart';
 import 'screens/documents/document_details_screen.dart';
+import 'screens/documents/document_flow_args.dart';
 import 'screens/documents/kra_explorer_screen.dart';
 import 'screens/documents/upload_document_screen.dart';
 import 'screens/notifications/notifications_screen.dart';
@@ -16,8 +19,9 @@ import 'screens/profile/profile_screen.dart';
 import 'screens/simulation/simulation_screen.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiConfig.initialize();
   runApp(const FacultyLinkApp());
 }
 
@@ -68,12 +72,17 @@ class FacultyLinkApp extends StatelessWidget {
               builder: (_) => DocumentDetailsScreen(documentId: id),
             );
           case AppRoutes.uploadDocument:
-            final kra = settings.arguments as KraType?;
             return MaterialPageRoute(
-              builder: (_) => UploadDocumentScreen(initialKra: kra),
+              builder: (_) => UploadDocumentScreen.fromArguments(settings.arguments),
             );
           case AppRoutes.kraExplorer:
-            final kra = settings.arguments as KraType? ?? KraType.instruction;
+            final args = settings.arguments;
+            if (args is KraExplorerLaunch) {
+              return MaterialPageRoute(
+                builder: (_) => KraExplorerScreen.fromLaunch(args),
+              );
+            }
+            final kra = args is KraType ? args : KraType.instruction;
             return MaterialPageRoute(
               builder: (_) => KraExplorerScreen(kra: kra),
             );
@@ -88,14 +97,13 @@ class FacultyLinkApp extends StatelessWidget {
             );
           case AppRoutes.editProfile:
             return MaterialPageRoute(builder: (_) => const EditProfileScreen());
-          case AppRoutes.changePassword:
-            final args = settings.arguments;
-            final requiredFirstLogin =
-                args is Map && args['requiredFirstLogin'] == true;
+          case AppRoutes.changeTemporaryPassword:
             return MaterialPageRoute(
-              builder: (_) => ChangePasswordScreen(
-                requiredFirstLogin: requiredFirstLogin,
-              ),
+              builder: (_) => const ChangeTemporaryPasswordScreen(),
+            );
+          case AppRoutes.changePassword:
+            return MaterialPageRoute(
+              builder: (_) => const ChangePasswordScreen(),
             );
           case AppRoutes.notificationSettings:
             return MaterialPageRoute(

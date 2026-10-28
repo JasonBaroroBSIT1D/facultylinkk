@@ -13,6 +13,7 @@ abstract final class AppRoutes {
   static const improvementOpportunities = '/improvement-opportunities';
   static const editProfile = '/edit-profile';
   static const changePassword = '/change-password';
+  static const changeTemporaryPassword = '/change-temporary-password';
   static const notificationSettings = '/notification-settings';
   static const about = '/about';
 }

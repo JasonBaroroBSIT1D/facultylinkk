@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'api_config.dart';
+import 'api_http.dart';
 import 'app_auth_exception.dart';
 import 'token_storage.dart';
 
@@ -41,6 +42,14 @@ class ApiClient {
   }
 
   /// Current faculty member's assigned reviewer (`faculty_profiles.reviewer_user_id`).
+  Future<Map<String, dynamic>> fetchFacultyMe() async {
+    return _getJson('/api/faculty/me', authenticated: true, allowRefresh: true);
+  }
+
+  Future<Map<String, dynamic>> fetchFacultyDashboard() async {
+    return _getJson('/api/faculty/me/dashboard', authenticated: true, allowRefresh: true);
+  }
+
   Future<Map<String, dynamic>> fetchMyAssignedReviewer() async {
     return _getJson(
       '/api/faculty/me/reviewer',
@@ -89,7 +98,7 @@ class ApiClient {
           filename: fileName,
         ),
       );
-      final streamed = await request.send();
+      final streamed = await apiSend(_http, request);
       return http.Response.fromStream(streamed);
     }
 
@@ -119,7 +128,8 @@ class ApiClient {
         '/api/faculty/me/documents/$documentId/file?disposition=inline';
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
     Future<http.Response> send(String? bearer) async {
-      return _http.get(
+      return apiGet(
+        _http,
         uri,
         headers: {
           if (bearer != null && bearer.isNotEmpty) 'Authorization': 'Bearer $bearer',
@@ -144,7 +154,7 @@ class ApiClient {
     }
   }
 
-  Future<void> changePassword({
+  Future<Map<String, dynamic>> changePassword({
     required String currentPassword,
     required String newPassword,
   }) async {
@@ -161,6 +171,7 @@ class ApiClient {
     if (access != null && refresh != null) {
       await _tokens.saveTokens(accessToken: access, refreshToken: refresh);
     }
+    return data;
   }
 
   Future<Map<String, dynamic>> requestPasswordReset(String email) async {
@@ -217,6 +228,9 @@ class ApiClient {
     } on AppAuthException {
       await _tokens.clear();
       return false;
+    } catch (_) {
+      await _tokens.clear();
+      return false;
     }
   }
 
@@ -265,9 +279,14 @@ class ApiClient {
         if (bearer != null && bearer.isNotEmpty) 'Authorization': 'Bearer $bearer',
       };
       if (method == 'GET') {
-        return _http.get(uri, headers: headers);
+        return apiGet(_http, uri, headers: headers);
       }
-      return _http.post(uri, headers: headers, body: jsonEncode(body ?? {}));
+      return apiPost(
+        _http,
+        uri,
+        headers: headers,
+        body: jsonEncode(body ?? {}),
+      );
     }
 
     var token = authenticated ? await _tokens.readAccessToken() : null;
@@ -286,7 +305,8 @@ class ApiClient {
     final refresh = await _tokens.readRefreshToken();
     if (refresh == null || refresh.isEmpty) return null;
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/auth/refresh');
-    final response = await _http.post(
+    final response = await apiPost(
+      _http,
       uri,
       headers: {
         'Accept': 'application/json',
@@ -309,12 +329,14 @@ class ApiClient {
   void _throwIfError(http.Response response) {
     if (response.statusCode < 400) return;
     String message = 'Request failed.';
+    String? code;
     try {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       message = (body['message'] as String?) ?? message;
+      code = body['code'] as String?;
     } catch (_) {
       /* keep default */
     }
-    throw AppAuthException(message, statusCode: response.statusCode);
+    throw AppAuthException(message, statusCode: response.statusCode, code: code);
   }
 }

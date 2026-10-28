@@ -92,6 +92,47 @@ def test_role_probes(client):
     assert client.get("/api/auth/probe/faculty", headers={"Authorization": f"Bearer {faculty_token}"}).status_code == 200
 
 
+def test_faculty_login_must_change_password(client):
+    faculty = _create_user(
+        email="new.faculty@test.edu",
+        role="faculty",
+        password="TempPass1",
+        must_change=True,
+        with_profile=True,
+    )
+    response = client.post(
+        "/api/auth/login",
+        json={"email": faculty.email, "password": "TempPass1", "client": "mobile"},
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["session"]["mustChangePassword"] is True
+    assert payload["user"]["mustChangePassword"] is True
+    token = payload["accessToken"]
+    blocked = client.get(
+        "/api/faculty/me/reviewer",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert blocked.status_code == 403
+    assert blocked.get_json()["code"] == "PASSWORD_CHANGE_REQUIRED"
+
+    changed = client.post(
+        "/api/auth/change-password",
+        json={"currentPassword": "TempPass1", "newPassword": "NewFaculty1"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert changed.status_code == 200
+    assert changed.get_json()["session"]["mustChangePassword"] is False
+    assert client.post(
+        "/api/auth/login",
+        json={"email": faculty.email, "password": "TempPass1", "client": "mobile"},
+    ).status_code == 401
+    assert client.post(
+        "/api/auth/login",
+        json={"email": faculty.email, "password": "NewFaculty1", "client": "mobile"},
+    ).status_code == 200
+
+
 def test_change_password(client):
     _create_user(email="admin@test.edu", role="administrator", password="AdminPass1", must_change=True)
     token = _login(client, "admin@test.edu", "AdminPass1").get_json()["accessToken"]

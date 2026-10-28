@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/app_state.dart';
+import '../../models/models.dart';
 import '../../navigation/app_routes.dart';
 import '../../data/app_auth_exception.dart';
 import '../../theme/app_colors.dart';
@@ -33,7 +34,7 @@ class ProfileScreen extends StatelessWidget {
                     FacultyAvatar(name: faculty.fullName, size: 92),
                     const SizedBox(height: 12),
                     Text(
-                      faculty.fullName,
+                      _displayName(faculty),
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w800,
@@ -41,7 +42,7 @@ class ProfileScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      faculty.currentRank,
+                      _orNotProvided(faculty.currentRank),
                       style: const TextStyle(
                         color: AppColors.navy,
                         fontWeight: FontWeight.w700,
@@ -49,7 +50,9 @@ class ProfileScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      faculty.facultyId,
+                      _orNotProvided(
+                        faculty.facultyId.isNotEmpty ? faculty.facultyId : faculty.email,
+                      ),
                       style: const TextStyle(color: AppColors.textTertiary),
                     ),
                   ],
@@ -65,18 +68,26 @@ class ProfileScreen extends StatelessWidget {
                   padding: const EdgeInsets.all(14),
                   child: Column(
                     children: [
-                      _ProfileRow(label: 'College', value: faculty.college),
-                      _ProfileRow(label: 'Department', value: faculty.department),
-                      _ProfileRow(label: 'Campus', value: faculty.campus),
-                      _ProfileRow(label: 'Highest degree', value: faculty.highestDegree),
-                      _ProfileRow(label: 'Specialization', value: faculty.specialization),
+                      _ProfileRow(label: 'College', value: _orNotProvided(faculty.college)),
+                      _ProfileRow(label: 'Department', value: _orNotProvided(faculty.department)),
+                      _ProfileRow(label: 'Campus', value: _orNotProvided(faculty.campus)),
+                      _ProfileRow(
+                        label: 'Highest degree',
+                        value: _orNotProvided(faculty.highestDegree),
+                      ),
+                      _ProfileRow(
+                        label: 'Specialization',
+                        value: _orNotProvided(faculty.specialization),
+                      ),
                       _ProfileRow(
                         label: 'Years in service',
-                        value: '${faculty.yearsInService} years',
+                        value: faculty.yearsInService > 0
+                            ? '${faculty.yearsInService} years'
+                            : 'Not provided',
                       ),
                       _ProfileRow(
                         label: 'Employment status',
-                        value: faculty.employmentStatus,
+                        value: _orNotProvided(faculty.employmentStatus),
                       ),
                     ],
                   ),
@@ -132,6 +143,7 @@ class ProfileScreen extends StatelessWidget {
                   );
                   if (!confirmed || !context.mounted) return;
                   await AppState.instance.resetSession();
+                  if (!context.mounted) return;
                   Navigator.pushNamedAndRemoveUntil(
                     context,
                     AppRoutes.login,
@@ -522,10 +534,20 @@ class AboutScreen extends StatelessWidget {
           SizedBox(height: 16),
           InfoBanner(
             message:
-                'Scores, validation, and eligibility shown here are mock previews. They do not replace committee evaluation.',
+                'Scores, validation, and eligibility are preparatory self-assessment only. They do not replace official committee evaluation.',
           ),
         ],
       ),
     );
   }
+}
+
+String _orNotProvided(String value) =>
+    value.trim().isEmpty ? 'Not provided' : value.trim();
+
+String _displayName(FacultyProfile faculty) {
+  if (faculty.fullName.trim().isNotEmpty) return faculty.fullName.trim();
+  final email = AppState.instance.signedInEmail ?? faculty.email;
+  if (email.trim().isNotEmpty) return email.trim();
+  return 'Faculty member';
 }

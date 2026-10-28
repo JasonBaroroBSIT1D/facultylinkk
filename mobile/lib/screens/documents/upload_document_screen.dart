@@ -11,10 +11,33 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/common.dart';
 import '../../widgets/dialogs.dart';
 
+import 'document_flow_args.dart';
+
 class UploadDocumentScreen extends StatefulWidget {
-  const UploadDocumentScreen({super.key, this.initialKra});
+  const UploadDocumentScreen({
+    super.key,
+    this.initialKra,
+    this.initialCriterionId,
+    this.initialIndicatorId,
+  });
+
+  factory UploadDocumentScreen.fromArguments(Object? arguments) {
+    if (arguments is UploadDocumentLaunch) {
+      return UploadDocumentScreen(
+        initialKra: arguments.kra,
+        initialCriterionId: arguments.criterionId,
+        initialIndicatorId: arguments.indicatorId,
+      );
+    }
+    if (arguments is KraType) {
+      return UploadDocumentScreen(initialKra: arguments);
+    }
+    return const UploadDocumentScreen();
+  }
 
   final KraType? initialKra;
+  final String? initialCriterionId;
+  final String? initialIndicatorId;
 
   @override
   State<UploadDocumentScreen> createState() => _UploadDocumentScreenState();
@@ -122,6 +145,8 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
       setState(() {
         _kras = list;
         _webKraId = initialWeb ?? (list.isNotEmpty ? list.first['id']?.toString() : null);
+        _criterionId = widget.initialCriterionId;
+        _indicatorId = widget.initialIndicatorId;
         _loadingCatalog = false;
       });
     } catch (_) {

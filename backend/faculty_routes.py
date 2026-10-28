@@ -6,8 +6,38 @@ from flask_jwt_extended import get_jwt_identity
 from auth import assignment_queries as aq
 from auth import permissions as perm
 from auth.permissions import ROLE_FACULTY
+from faculty.faculty_payloads import faculty_dashboard_payload, faculty_profile_payload
 
 faculty_bp = Blueprint("faculty_api", __name__, url_prefix="/api/faculty")
+
+
+@faculty_bp.get("/me")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_me():
+    public_id = get_jwt_identity()
+    user = aq.current_faculty_user(public_id)
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    profile = user.faculty_profile
+    return jsonify(
+        {
+            "user": user.to_session_user(),
+            "profile": faculty_profile_payload(user, profile),
+        }
+    ), 200
+
+
+@faculty_bp.get("/me/dashboard")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_dashboard():
+    public_id = get_jwt_identity()
+    user = aq.current_faculty_user(public_id)
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    profile = user.faculty_profile
+    if not profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify(faculty_dashboard_payload(user, profile)), 200
 
 
 @faculty_bp.get("/me/reviewer")

@@ -72,6 +72,8 @@ abstract final class AppColors {
 
   static Color status(DocumentStatus status) {
     switch (status) {
+      case DocumentStatus.draft:
+        return textSecondary;
       case DocumentStatus.validated:
         return success;
       case DocumentStatus.systemApproved:
@@ -89,6 +91,8 @@ abstract final class AppColors {
 
   static Color statusSoft(DocumentStatus status) {
     switch (status) {
+      case DocumentStatus.draft:
+        return surfaceMuted;
       case DocumentStatus.validated:
         return successSoft;
       case DocumentStatus.systemApproved:

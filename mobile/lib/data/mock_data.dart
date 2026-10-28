@@ -18,6 +18,7 @@ abstract final class MockData {
     department: 'Department of Curriculum and Instruction',
     college: 'College of Education',
     currentRank: 'Instructor I',
+    targetRank: 'Instructor II',
     highestDegree: 'Master of Arts in Education',
     specialization: 'Curriculum and Instruction',
     yearsInService: 4,
