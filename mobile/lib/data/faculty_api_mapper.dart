@@ -57,14 +57,72 @@ abstract final class FacultyApiMapper {
   }
 
   static RankSimulation simulationFromApi(Map<String, dynamic> json) {
+    final areasRaw = json['areasToImprove'];
+    final areas = <ImprovementArea>[];
+    if (areasRaw is List) {
+      for (final row in areasRaw.whereType<Map>()) {
+        final kraId = row['kraId'] as String?;
+        areas.add(
+          ImprovementArea(
+            kra: FacultyDocument.kraFromWebId(kraId),
+            recommendedPoints: (row['recommendedPoints'] as num?)?.toInt() ?? 0,
+            guidance: (row['guidance'] as String?) ?? '',
+          ),
+        );
+      }
+    }
+    final missingRaw = json['missingRequirements'];
+    final missing = <Map<String, dynamic>>[];
+    if (missingRaw is List) {
+      for (final row in missingRaw.whereType<Map>()) {
+        missing.add(Map<String, dynamic>.from(row));
+      }
+    }
+    final weightsRaw = json['appliedWeights'];
+    final weights = <String, num>{};
+    if (weightsRaw is Map) {
+      weightsRaw.forEach((key, value) {
+        if (value is num) weights[key.toString()] = value;
+      });
+    }
+    num? teScore = json['teachingEffectivenessScore'] as num?;
+    if (teScore == null) {
+      final te = json['teachingEffectiveness'];
+      if (te is Map) {
+        teScore = te['combinedValidatedPoints'] ?? te['combinedProvisionalPoints'];
+      }
+    }
+    final targetRaw = ((json['targetRank'] as String?) ?? '').trim();
+    final nextRaw = ((json['nextPossibleRank'] as String?) ?? '').trim();
     return RankSimulation(
       currentRank: (json['currentRank'] as String?) ?? '',
-      targetRank: (json['targetRank'] as String?) ?? '',
+      targetRank: targetRaw.isNotEmpty ? targetRaw : nextRaw,
       currentPoints: (json['currentPoints'] as num?)?.toInt() ?? 0,
       requiredPoints: (json['requiredPoints'] as num?)?.toInt() ?? 0,
       eligibilityLabel: (json['eligibilityLabel'] as String?) ?? 'Simulation snapshot',
-      areasToImprove: const [],
+      eligibilityStatus: (json['eligibilityStatus'] as String?) ?? 'under_assessment',
+      validatedKraPoints: (json['validatedKraPoints'] as num?)?.toDouble() ?? 0,
+      provisionalKraPoints: (json['provisionalKraPoints'] as num?)?.toDouble(),
+      weightedValidatedScore: (json['weightedValidatedScore'] as num?)?.toDouble(),
+      weightedProvisionalScore: (json['weightedProvisionalScore'] as num?)?.toDouble(),
+      teachingEffectivenessScore: teScore?.toDouble(),
+      progressPercent: (json['progressPercent'] as num?)?.toDouble(),
+      progressLabel: (json['progressLabel'] as String?) ?? '',
+      missingRequirements: missing,
+      areasToImprove: areas,
+      weightBand: (json['weightBand'] as String?) ?? '',
+      appliedWeights: weights,
+      kraConfigVersion: (json['kraConfigVersion'] as num?)?.toInt() ?? 0,
+      scoringFormula: (json['scoringFormula'] as String?) ??
+          'Weighted Final Score = Σ (KRA points × Table 2.2 rank weight %)',
+      isPlaceholder: json['isPlaceholder'] == true,
     );
+  }
+
+  static RankSimulation simulationFromFullPayload(Map<String, dynamic> root) {
+    final sim = root['simulation'];
+    if (sim is Map<String, dynamic>) return simulationFromApi(sim);
+    return simulationFromApi(root);
   }
 
   static PreparationPeriod? preparationPeriodFromApi(Map<String, dynamic>? json) {

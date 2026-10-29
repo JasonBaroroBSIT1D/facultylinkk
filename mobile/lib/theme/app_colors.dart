@@ -18,12 +18,12 @@ abstract final class AppColors {
   static const Color skyDeep = Color(0xFFB9DFF0);
   static const Color fieldFill = Color(0xFFF3F6F9);
 
-  static const Color background = Color(0xFFF8FAFC);
+  static const Color background = Color(0xFFF5F7FA);
   static const Color surface = Color(0xFFFFFFFF);
   static const Color surfaceMuted = Color(0xFFEEF2F6);
 
-  static const Color textPrimary = Color(0xFF101828);
-  static const Color textSecondary = Color(0xFF475467);
+  static const Color textPrimary = Color(0xFF172B4D);
+  static const Color textSecondary = Color(0xFF64748B);
   static const Color textTertiary = Color(0xFF667085);
   static const Color border = Color(0xFFD0D5DD);
   static const Color divider = Color(0xFFE4E7EC);
@@ -39,10 +39,10 @@ abstract final class AppColors {
   static const Color processing = Color(0xFF6941C6);
   static const Color processingSoft = Color(0xFFF4EBFF);
 
-  static const Color instruction = Color(0xFF175CD3);
-  static const Color research = Color(0xFF0E7490);
-  static const Color extension = Color(0xFF067647);
-  static const Color professional = Color(0xFFB54708);
+  static const Color instruction = Color(0xFF2563EB);
+  static const Color research = Color(0xFF0891B2);
+  static const Color extension = Color(0xFF059669);
+  static const Color professional = Color(0xFFD97706);
 
   static Color kra(KraType type) {
     switch (type) {
@@ -60,13 +60,13 @@ abstract final class AppColors {
   static Color kraSoft(KraType type) {
     switch (type) {
       case KraType.instruction:
-        return const Color(0xFFEFF8FF);
+        return const Color(0xFFEFF6FF);
       case KraType.research:
         return const Color(0xFFECFEFF);
       case KraType.extension:
-        return successSoft;
+        return const Color(0xFFECFDF5);
       case KraType.professionalDevelopment:
-        return warningSoft;
+        return const Color(0xFFFFFBEB);
     }
   }
 

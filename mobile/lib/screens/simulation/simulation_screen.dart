@@ -6,11 +6,40 @@ import '../../navigation/app_routes.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/common.dart';
-import '../../widgets/progress_ring.dart';
-import '../../widgets/simulation_result_card.dart';
+import '../../widgets/rank_upgrade_simulation_card.dart';
 
-class SimulationScreen extends StatelessWidget {
+class SimulationScreen extends StatefulWidget {
   const SimulationScreen({super.key});
+
+  @override
+  State<SimulationScreen> createState() => _SimulationScreenState();
+}
+
+class _SimulationScreenState extends State<SimulationScreen> {
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+  }
+
+  Future<void> _refresh() async {
+    final state = AppState.instance;
+    if (!state.isSignedIn || state.usesMockAuth) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await state.refreshRankSimulationFromApi();
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,208 +52,112 @@ class SimulationScreen extends StatelessWidget {
         final kraScores = state.kraScores;
 
         return Scaffold(
-          appBar: AppBar(title: const Text('Rank simulation')),
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-            children: [
-              const InfoBanner(
-                message:
-                    'This preview helps you see a possible rank path and point standing. It is for preparation only and does not replace the official DBM–CHED evaluation.',
-                icon: Icons.privacy_tip_outlined,
-                color: AppColors.navy,
-                background: AppColors.goldSoft,
+          appBar: AppBar(
+            title: const Text('Rank simulation'),
+            actions: [
+              IconButton(
+                onPressed: _loading ? null : _refresh,
+                icon: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                tooltip: 'Refresh simulation',
               ),
-              if (sim.weightBand.isNotEmpty || sim.kraConfigVersion > 0) ...[
-                const SizedBox(height: 10),
-                Text(
-                  [
-                    if (sim.weightBand.isNotEmpty)
-                      'Table 2.2 weight band: ${sim.weightBand}.',
-                    if (sim.kraConfigVersion > 0)
-                      'KRA config v${sim.kraConfigVersion}.',
-                    sim.scoringFormula,
-                  ].join(' '),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    height: 1.35,
-                    color: AppColors.textSecondary,
-                  ),
+            ],
+          ),
+          body: RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                const InfoBanner(
+                  message:
+                      'Rank-upgrade simulation uses your uploaded evidence and published scoring rules. '
+                      'It supports preparation only — not official DBM–CHED certification or board decisions.',
+                  icon: Icons.privacy_tip_outlined,
+                  color: AppColors.navy,
+                  background: AppColors.goldSoft,
                 ),
-              ],
-              const SizedBox(height: 16),
-              SimulationResultCard(
-                simulation: sim,
-                play: state.mainTabIndex == 2,
-              ),
-              if (state.criterionA != null) ...[
-                const SizedBox(height: 18),
-                _CriterionAOverview(data: state.criterionA!),
-              ],
-              const SizedBox(height: 18),
-              const SectionHeader(title: 'Ranking and possible points'),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _ScoreCompareRow(
-                    earned: sim.currentPoints,
-                    possible: sim.requiredPoints,
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: AppColors.error, fontSize: 12),
                   ),
-                  const SizedBox(height: 16),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Points by Key Result Area',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                        color: AppColors.navy,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Earned points compared with the possible points in this preparation preview.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.35,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  for (final kra in kraScores) ...[
-                    _KraBar(score: kra),
-                    if (kra != kraScores.last) const SizedBox(height: 14),
-                  ],
                 ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          const SectionHeader(title: 'Where extra points can still be earned'),
-          for (final area in sim.areasToImprove)
-            Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppColors.kraSoft(area.kra),
-                  child: Icon(area.kra.icon, color: AppColors.kra(area.kra)),
+                const SizedBox(height: 16),
+                RankUpgradeSimulationCard(simulation: sim),
+                if (sim.missingRequirements.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  const SectionHeader(title: 'What you still need'),
+                  ...sim.missingRequirements.map(
+                    (item) => Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: const Icon(Icons.checklist_rtl_outlined, color: AppColors.navy),
+                        title: Text(
+                          (item['text'] as String?) ?? '',
+                          style: const TextStyle(fontSize: 13, height: 1.35),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                const SectionHeader(title: 'KRA I–IV score breakdown'),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        for (final kra in kraScores) ...[
+                          _KraBar(score: kra),
+                          if (kra != kraScores.last) const SizedBox(height: 14),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
-                title: Text(
-                  '${area.kra.shortLabel}: +${area.recommendedPoints} possible points',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                if (state.criterionA != null) ...[
+                  const SizedBox(height: 18),
+                  _CriterionAOverview(data: state.criterionA!),
+                ],
+                if (sim.areasToImprove.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  const SectionHeader(title: 'Improvement opportunities'),
+                  for (final area in sim.areasToImprove)
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppColors.kraSoft(area.kra),
+                          child: Icon(area.kra.icon, color: AppColors.kra(area.kra)),
+                        ),
+                        title: Text(
+                          '${area.kra.shortLabel}: up to +${area.recommendedPoints} pts',
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                        ),
+                        subtitle: Text(area.guidance),
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 8),
+                PrimaryButton(
+                  label: 'View improvement opportunities',
+                  icon: Icons.auto_awesome_outlined,
+                  onPressed: () {
+                    Navigator.pushNamed(context, AppRoutes.improvementOpportunities);
+                  },
                 ),
-                subtitle: Text(area.guidance),
-              ),
+              ],
             ),
-          const SizedBox(height: 8),
-          PrimaryButton(
-            label: 'View Improvement Opportunities',
-            icon: Icons.auto_awesome_outlined,
-            onPressed: () {
-              Navigator.pushNamed(context, AppRoutes.improvementOpportunities);
-            },
-          ),
-        ],
           ),
         );
       },
-    );
-  }
-}
-
-class _ScoreCompareRow extends StatelessWidget {
-  const _ScoreCompareRow({required this.earned, required this.possible});
-
-  final int earned;
-  final int possible;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _PointStat(
-            value: '$earned',
-            label: 'Earned points',
-            color: AppColors.navy,
-            background: AppColors.navy.withValues(alpha: 0.06),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _PointStat(
-            value: '$possible',
-            label: 'Possible points',
-            color: AppColors.gold,
-            foreground: AppColors.navyDark,
-            background: AppColors.goldSoft,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _PointStat(
-            value: '${(possible - earned).clamp(0, possible)}',
-            label: 'Still needed',
-            color: AppColors.warning,
-            background: AppColors.warningSoft,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _PointStat extends StatelessWidget {
-  const _PointStat({
-    required this.value,
-    required this.label,
-    required this.color,
-    required this.background,
-    this.foreground,
-  });
-
-  final String value;
-  final String label;
-  final Color color;
-  final Color background;
-  final Color? foreground;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: foreground ?? color,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 11,
-              height: 1.2,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -237,6 +170,36 @@ class _KraBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = AppColors.kra(score.type);
+    final notAssessed = !score.assessed ||
+        (score.statusLabel.toLowerCase().contains('not yet assessed'));
+
+    if (notAssessed) {
+      return Row(
+        children: [
+          Icon(score.type.icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  score.type.label,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Not yet assessed',
+                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final validated = score.validatedPoints;
+    final provisional = score.provisionalPoints;
     final remaining = (score.targetPoints - score.currentPoints).clamp(0, score.targetPoints);
 
     return Column(
@@ -254,22 +217,33 @@ class _KraBar extends StatelessWidget {
             ),
             Text(
               '${score.currentPoints} / ${score.targetPoints}',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
+              style: TextStyle(fontWeight: FontWeight.w800, color: color),
             ),
           ],
         ),
         const SizedBox(height: 4),
         Text(
-          remaining == 0
-              ? 'Possible points in this KRA are filled in this preview.'
-              : '$remaining more possible ${remaining == 1 ? 'point' : 'points'} in this KRA',
+          score.statusLabel,
           style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
         ),
+        if (validated != null || provisional != null)
+          Text(
+            'Validated: ${validated?.toStringAsFixed(1) ?? '—'} · Projected: ${provisional?.toStringAsFixed(1) ?? '—'}',
+            style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+          ),
+        if (remaining > 0)
+          Text(
+            '$remaining possible ${remaining == 1 ? 'point' : 'points'} remaining in this KRA',
+            style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+          ),
         const SizedBox(height: 6),
-        LinearProgressLabeled(progress: score.progress, color: color),
+        LinearProgressIndicator(
+          value: score.progress,
+          minHeight: 6,
+          borderRadius: BorderRadius.circular(4),
+          backgroundColor: color.withValues(alpha: 0.12),
+          color: color,
+        ),
       ],
     );
   }
@@ -284,17 +258,18 @@ class _CriterionAOverview extends StatelessWidget {
   Widget build(BuildContext context) {
     final set = data['set'] as Map<String, dynamic>? ?? {};
     final sef = data['sef'] as Map<String, dynamic>? ?? {};
-    final total = data['criterionPoints'];
-    final max = data['criterionMax'] ?? 60;
+    final total = data['combinedProvisionalPoints'] ?? data['criterionPoints'];
+    final validated = data['combinedValidatedPoints'];
+
     String block(String title, Map<String, dynamic> block) {
-      final filled = block['filledCount'] ?? 0;
-      final required = block['requiredSemesters'] ?? 6;
-      final avg = block['averageRating'];
-      final pts = block['points'];
-      final maxPts = block['maxPoints'];
-      return '$title · coverage $filled/$required'
-          '${avg != null ? ' · avg $avg' : ''}'
-          '${pts != null && (block['finalized'] == true) ? ' · ${pts.toString()} / $maxPts pts' : ''}';
+      final cov = block['coverageSummary'] as Map<String, dynamic>? ?? {};
+      final filled = cov['includedPeriods'] ?? block['filledCount'] ?? 0;
+      final required = cov['requiredPeriods'] ?? block['requiredSemesters'] ?? '—';
+      final prov = block['provisionalPoints'] ?? block['points'];
+      final val = block['validatedPoints'];
+      return '$title · periods $filled/$required'
+          '${prov != null ? ' · projected $prov' : ''}'
+          '${val != null ? ' · validated $val' : ''}';
     }
 
     return Card(
@@ -304,86 +279,20 @@ class _CriterionAOverview extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'KRA I — Criterion A (Teaching Effectiveness)',
+              'Teaching effectiveness detail (SET + SEF)',
               style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
             ),
             const SizedBox(height: 8),
-            Text(block('SET (60%)', set), style: const TextStyle(fontSize: 12)),
+            Text(block('SET', set), style: const TextStyle(fontSize: 12)),
             const SizedBox(height: 4),
-            Text(block('SEF (40%)', sef), style: const TextStyle(fontSize: 12)),
+            Text(block('SEF', sef), style: const TextStyle(fontSize: 12)),
             const SizedBox(height: 8),
             Text(
-              'Combined: ${total ?? '—'} / $max (rank simulation; not official approval)',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              'Criterion A combined — projected: ${total ?? '—'} · validated: ${validated ?? '—'}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class ImprovementOpportunitiesScreen extends StatelessWidget {
-  const ImprovementOpportunitiesScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final sim = AppState.instance.simulation;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Improvement opportunities')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const InfoBanner(
-            message:
-                'These suggestions are based on mock gaps in your current self-assessment preview.',
-          ),
-          const SizedBox(height: 16),
-          for (final area in sim.areasToImprove)
-            Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      area.kra.label,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.kra(area.kra),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Possible additional points: +${area.recommendedPoints}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      area.guidance,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SecondaryButton(
-                      label: 'Upload evidence',
-                      icon: Icons.upload_file_outlined,
-                      onPressed: () {
-                        Navigator.pushNamed(
-                          context,
-                          AppRoutes.uploadDocument,
-                          arguments: area.kra,
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

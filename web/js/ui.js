@@ -29,7 +29,58 @@ FL.splitWhen = function (value) {
   };
 };
 
+/** Human-readable stamp for document cards (date · time). */
+FL.formatDocStamp = function (value) {
+  if (!value) return "—";
+  const parts = FL.splitWhen(value);
+  if (!parts.time || parts.time === "—") return parts.date;
+  return parts.date + " · " + parts.time;
+};
+
 FL.ui = {
+  statIcon: function (key) {
+    const map = {
+      faculty: "users",
+      documents: "file-text",
+      pending: "clock",
+      approved: "circle-check",
+      revision: "rotate-ccw",
+      validation: "list-checks",
+      reviewers: "user-check"
+    };
+    return FL.navIcons.icon(map[key] || "file-text");
+  },
+
+  pageHeader: function (options) {
+    const opts = options || {};
+    const actions = opts.actions ? `<div class="head-actions">${opts.actions}</div>` : "";
+    return `<header class="portal-head page-head">
+      <div>
+        <p class="eyebrow">${FL.esc(opts.eyebrow || "FacultyLink")}</p>
+        <h1>${FL.esc(opts.title || "")}</h1>
+        ${opts.lede ? `<p class="lede">${FL.esc(opts.lede)}</p>` : ""}
+      </div>
+      ${actions}
+    </header>`;
+  },
+
+  metricGrid: function (cards) {
+    const list = cards || [];
+    return `<div class="evidence-stats portal-metrics">${list.map(function (c) {
+      const accent = c.accent ? " is-accent-" + c.accent : "";
+      const val = c.value == null ? "—" : c.value;
+      const hint = c.hint ? `<small>${FL.esc(c.hint)}</small>` : "";
+      return `<div class="evidence-stat${accent}">
+        <span class="evidence-stat-icon" aria-hidden="true">${FL.ui.statIcon(c.iconKey || "documents")}</span>
+        <div class="evidence-stat-body">
+          <span>${FL.esc(c.label)}</span>
+          <strong>${FL.esc(String(val))}</strong>
+          ${hint}
+        </div>
+      </div>`;
+    }).join("")}</div>`;
+  },
+
   badge: function (kind, label) {
     const map = {
       valid: "badge-valid",
@@ -45,6 +96,10 @@ FL.ui = {
   statusBadge: function (status) {
     const map = {
       approved: ["valid", "Approved"],
+      "approved-by-reviewer": ["valid", "Approved by reviewer"],
+      "simulation-auto-accepted": ["valid", "Auto-accepted for simulation"],
+      "simulation-reviewer-validated": ["valid", "Reviewer-validated for simulation"],
+      "auto-approved": ["valid", "Auto-accepted for simulation"],
       "system-approved": ["valid", "System approved"],
       valid: ["valid", "Valid"],
       "pending-review": ["pending", "Pending review"],
@@ -55,6 +110,7 @@ FL.ui = {
       "ignored-duplicate": ["info", "Duplicate ignored"],
       processing: ["info", "Processing"],
       completed: ["valid", "Completed"],
+      failed: ["invalid", "Failed"],
       pending: ["pending", "Pending"],
       unclassified: ["pending", "Cannot classify"],
       classified: ["valid", "Classified"],

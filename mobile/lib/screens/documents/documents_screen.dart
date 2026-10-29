@@ -7,6 +7,7 @@ import '../../models/models.dart';
 import '../../navigation/app_routes.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/common.dart';
+import '../../widgets/kra_folder_overview.dart';
 import '../../widgets/preparation_period_card.dart';
 import 'document_flow_args.dart';
 
@@ -179,7 +180,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                         selected: status == null,
                         onSelected: (_) => setModal(() => status = null),
                       ),
-                      for (final value in DocumentStatus.values)
+                      for (final value in DocumentStatus.values
+                          .where((v) => v != DocumentStatus.draft))
                         ChoiceChip(
                           label: Text(value.label),
                           selected: status == value,
@@ -267,7 +269,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                         sliver: SliverToBoxAdapter(
-                          child: _KraFolderOverview(
+                          child: KraFolderOverview(
                             documents: _statusFilter == null
                                 ? allDocs
                                 : allDocs
@@ -525,187 +527,6 @@ class _DocumentSearchTile extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _KraFolderOverview extends StatelessWidget {
-  const _KraFolderOverview({required this.documents});
-
-  final List<FacultyDocument> documents;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Browse by KRA',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-            color: AppColors.navy,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Open a folder to view criteria, indicators, and evidence.',
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 10),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 1.35,
-          children: [
-            for (final kra in KraType.values)
-              _KraFolderCard(
-                kra: kra,
-                stats: _statsForKra(documents, kra),
-                onTap: () {
-                  Navigator.pushNamed(
-                    context,
-                    AppRoutes.kraExplorer,
-                    arguments: KraExplorerLaunch(kra: kra),
-                  );
-                },
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  static _KraFolderStats _statsForKra(List<FacultyDocument> docs, KraType kra) {
-    final rows = docs.where((d) => d.kra == kra).toList();
-    var pending = 0;
-    var approved = 0;
-    var revision = 0;
-    for (final doc in rows) {
-      switch (doc.status) {
-        case DocumentStatus.validated:
-        case DocumentStatus.systemApproved:
-          approved += 1;
-        case DocumentStatus.needsRevision:
-          revision += 1;
-        case DocumentStatus.pendingReview:
-        case DocumentStatus.processing:
-          pending += 1;
-        case DocumentStatus.draft:
-        case DocumentStatus.invalid:
-          break;
-      }
-    }
-    return _KraFolderStats(
-      total: rows.length,
-      pending: pending,
-      approved: approved,
-      revision: revision,
-    );
-  }
-}
-
-class _KraFolderStats {
-  const _KraFolderStats({
-    required this.total,
-    required this.pending,
-    required this.approved,
-    required this.revision,
-  });
-
-  final int total;
-  final int pending;
-  final int approved;
-  final int revision;
-}
-
-class _KraFolderCard extends StatelessWidget {
-  const _KraFolderCard({
-    required this.kra,
-    required this.stats,
-    required this.onTap,
-  });
-
-  final KraType kra;
-  final _KraFolderStats stats;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.divider),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(kra.icon, color: AppColors.kra(kra), size: 22),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      kra.code,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.navy,
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                kra.shortLabel,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-              ),
-              const Spacer(),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  _StatChip(label: '${stats.total} files', color: AppColors.navy),
-                  if (stats.pending > 0)
-                    _StatChip(label: '${stats.pending} pending', color: AppColors.warning),
-                  if (stats.approved > 0)
-                    _StatChip(label: '${stats.approved} ok', color: AppColors.success),
-                  if (stats.revision > 0)
-                    _StatChip(label: '${stats.revision} revise', color: AppColors.warning),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  const _StatChip({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color),
     );
   }
 }

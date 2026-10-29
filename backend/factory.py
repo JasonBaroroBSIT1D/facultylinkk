@@ -7,8 +7,18 @@ from auth.admin_routes import admin_bp
 from documents.routes import admin_docs_bp, faculty_docs_bp, reviewer_docs_bp
 from faculty_routes import faculty_bp
 from reviewer_routes import reviewer_bp
+from kra_configuration.routes import kra_config_admin_bp
 from auth_models import RevokedToken
-from cli import create_administrator
+from cli import (
+    create_administrator,
+    documents_list_legacy_drafts,
+    documents_promote_legacy_drafts,
+    documents_purge_set_sef,
+    documents_reassess_set_sef_simulation,
+    documents_refresh_set_sef_extraction,
+    ocr_enqueue_stale,
+    ocr_worker,
+)
 from config import Config
 from extensions import cors, db, jwt, migrate
 
@@ -40,14 +50,32 @@ def create_app(config_class: type = Config) -> Flask:
     register_jwt_handlers(app)
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(kra_config_admin_bp, url_prefix="/api/admin")
     app.register_blueprint(faculty_bp)
     app.register_blueprint(reviewer_bp)
     app.register_blueprint(faculty_docs_bp)
     app.register_blueprint(reviewer_docs_bp)
     app.register_blueprint(admin_docs_bp)
     app.cli.add_command(create_administrator)
+    app.cli.add_command(ocr_worker)
+    app.cli.add_command(ocr_enqueue_stale)
+    app.cli.add_command(documents_list_legacy_drafts)
+    app.cli.add_command(documents_promote_legacy_drafts)
+    app.cli.add_command(documents_refresh_set_sef_extraction)
+    app.cli.add_command(documents_purge_set_sef)
+    app.cli.add_command(documents_reassess_set_sef_simulation)
 
     register_routes(app)
+
+    from documents.ocr.config import refresh_tesseract_availability
+
+    with app.app_context():
+        status = refresh_tesseract_availability()
+        if not status.available:
+            app.logger.warning("OCR unavailable: %s", status.message)
+        else:
+            app.logger.info("OCR ready (Tesseract %s)", status.tesseract_version)
+
     return app
 
 
@@ -97,6 +125,14 @@ def register_routes(app: Flask) -> None:
             payload["database"] = "error"
             payload["databaseMessage"] = "Could not reach PostgreSQL. Check DATABASE_URL and that the server is running."
             app.logger.warning("Database health check failed: %s", error)
+        from documents.ocr.config import ocr_runtime_status
+
+        ocr = ocr_runtime_status()
+        payload["ocr"] = {
+            "available": ocr.available,
+            "message": ocr.message,
+            "tesseractVersion": ocr.tesseract_version,
+        }
         return jsonify(payload)
 
     @app.get("/")

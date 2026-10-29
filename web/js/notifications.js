@@ -31,18 +31,16 @@ FL.notifications = {
     const items = this.visible(user);
     const unread = items.filter(function (item) { return !item.read; }).length;
     return `
-      <div class="page-head">
-        <div>
-          <p class="eyebrow">FacultyLink</p>
-          <h1>Notifications</h1>
-          <p class="lede">Document status, reviewer feedback, missing requirements, compliance verification, and system updates.</p>
-        </div>
-        <div class="head-actions">
-          <button class="btn btn-ghost" type="button" id="mark-all" ${unread ? "" : "disabled"}>Mark all as read</button>
-        </div>
-      </div>
+      <div class="portal-page">
+      ${FL.ui.pageHeader({
+        eyebrow: "FacultyLink",
+        title: "Notifications",
+        lede: "Document status, reviewer feedback, missing requirements, compliance verification, and system updates.",
+        actions: `<button class="btn btn-ghost" type="button" id="mark-all" ${unread ? "" : "disabled"}>Mark all as read</button>`
+      })}
       <div class="card">
         ${items.length ? `<div class="notice-list" id="notice-list">${items.map(FL.notifications.itemHtml).join("")}</div>` : FL.ui.empty("No notifications", "Document status, feedback, and compliance notices will appear here.")}
+      </div>
       </div>`;
   },
 

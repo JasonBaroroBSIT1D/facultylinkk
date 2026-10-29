@@ -8,17 +8,18 @@ FL.reviewer = {
     const revision = mine.filter(function (doc) { return doc.status === "revision"; });
     const feedback = mine.filter(function (doc) { return doc.feedback; }).slice(0, 4);
     document.getElementById("page").innerHTML = `
-      <div class="page-head"><div>
-        <p class="eyebrow">Review work</p>
-        <h1>Reviewer Dashboard</h1>
-        <p class="lede">Assigned faculty, documents waiting for validation, and feedback already recorded.</p>
-      </div></div>
-      <div class="stat-grid">
-        <article class="stat"><span>Assigned faculty</span><strong>${faculty.length}</strong></article>
-        <article class="stat"><span>Submitted documents</span><strong>${mine.length}</strong></article>
-        <article class="stat"><span>Needs validation</span><strong>${queue.length}</strong><small>Open the review queue</small></article>
-        <article class="stat"><span>Revisions requested</span><strong>${revision.length}</strong></article>
-      </div>
+      <div class="portal-page">
+      ${FL.ui.pageHeader({
+        eyebrow: "FacultyLink",
+        title: "Reviewer Dashboard",
+        lede: "Assigned faculty, documents awaiting validation, and recorded feedback."
+      })}
+      ${FL.ui.metricGrid([
+        { label: "Assigned faculty", value: faculty.length, iconKey: "faculty", accent: "teal" },
+        { label: "Submitted documents", value: mine.length, iconKey: "documents" },
+        { label: "Needs validation", value: queue.length, hint: "Open the review queue", iconKey: "validation", accent: "warn" },
+        { label: "Revisions requested", value: revision.length, iconKey: "revision", accent: "warn" }
+      ])}
       <article class="card">
         <div class="card-head"><h2>Documents requiring validation</h2><a href="documents.html?filter=pending-review">Pending review</a></div>
         ${queue.length ? `<div class="table-wrap"><table class="data"><thead><tr><th>Faculty</th><th>Document</th><th>KRA</th><th>Validation</th><th>Date</th><th></th></tr></thead><tbody>
@@ -58,6 +59,7 @@ FL.reviewer = {
             return `<li><strong>${FL.esc(doc.id)}</strong><span>${FL.esc(doc.feedback)}</span></li>`;
           }).join("")}</ul>` : FL.ui.empty("No feedback yet", "Feedback you record on a document will appear here.")}
         </article>
+      </div>
       </div>`;
   },
 
@@ -65,7 +67,8 @@ FL.reviewer = {
     const user = FL.store.userById(session.userId);
     const assigned = FL.store.assignedFacultyForReviewer(session).length;
     document.getElementById("page").innerHTML = `
-      <div class="page-head"><div><p class="eyebrow">Account</p><h1>My Profile</h1><p class="lede">Reviewer account for document validation and feedback.</p></div></div>
+      <div class="portal-page">
+      ${FL.ui.pageHeader({ eyebrow: "FacultyLink", title: "My Profile", lede: "Reviewer account for document validation and feedback." })}
       <article class="card profile-card">
         <div class="profile-banner"><span class="avatar large">${FL.esc(user.name.split(" ").map(function (part) { return part[0]; }).slice(0, 2).join(""))}</span><div><h2>${FL.esc(user.name)}</h2><p>${FL.esc(user.title)} · ${assigned} assigned faculty</p>${FL.ui.badge("info", "Reviewer")}</div></div>
         <form id="profile-form" class="form-grid">
@@ -76,7 +79,8 @@ FL.reviewer = {
           <label class="field field-wide"><span>Specialization</span><input id="profile-spec" value="${FL.esc(user.specialization)}"></label>
           <div class="field-wide"><button class="btn btn-primary" type="submit">Save profile</button></div>
         </form>
-      </article>`;
+      </article>
+      </div>`;
     document.getElementById("profile-form").addEventListener("submit", function (event) {
       event.preventDefault();
       user.office = document.getElementById("profile-office").value.trim();

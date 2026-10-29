@@ -73,12 +73,25 @@ class KraCard extends StatelessWidget {
             color: color,
           ),
         ),
+        if (score.targetPoints > 0) ...[
+          const SizedBox(height: 8),
+          LinearProgressLabeled(
+            progress: score.progress,
+            color: color,
+            height: 6,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$percent% of target points',
+            style: const TextStyle(fontSize: 11, color: AppColors.textTertiary),
+          ),
+        ],
         const SizedBox(height: 6),
-        LinearProgressLabeled(progress: score.progress, color: color, height: 6),
-        const SizedBox(height: 8),
         Text(
-          '$percent% · ${score.documentCount} docs',
-          style: const TextStyle(fontSize: 11, color: AppColors.textTertiary),
+          score.documentCount == 1
+              ? '1 supporting document'
+              : '${score.documentCount} supporting documents',
+          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
         ),
       ],
     );
@@ -136,7 +149,10 @@ class KraCard extends StatelessWidget {
             ),
             Text(
               '/ ${score.targetPoints} pts',
-              style: const TextStyle(fontSize: 11, color: AppColors.textTertiary),
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textTertiary,
+              ),
             ),
             const SizedBox(height: 4),
             Text(

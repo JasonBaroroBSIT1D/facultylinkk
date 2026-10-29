@@ -18,7 +18,7 @@ FL.documents = {
   },
 
   needsAction: function (doc) {
-    if (doc.status === "draft") return false;
+    if (doc.status === "draft") return doc.hasFile !== false;
     if (doc.status === "invalid" || doc.status === "revision" || doc.status === "reviewer-required") return true;
     if (doc.status === "pending-review" || doc.status === "system-approved") return true;
     const oversight = doc.reviewerOversightStatus || (doc.extractedInfo && doc.extractedInfo["Reviewer oversight status"]) || "";
@@ -39,6 +39,82 @@ FL.documents = {
 
   isSetSefSemesterDocument: function (doc) {
     return doc.indicatorId === "kra1-a-student" || doc.indicatorId === "kra1-a-supervisor";
+  },
+
+  setSefMetadataHtml: function (doc) {
+    if (!FL.documents.isSetSefSemesterDocument(doc)) return "";
+    const info = doc.extractedInfo && typeof doc.extractedInfo === "object" ? doc.extractedInfo : {};
+    const selected = doc.indicatorId && FL.rules.findIndicator(doc.indicatorId);
+    const selectedLabel = selected ? selected.indicator.name : (doc.indicatorId || "—");
+    const verification = String(info["Indicator verification status"] || "").trim() || "UNDETERMINED";
+    const verificationKind = verification === "MATCH"
+      ? "valid"
+      : verification === "POSSIBLE_MISMATCH"
+        ? "invalid"
+        : verification === "PROCESSING_FAILED"
+          ? "invalid"
+          : "pending";
+    const extractionStatus = info["SET/SEF extraction status"] || (doc.ocr && doc.ocr.status === "completed" ? "—" : "pending");
+    const missing = info["Missing extraction fields"] || "";
+    const rating = info["Extracted rating"] || "";
+    const scale = info["Rating scale"] || "";
+    return `
+      <h3 class="review-subhead">SET / SEF extraction</h3>
+      <div class="kv-grid kv-grid--two">
+        ${FL.documents.kvRow("Faculty-selected indicator", FL.esc(selectedLabel), false)}
+        ${FL.documents.kvRow("Detected evaluation type", info["Evaluation type"] ? FL.esc(String(info["Evaluation type"])) : "—", !info["Evaluation type"])}
+        ${FL.documents.kvRow("Faculty name", info["Faculty name"] ? FL.esc(String(info["Faculty name"])) : "—", !info["Faculty name"])}
+        ${FL.documents.kvRow("Academic year", info["Academic year"] ? FL.esc(String(info["Academic year"])) : "—", !info["Academic year"])}
+        ${FL.documents.kvRow("Semester", info["Semester"] ? FL.esc(String(info["Semester"])) : "—", !info["Semester"])}
+        ${FL.documents.kvRow("Overall rating", rating ? FL.esc(String(rating)) : "—", !rating)}
+        ${FL.documents.kvRow("Rating scale", scale ? FL.esc(String(scale)) : "—", !scale)}
+        ${FL.documents.kvRow("Extraction status", FL.esc(String(extractionStatus)), extractionStatus === "failed")}
+        ${FL.documents.kvRow("Indicator verification", FL.ui.badge(verificationKind, verification.replace(/_/g, " ")), verification !== "MATCH")}
+      </div>
+      ${missing ? `<p class="note">Missing or unresolved fields: ${FL.esc(String(missing))}</p>` : ""}
+      ${info["Extraction error"] ? `<div class="alert alert-warning">${FL.esc(String(info["Extraction error"]))}</div>` : ""}`;
+  },
+
+  setSefAutoValidationHtml: function (doc) {
+    if (!FL.documents.isSetSefSemesterDocument(doc)) return "";
+    const av = doc.autoValidation || (doc.extractedInfo && doc.extractedInfo.autoValidation);
+    if (!av || typeof av !== "object") return "";
+    const checks = av.checks || {};
+    const rows = [
+      ["ocr_complete", "OCR completed"],
+      ["metadata_validation", "Metadata validation"],
+      ["evaluation_period_eligibility", "Evaluation-period eligibility"],
+      ["ocr_extraction_quality", "OCR extraction quality"],
+      ["file_accessible", "Original file preserved"]
+    ];
+    const list = rows.map(function (pair) {
+      const row = checks[pair[0]];
+      if (!row) return "";
+      const mark = row.ok ? "✓" : "✗";
+      const cls = row.ok ? "is-ok" : "is-fail";
+      return `<li class="${cls}"><span aria-hidden="true">${mark}</span> <strong>${FL.esc(pair[1])}:</strong> ${FL.esc(row.message || "")}</li>`;
+    }).join("");
+    const source = av.decisionSource || doc.approvalDecisionSource || "—";
+    const display = doc.reviewDisplayStatus
+      || (source === "system_auto_approval" ? "simulation-auto-accepted" : doc.status);
+    const showAuto = display === "simulation-auto-accepted" && doc.status === "approved";
+    const withheld = (av.withheldReasons || []).length
+      ? `<p class="note"><strong>Manual review required:</strong> ${FL.esc(av.withheldReasons.join(" "))}</p>`
+      : "";
+    return `
+      <section class="card-inset auto-validation-panel" aria-label="Simulation auto-validation details">
+        <h3 class="review-subhead">Simulation auto-validation</h3>
+        <p class="note subtle">Auto-acceptance supports FacultyLink rank-upgrade simulation only. It is not official document authentication or CHED certification.</p>
+        <div class="kv-grid kv-grid--two">
+          ${FL.documents.kvRow("Review display status", FL.ui.statusBadge(showAuto ? "simulation-auto-accepted" : (display === "simulation-reviewer-validated" ? "simulation-reviewer-validated" : (doc.status || "pending-review"))), false)}
+          ${FL.documents.kvRow("Decision source", FL.esc(String(source)), false)}
+          ${FL.documents.kvRow("Policy version", av.policyVersion ? FL.esc(String(av.policyVersion)) : "—", false)}
+          ${FL.documents.kvRow("Assessed at", av.assessedAt ? FL.esc(FL.formatDocStamp(av.assessedAt)) : "—", false)}
+          ${FL.documents.kvRow("Approved at", av.approvedAt ? FL.esc(FL.formatDocStamp(av.approvedAt)) : "—", !av.approvedAt)}
+        </div>
+        ${list ? `<ul class="kra-publish-checks">${list}</ul>` : ""}
+        ${withheld}
+      </section>`;
   },
 
   periodSimulationDisplay: function (doc) {
@@ -107,6 +183,144 @@ FL.documents = {
       { href: "#workflow", label: "Workflow" },
       { href: "#decision", label: "Decision" }
     ];
+  },
+
+  reviewContextBackHref: function (doc, canDecide) {
+    const params = new URLSearchParams(window.location.search);
+    const facultyId = params.get("faculty") || doc.facultyId || "";
+    const kraId = params.get("kra") || doc.kraId || "";
+    const criterionId = params.get("criterion") || doc.criterionId || "";
+    const indicatorId = params.get("indicator") || doc.indicatorId || "";
+    if (facultyId && (indicatorId || kraId)) {
+      const back = new URLSearchParams();
+      back.set("faculty", facultyId);
+      if (kraId) back.set("kra", kraId);
+      if (criterionId) back.set("criterion", criterionId);
+      if (indicatorId) back.set("indicator", indicatorId);
+      return "documents.html?" + back.toString();
+    }
+    return canDecide ? "documents.html?filter=pending-review" : "documents.html";
+  },
+
+  reviewContextBackLabel: function (doc) {
+    const params = new URLSearchParams(window.location.search);
+    const indicatorId = params.get("indicator") || doc.indicatorId || "";
+    if (indicatorId && FL.rules.findIndicator(indicatorId)) {
+      return "Back to " + FL.rules.findIndicator(indicatorId).indicator.name;
+    }
+    return "Back to documents";
+  },
+
+  compactWorkflowHtml: function (doc, scored) {
+    const ocrKey = FL.documents.ocrStatusLabel(doc);
+    const info = doc.extractedInfo || {};
+    const uploaded = !!(doc.fileUrl || doc.hasFile !== false);
+    const ocrComplete = ocrKey === "completed";
+    const ocrActive = ocrKey === "processing" || ocrKey === "pending";
+    const ocrFailed = ocrKey === "failed";
+    const isSetSef = FL.documents.isSetSefSemesterDocument(doc);
+    const verification = String(info["Indicator verification status"] || "").trim();
+    const verificationDone = isSetSef && ocrComplete && verification && verification !== "PROCESSING_FAILED";
+    const verificationLabel = verification ? verification.replace(/_/g, " ") : (ocrComplete && isSetSef ? "Undetermined" : "—");
+    const decided = doc.status === "approved" || doc.status === "system-approved" || doc.status === "rejected" || doc.status === "revision";
+    const decisionLabel = doc.status === "approved" || doc.status === "system-approved"
+      ? "Approved"
+      : doc.status === "rejected"
+        ? "Rejected"
+        : doc.status === "revision"
+          ? "Revision requested"
+          : doc.status === "pending-review"
+            ? "Pending review"
+            : String(doc.status || "Pending").replace(/-/g, " ");
+    const scoringOverall = scored && scored.validation ? scored.validation.overall : "";
+    const scoringLabel = scoringOverall === "valid"
+      ? "Eligible"
+      : scoringOverall === "invalid"
+        ? "Ineligible"
+        : ocrComplete
+          ? "Reviewer check"
+          : "Waiting";
+    function step(label, state) {
+      return `<li class="review-step review-step--${state}"><span class="review-step-dot" aria-hidden="true"></span><span>${FL.esc(label)}</span></li>`;
+    }
+    return `
+      <div class="review-status-strip card" aria-label="Processing status">
+        <ol class="review-steps">
+          ${step("File uploaded", uploaded ? "done" : "wait")}
+          ${step(ocrFailed ? "OCR failed" : "OCR completed", ocrFailed ? "error" : ocrComplete ? "done" : ocrActive ? "current" : "wait")}
+          ${isSetSef ? step("Indicator check: " + verificationLabel, verificationDone ? (verification === "MATCH" ? "done" : "warn") : ocrComplete ? "current" : "wait") : ""}
+          ${step("Reviewer decision: " + (typeof decisionLabel === "string" ? decisionLabel : "Pending"), decided ? "done" : "current")}
+          ${step("Scoring: " + scoringLabel, doc.status === "approved" || doc.status === "system-approved" ? "done" : "wait")}
+        </ol>
+      </div>`;
+  },
+
+  reviewSummaryHtml: function (doc, scored) {
+    const info = doc.extractedInfo || {};
+    const found = doc.indicatorId ? FL.rules.findIndicator(doc.indicatorId) : null;
+    const evalType = info["Evaluation type"]
+      || (found ? found.indicator.name : "")
+      || "—";
+    const facultyName = info["Faculty name"] || info["Extracted names"] || info["Extracted author(s)"] || "—";
+    const year = info["Academic year"] || "—";
+    const semester = info["Semester"] || "—";
+    const rating = info["Extracted rating"] || "—";
+    const scale = info["Rating scale"] || "—";
+    const verification = info["Indicator verification status"] || "—";
+    const ocrLabel = FL.documents.ocrStatusLabel(doc);
+    return `
+      <div class="card-head"><h2>Document information</h2></div>
+      <div class="kv-grid">
+        ${FL.documents.kvRow("Faculty name", facultyName !== "—" ? FL.esc(facultyName) : FL.ui.badge("invalid", "Missing"), facultyName === "—")}
+        ${FL.documents.kvRow("Academic year", year !== "—" ? FL.esc(String(year)) : "—", year === "—")}
+        ${FL.documents.kvRow("Semester", semester !== "—" ? FL.esc(String(semester)) : "—", semester === "—")}
+        ${FL.documents.kvRow("Evaluation type", FL.esc(String(evalType)), false)}
+        ${FL.documents.kvRow("Overall rating", rating !== "—" ? FL.esc(String(rating)) : "—", rating === "—")}
+        ${FL.documents.kvRow("Rating scale", scale !== "—" ? FL.esc(String(scale)) : "—", scale === "—")}
+        ${FL.documents.kvRow("Indicator verification", verification !== "—" ? FL.esc(String(verification).replace(/_/g, " ")) : "—", verification === "—" || verification === "UNDETERMINED")}
+        ${FL.documents.kvRow("OCR processing", FL.ui.statusBadge(ocrLabel), ocrLabel !== "completed")}
+        ${FL.documents.kvRow("Review status", FL.ui.statusBadge(doc.status), false)}
+        ${found ? FL.documents.kvRow("Selected indicator", FL.esc(found.indicator.name), false) : ""}
+      </div>`;
+  },
+
+  bindReviewTabs: function (preferredTab) {
+    const tabs = document.querySelectorAll(".review-tabs [role=tab]");
+    const panels = document.querySelectorAll(".review-tab-panel");
+    if (!tabs.length) return;
+    function activate(id) {
+      FL.documents._reviewActiveTab = id;
+      tabs.forEach(function (tab) {
+        const on = tab.getAttribute("data-tab") === id;
+        tab.setAttribute("aria-selected", on ? "true" : "false");
+        tab.tabIndex = on ? 0 : -1;
+      });
+      panels.forEach(function (panel) {
+        const on = panel.getAttribute("data-tab-panel") === id;
+        panel.hidden = !on;
+        panel.classList.toggle("is-active", on);
+      });
+    }
+    const initial = preferredTab || "review";
+    activate(initial);
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        activate(tab.getAttribute("data-tab"));
+      });
+      tab.addEventListener("keydown", function (event) {
+        const list = Array.prototype.slice.call(tabs);
+        const index = list.indexOf(tab);
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          list[(index + 1) % list.length].focus();
+          activate(list[(index + 1) % list.length].getAttribute("data-tab"));
+        } else if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          list[(index - 1 + list.length) % list.length].focus();
+          activate(list[(index - 1 + list.length) % list.length].getAttribute("data-tab"));
+        }
+      });
+    });
   },
 
   kvRow: function (label, valueHtml, missing) {
@@ -225,7 +439,8 @@ FL.documents = {
               const faculty = FL.store.facultyById(doc.facultyId);
               const reviewer = FL.store.userById(doc.reviewerId);
               const scored = FL.scoring.scoreDocument(doc);
-              const ocr = doc.ocr && doc.ocr.status === "completed" ? "Completed" : doc.ocr && doc.ocr.status === "processing" ? "Processing" : "Pending";
+              const ocrSt = FL.documents.ocrStatusLabel(doc);
+              const ocr = ocrSt === "completed" ? "Completed" : ocrSt === "processing" ? "Processing" : ocrSt === "failed" ? "Failed" : "Pending";
               const effective = FL.documents.effectiveSimulationScore(doc);
               const period = FL.documents.periodSimulationDisplay(doc);
               const source = FL.documents.simulationScoreSource(doc);
@@ -243,7 +458,7 @@ FL.documents = {
                 <td>${FL.esc(faculty ? faculty.name : "—")}</td>
                 <td>${FL.esc(doc.name)}</td>
                 <td>${FL.esc(FL.documents.kraLabel(doc))}</td>
-                <td>${FL.ui.statusBadge(ocr === "Completed" ? "completed" : ocr === "Processing" ? "processing" : "pending")}</td>
+                <td>${FL.ui.statusBadge(ocr === "Completed" ? "completed" : ocr === "Processing" ? "processing" : ocr === "Failed" ? "failed" : "pending")}</td>
                 <td>${FL.ui.statusBadge(scored.validation.overall === "valid" ? "valid" : scored.validation.overall === "invalid" ? "invalid" : "reviewer-required")}</td>
                 <td>${scoreCell}</td>
                 <td>${FL.esc(reviewer ? reviewer.name : "—")}</td>
@@ -263,15 +478,33 @@ FL.documents = {
   renderReview: function (session, canDecide) {
     const params = new URLSearchParams(window.location.search);
     const page = document.getElementById("page");
-    const doc = FL.store.documentById(params.get("id"));
-    if (!doc || (session.role === "reviewer" && !FL.documents.scoped(session).some(function (item) { return item.id === doc.id; }))) {
-      page.innerHTML = FL.ui.empty("Missing document", "The document record was not found, or it is not assigned to you.");
-      return;
-    }
+    const docId = params.get("id");
     page.innerHTML = FL.ui.loading("Document loading");
-    FL.documents.hydrateAuthenticatedFile(doc).finally(function () {
-      FL.documents.paintReview(session, doc, canDecide);
+    const loadDoc = FL.store.usesLiveDocuments()
+      ? FL.store.refreshLiveDocument(session, docId)
+      : Promise.resolve(FL.store.documentById(docId));
+    loadDoc.then(function (doc) {
+      if (!doc || (session.role === "reviewer" && !FL.documents.scoped(session).some(function (item) { return item.id === doc.id; }))) {
+        page.innerHTML = FL.ui.empty("Missing document", "The document record was not found, or it is not assigned to you.");
+        return;
+      }
+      return FL.documents.hydrateAuthenticatedFile(doc).finally(function () {
+        FL.documents.paintReview(session, doc, canDecide);
+      });
+    }).catch(function (error) {
+      page.innerHTML = FL.ui.empty("Could not load document", error.message || "Try again later.");
     });
+  },
+
+  _ocrPollTimer: null,
+  _reviewActiveTab: "review",
+
+  ocrStatusLabel: function (doc) {
+    const status = doc.ocr && doc.ocr.status;
+    if (status === "completed") return "completed";
+    if (status === "processing") return "processing";
+    if (status === "failed") return "failed";
+    return "pending";
   },
 
   paintReview: function (session, doc, canDecide) {
@@ -279,17 +512,15 @@ FL.documents = {
     const reviewer = FL.store.userById(doc.reviewerId);
     const scored = FL.scoring.scoreDocument(doc);
     const validation = scored.validation;
-    const back = canDecide ? "documents.html?filter=pending-review" : "documents.html";
-    const backLabel = canDecide ? "Back to pending review" : "Back to workspace";
+    const back = FL.documents.reviewContextBackHref(doc, canDecide);
+    const backLabel = FL.documents.reviewContextBackLabel(doc);
+    const activeTab = FL.documents._reviewActiveTab || "review";
     const toolbar = doc.fileUrl
       ? `<div class="doc-toolbar">
           <button class="btn btn-small btn-primary" type="button" id="open-doc">Open in new tab</button>
           <a class="btn btn-small btn-ghost" href="${FL.esc(doc.fileUrl)}" download="${FL.esc(doc.fileName || "document")}">Download</a>
         </div>`
       : "";
-    const jumpLinks = FL.documents.reviewJumpItems().map(function (item, index) {
-      return `<a href="${item.href}" class="${index === 0 ? "is-active" : ""}">${FL.esc(item.label)}</a>`;
-    }).join("");
     const page = document.getElementById("page");
     page.innerHTML = `
       <div class="review-page">
@@ -309,40 +540,73 @@ FL.documents = {
         </div>
         <div class="review-header-actions">
           ${FL.ui.statusBadge(doc.status)}
-          <a class="btn btn-ghost" href="${back}">${FL.esc(backLabel)}</a>
+          <a class="btn btn-ghost" href="${FL.esc(back)}">${FL.esc(backLabel)}</a>
         </div>
       </header>
-      <nav class="jump jump--review" aria-label="Review sections">${jumpLinks}</nav>
-      <div class="review-grid">
-        <section class="card review-section document-stage" id="document-area">
-          <div class="card-head card-head--toolbar">
-            <div>
-              <h2>Original document</h2>
-              <p class="sub">${FL.esc(doc.fileName)} · ${FL.esc(doc.fileType || "File")} · ${FL.esc(FL.formatWhen(doc.dateSubmitted))}</p>
+      ${FL.documents.compactWorkflowHtml(doc, scored)}
+      <div class="review-tabs" role="tablist" aria-label="Document review sections">
+        <button type="button" role="tab" id="review-tab-btn-review" data-tab="review" aria-controls="review-tab-panel-review" aria-selected="true">Review</button>
+        <button type="button" role="tab" id="review-tab-btn-ocr" data-tab="ocr" aria-controls="review-tab-panel-ocr" aria-selected="false" tabindex="-1">OCR Details</button>
+        <button type="button" role="tab" id="review-tab-btn-scoring" data-tab="scoring" aria-controls="review-tab-panel-scoring" aria-selected="false" tabindex="-1">Scoring &amp; Official Rules</button>
+      </div>
+      <div class="review-tab-panel is-active" id="review-tab-panel-review" data-tab-panel="review" role="tabpanel" aria-labelledby="review-tab-btn-review">
+        <div class="review-grid review-grid--review-tab">
+          <section class="card review-section document-stage" id="document-area">
+            <div class="card-head card-head--toolbar">
+              <div>
+                <h2>Original document</h2>
+                <p class="sub">${FL.esc(doc.fileName)} · ${FL.esc(doc.fileType || "File")} · ${FL.esc(FL.formatWhen(doc.dateSubmitted))}</p>
+              </div>
+              ${toolbar}
             </div>
-            ${toolbar}
-          </div>
-          <div class="preview preview-clean" id="preview">
-            ${FL.documents.originalFileHtml(doc)}
-          </div>
-        </section>
+            <div class="preview preview-clean" id="preview">
+              ${FL.documents.originalFileHtml(doc)}
+            </div>
+          </section>
+          <aside class="review-aside">
+            <section class="card review-section review-summary-card">
+              ${FL.documents.reviewSummaryHtml(doc, scored)}
+            </section>
+            <section class="card review-section review-decision" id="decision">
+              ${FL.documents.decisionHtml(doc, canDecide)}
+            </section>
+          </aside>
+        </div>
+      </div>
+      <div class="review-tab-panel" id="review-tab-panel-ocr" data-tab-panel="ocr" role="tabpanel" aria-labelledby="review-tab-btn-ocr" hidden>
         <section class="card review-section" id="ocr-area">
-          <div class="card-head"><h2>Extracted summary</h2>${FL.ui.statusBadge(doc.ocr && doc.ocr.status === "completed" ? "completed" : doc.ocr && doc.ocr.status === "processing" ? "processing" : "pending")}</div>
-          <p class="note">Structured fields from OCR and classification. Compare with the original document on the left.</p>
-          ${FL.documents.ocrHtml(doc, scored)}
+          <div class="card-head"><h2>OCR extraction details</h2>${FL.ui.statusBadge(FL.documents.ocrStatusLabel(doc))}</div>
+          <p class="note">Compare extracted fields and text with the original document on the Review tab.</p>
+          ${FL.documents.ocrHtml(doc, scored, session, canDecide, { tabMode: true })}
+          <details class="review-collapse review-correction-panel">
+            <summary>Correct extracted information</summary>
+            <div class="review-collapse-body">
+              ${FL.documents.extractionCorrectionHtml(doc, canDecide)}
+            </div>
+          </details>
         </section>
       </div>
-      ${FL.documents.workflowHtml(doc, scored)}
-      <div class="split review-stack">
-        <section class="card review-section" id="classification">${FL.documents.classificationHtml(doc, validation)}</section>
-        <section class="card review-section" id="rule">${FL.documents.ruleHtml(scored, canDecide, doc)}</section>
+      <div class="review-tab-panel" id="review-tab-panel-scoring" data-tab-panel="scoring" role="tabpanel" aria-labelledby="review-tab-btn-scoring" hidden>
+        <section class="card review-section" id="scoring">${FL.documents.scoreHtml(scored, doc, canDecide)}</section>
+        <details class="review-collapse card review-section">
+          <summary>Applicable DBM–CHED rule &amp; indicator</summary>
+          <div class="review-collapse-body" id="rule">${FL.documents.ruleHtml(scored, canDecide, doc)}</div>
+        </details>
+        <details class="review-collapse card review-section">
+          <summary>Document validation</summary>
+          <div class="review-collapse-body" id="validation">${FL.documents.validationHtml(doc, validation, canDecide, { includeCorrection: false })}</div>
+        </details>
+        <details class="review-collapse card review-section">
+          <summary>KRA classification reference</summary>
+          <div class="review-collapse-body" id="classification">${FL.documents.classificationHtml(doc, validation)}</div>
+        </details>
+        <details class="review-collapse card review-section">
+          <summary>Contribution allocation</summary>
+          <div class="review-collapse-body" id="contribution">${FL.documents.contributionHtml(scored, doc)}</div>
+        </details>
       </div>
-      <section class="card review-section" id="validation">${FL.documents.validationHtml(doc, validation, canDecide)}</section>
-      <section class="card review-section" id="scoring">${FL.documents.scoreHtml(scored, doc, canDecide)}</section>
-      <section class="card review-section" id="contribution">${FL.documents.contributionHtml(scored, doc)}</section>
-      <section class="card review-section review-decision" id="decision">${FL.documents.decisionHtml(doc, canDecide)}</section>
       </div>`;
-    FL.documents.bindJumpNav();
+    FL.documents.bindReviewTabs(activeTab);
     FL.documents.bindZoom();
     const openOriginal = function (event) {
       if (event) {
@@ -359,9 +623,48 @@ FL.documents = {
         cancelLabel: "Close"
       });
     };
-    document.getElementById("open-doc").addEventListener("click", openOriginal);
+    const openDocBtn = document.getElementById("open-doc");
+    if (openDocBtn) openDocBtn.addEventListener("click", openOriginal);
     const secondaryOpen = document.getElementById("open-doc-secondary");
     if (secondaryOpen) secondaryOpen.addEventListener("click", openOriginal);
+    const copyOcr = document.getElementById("ocr-copy");
+    if (copyOcr) {
+      copyOcr.addEventListener("click", function () {
+        const block = document.getElementById("ocr-excerpt");
+        const text = block ? block.textContent : "";
+        if (navigator.clipboard && text) {
+          navigator.clipboard.writeText(text).then(function () {
+            FL.ui.toast("Extracted text copied.", "ok");
+          });
+        }
+      });
+    }
+    const retryOcr = document.getElementById("ocr-retry");
+    if (retryOcr) {
+      retryOcr.addEventListener("click", function () {
+        FL.store.retryDocumentOcr(session, doc.id).then(function (fresh) {
+          Object.assign(doc, fresh);
+          FL.ui.toast("OCR retry queued.", "ok");
+          FL.documents.paintReview(session, doc, canDecide);
+        }).catch(function (error) {
+          FL.ui.toast(error.message || "OCR retry failed.", "danger");
+        });
+      });
+    }
+    if (FL.documents._ocrPollTimer) {
+      clearInterval(FL.documents._ocrPollTimer);
+      FL.documents._ocrPollTimer = null;
+    }
+    if (FL.store.usesLiveDocuments() && doc.ocr && (doc.ocr.status === "pending" || doc.ocr.status === "processing")) {
+      FL.documents._ocrPollTimer = setInterval(function () {
+        FL.store.refreshLiveDocument(session, doc.id).then(function (fresh) {
+          if (!fresh || !fresh.ocr) return;
+          if (fresh.ocr.status === doc.ocr.status && fresh.ocr.completedAt === (doc.ocr && doc.ocr.completedAt)) return;
+          Object.assign(doc, fresh);
+          FL.documents.paintReview(session, doc, canDecide);
+        });
+      }, 4000);
+    }
     const select = document.getElementById("indicator-select");
     if (select) {
       select.addEventListener("change", function () {
@@ -469,12 +772,25 @@ FL.documents = {
     return `<div class="original-file"><div class="original-file-placeholder"><p class="note">Inline preview is not available for this file type. Use Open in new tab or Download from the toolbar above.</p>${excerpt ? `<div class="ocr-content">${FL.esc(String(excerpt).slice(0, 1200))}</div>` : ""}</div></div>`;
   },
 
-  ocrHtml: function (doc, scored) {
-    if (!doc.ocr || doc.ocr.status === "processing" || doc.ocr.status === "pending") {
-      return FL.ui.loading(doc.ocr && doc.ocr.status === "processing" ? "OCR-result loading" : "Waiting for OCR", "Extracted title, authors, date, and content will appear here.");
+  ocrHtml: function (doc, scored, session, canDecide, opts) {
+    opts = opts || {};
+    const status = FL.documents.ocrStatusLabel(doc);
+    if (status === "processing") {
+      return FL.ui.loading("Extracting text", "Extracting text from the uploaded document.");
+    }
+    if (status === "pending") {
+      return FL.ui.loading("Waiting for OCR", "Waiting for OCR processing.");
+    }
+    if (status === "failed") {
+      const err = (doc.ocr && doc.ocr.error) || (doc.extractedInfo && doc.extractedInfo["OCR error"]) || "Text extraction failed.";
+      const retryBtn = FL.store.usesLiveDocuments()
+        ? `<button class="btn btn-small btn-ghost" type="button" id="ocr-retry">Retry OCR</button>`
+        : "";
+      return `<div class="alert alert-warning"><p>${FL.esc(String(err))}</p><p class="note">Text extraction failed. The original document remains available for manual review.</p>${retryBtn}</div>`;
     }
     const info = doc.extractedInfo && typeof doc.extractedInfo === "object" ? doc.extractedInfo : {};
     const excerpt = ((doc.ocr && doc.ocr.content) || info["OCR excerpt"] || info.OCR || "").trim();
+    const conf = doc.ocr && doc.ocr.confidence != null ? `${Number(doc.ocr.confidence).toFixed(1)}%` : (info["OCR confidence"] || "—");
     const identityLabel = info["Identity field label"] || "Faculty / named party";
     const identityValue = info["Extracted names"] || info["Extracted author(s)"] || (doc.ocr.authors && doc.ocr.authors.join(", ")) || "";
     const identityStatus = info["Identity verification"] || "";
@@ -496,14 +812,11 @@ FL.documents = {
     }).map(function (key) {
       return FL.documents.kvRow(key, FL.esc(String(info[key])), false);
     }).join("");
-    return `
-      <div class="kv-grid kv-grid--two">
-        ${FL.documents.kvRow("Document title", titleValue ? FL.esc(titleValue) : FL.ui.badge("invalid", "Missing"), !titleValue)}
-        ${FL.documents.kvRow(identityLabel, FL.documents.identityDisplayHtml(doc, identityValue, identityStatus), !identityValue)}
-        ${FL.documents.kvRow("Academic year / period", periodValue ? FL.esc(String(periodValue)) : "—", !periodValue)}
-        ${identityStatus ? FL.documents.kvRow("Identity verification", FL.esc(String(identityStatus)), false) : ""}
-      </div>
-      <div class="score-mini-row">
+    const method = info["Extraction method"] || info["OCR method"] || (doc.ocr && doc.ocr.method) || "—";
+    const extractionStatus = info["SET/SEF extraction status"] || (status === "completed" ? "complete" : status);
+    const scoreStrip = opts.tabMode
+      ? ""
+      : `<div class="score-mini-row">
         <div class="score-mini">
           <div class="score-mini-label">Provisional score</div>
           <div class="score-mini-value is-provisional">${provisional == null ? "—" : FL.esc(String(provisional))}</div>
@@ -516,11 +829,24 @@ FL.documents = {
           <div class="score-mini-label">Credited points</div>
           <div class="score-mini-value is-credited">${FL.esc(String(credited))}</div>
         </div>
+      </div>`;
+    return `
+      ${FL.documents.setSefMetadataHtml(doc)}
+      ${FL.documents.setSefAutoValidationHtml(doc)}
+      <div class="kv-grid kv-grid--two">
+        ${FL.documents.kvRow("Document title", titleValue ? FL.esc(titleValue) : FL.ui.badge("invalid", "Missing"), !titleValue)}
+        ${FL.documents.kvRow(identityLabel, FL.documents.identityDisplayHtml(doc, identityValue, identityStatus), !identityValue)}
+        ${FL.documents.kvRow("Academic year / period", periodValue ? FL.esc(String(periodValue)) : "—", !periodValue)}
+        ${FL.documents.kvRow("Extraction method", FL.esc(String(method)), false)}
+        ${FL.documents.kvRow("Extraction status", FL.esc(String(extractionStatus)), false)}
+        ${identityStatus ? FL.documents.kvRow("Identity verification", FL.esc(String(identityStatus)), false) : ""}
       </div>
-      ${snapshotRows ? `<h3 class="review-subhead">Scoring snapshot</h3><div class="kv-grid">${snapshotRows}</div>` : ""}
+      ${scoreStrip}
+      ${snapshotRows && !opts.tabMode ? `<h3 class="review-subhead">Scoring snapshot</h3><div class="kv-grid">${snapshotRows}</div>` : ""}
       ${metaRows ? `<h3 class="review-subhead">Other extracted metadata</h3><div class="kv-grid">${metaRows}</div>` : ""}
-      <h3 class="review-subhead">Text excerpt</h3>
-      <div class="review-excerpt">${excerpt ? FL.esc(excerpt) : "No readable text was extracted from this file."}</div>`;
+      <div class="review-ocr-meta"><span>OCR confidence: ${FL.esc(String(conf))}</span>${excerpt ? `<button class="btn btn-small btn-ghost" type="button" id="ocr-copy">Copy extracted text</button>` : ""}</div>
+      <h3 class="review-subhead">Extracted text</h3>
+      <div class="review-excerpt review-excerpt--tab" id="ocr-excerpt">${excerpt ? FL.esc(excerpt) : "No readable text was detected in this document."}</div>`;
   },
 
   classificationHtml: function (doc, validation) {
@@ -688,8 +1014,12 @@ FL.documents = {
           <input id="corr-date" type="text" value="${FL.esc(fields.dateValue)}" placeholder="e.g. AY 2023-2024"></label>
         <label class="field"><span>Academic term</span>
           <input id="corr-term" type="text" value="${FL.esc(FL.validation.infoValue(doc, "Academic term"))}" placeholder="Semester"></label>
-        ${isRating ? `<label class="field"><span>Evaluation rating</span>
-          <input id="corr-rating" type="text" inputmode="decimal" value="${FL.esc(fields.ratingValue)}" placeholder="e.g. 95"></label>` : ""}
+        ${isRating ? `<label class="field"><span>Evaluation type</span>
+          <input id="corr-eval-type" type="text" value="${FL.esc(FL.validation.infoValue(doc, "Evaluation type"))}" placeholder="SET or SEF"></label>
+        <label class="field"><span>Overall rating</span>
+          <input id="corr-rating" type="text" inputmode="decimal" value="${FL.esc(fields.ratingValue)}" placeholder="e.g. 95"></label>
+        <label class="field"><span>Rating scale</span>
+          <input id="corr-scale" type="text" inputmode="decimal" value="${FL.esc(FL.validation.infoValue(doc, "Rating scale"))}" placeholder="e.g. 100"></label>` : ""}
         <label class="field field-span"><span>Reason for correction</span>
           <textarea id="corr-reason" rows="3" placeholder="Explain what you verified in the original document"></textarea></label>
         ${multiEvidence ? `<label class="field field-span"><span><input id="corr-evidence" type="checkbox"> Supporting documents verified</span>
@@ -715,6 +1045,10 @@ FL.documents = {
     };
     const ratingInput = document.getElementById("corr-rating");
     if (ratingInput) baseline.evaluationRating = (ratingInput.defaultValue || ratingInput.value || "").trim();
+    const evalTypeEl = document.getElementById("corr-eval-type");
+    if (evalTypeEl) baseline.evaluationType = (evalTypeEl.defaultValue || evalTypeEl.value || "").trim();
+    const scaleEl = document.getElementById("corr-scale");
+    if (scaleEl) baseline.ratingScale = (scaleEl.defaultValue || scaleEl.value || "").trim();
     button.addEventListener("click", function () {
       error.textContent = "";
       const reason = (document.getElementById("corr-reason").value || "").trim();
@@ -736,6 +1070,16 @@ FL.documents = {
         const rating = (ratingEl.value || "").trim();
         if (rating && rating !== baseline.evaluationRating) payload.evaluationRating = rating;
       }
+      const evalTypeInput = document.getElementById("corr-eval-type");
+      if (evalTypeInput) {
+        const et = (evalTypeInput.value || "").trim();
+        if (et && et !== baseline.evaluationType) payload.evaluationType = et;
+      }
+      const scaleInput = document.getElementById("corr-scale");
+      if (scaleInput) {
+        const sc = (scaleInput.value || "").trim();
+        if (sc && sc !== baseline.ratingScale) payload.ratingScale = sc;
+      }
       const evidence = document.getElementById("corr-evidence");
       if (evidence && evidence.checked) payload.attestSupportingEvidence = true;
       if (!payload.attestSupportingEvidence && Object.keys(payload).length === 1) {
@@ -743,7 +1087,7 @@ FL.documents = {
         return;
       }
       button.disabled = true;
-      FL.store.correctDocumentMetadata(doc.id, payload).then(function (saved) {
+      FL.store.correctDocumentMetadata(doc.id, payload, session).then(function (saved) {
         if (saved && typeof saved === "object") {
           Object.keys(saved).forEach(function (key) { doc[key] = saved[key]; });
         }
@@ -759,7 +1103,8 @@ FL.documents = {
     });
   },
 
-  validationHtml: function (doc, validation, canDecide) {
+  validationHtml: function (doc, validation, canDecide, options) {
+    options = options || {};
     if (doc.ocr && (doc.ocr.status === "processing" || doc.ocr.status === "pending")) {
       return `<div class="card-head"><h2>Document validation</h2></div>${FL.ui.loading("Validation-result loading", "Validation starts after OCR extraction.")}`;
     }
@@ -813,7 +1158,7 @@ FL.documents = {
       <p>${FL.ui.statusBadge(validation.duplicateStatus)} File hash ${FL.esc(doc.hash || "—")}${validation.duplicateOf ? ". Matches " + FL.esc(validation.duplicateOf) + "." : ""}</p>
       <h3 class="block-label">Overall validation</h3>
       <p>${validation.overall === "valid" ? FL.ui.badge("valid", "Valid") : validation.overall === "invalid" ? FL.ui.badge("invalid", "Invalid") : FL.ui.badge("pending", "Reviewer validation required")}</p>
-      ${FL.documents.extractionCorrectionHtml(doc, canDecide)}`;
+      ${options.includeCorrection ? FL.documents.extractionCorrectionHtml(doc, canDecide) : ""}`;
   },
 
   accumulated: function (doc) {
@@ -841,7 +1186,7 @@ FL.documents = {
       if (assigned > 0) {
         return {
           error: "This upload is one semester of SET/SEF. Enter 0 to confirm the semester record. "
-            + "Aggregated SET (max 36) and SEF (max 24) are computed from all eligible semesters — do not enter the full period score here."
+            + "Aggregated SET and SEF indicator scores come from published Admin configuration across eligible semesters — do not enter the full indicator maximum on a single semester record."
         };
       }
       const period = FL.documents.periodSimulationDisplay(doc);
@@ -952,7 +1297,7 @@ FL.documents = {
     });
     return `
       <div class="card-head"><h2>KRA scoring</h2>${FL.ui.statusBadge(doc.status)}</div>
-      <p class="note">Read-only summary. Enter the reviewer-assigned score in the Decision section below.</p>
+      <p class="note">Read-only summary. Enter the reviewer-assigned score on the Review tab.</p>
       <div class="score-summary-strip">
         <div class="score-mini">
           <div class="score-mini-label">Simulation score</div>
@@ -1053,7 +1398,7 @@ FL.documents = {
         + (period && period.score != null
           ? "Current period aggregation: " + period.score + " pts (" + (period.filled || "coverage") + "). "
           : (period && period.filled ? "Coverage " + period.filled + ". " : ""))
-        + "Full SET/SEF scores apply once per evaluation period (max 36 / 24), not per PDF."
+        + "Official SET/SEF indicator points apply once per evaluation period (per published rules), not per uploaded PDF."
       : (scored.indicator && FL.documents.usesContributorPercent(scored.indicator)
         ? "Base points before the declared contribution percentage. Credited points appear in the preview below."
         : (scored.indicator && scored.indicator.formula && scored.indicator.formula.type === "rating"
@@ -1119,7 +1464,7 @@ FL.documents = {
         return;
       }
       const body = award.setSefSemesterConfirmation
-        ? "<p>Confirm this SET/SEF semester record? The document is credited with 0 points; the evaluation-period average controls the official SET/SEF indicator score (max 36 / 24).</p>"
+        ? "<p>Confirm this SET/SEF semester record? This file supports one evaluation period; the configured semester aggregation determines official SET/SEF indicator points.</p>"
         : (award.duplicateIndicator
           ? "<p>Approve this document and record its score? Another approved document already uses this indicator for this faculty member. The document can still be approved. Only the highest score for that indicator is counted in the faculty KRA total, so points are not double-credited.</p>"
           : "<p>Approve this document and include its final score in the faculty KRA estimate? This remains an evaluation-support record.</p>");

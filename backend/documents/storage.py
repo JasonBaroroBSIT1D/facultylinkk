@@ -14,12 +14,24 @@ from werkzeug.utils import secure_filename
 ALLOWED_MIME = frozenset(
     {
         "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "image/jpeg",
         "image/png",
         "image/webp",
         "image/gif",
     }
 )
+_EXT_TO_MIME = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+_GENERIC_MIME = frozenset({"", "application/octet-stream", "binary/octet-stream"})
 MAX_BYTES = 25 * 1024 * 1024
 
 
@@ -39,6 +51,64 @@ def _safe_stem(name: str) -> str:
     return stem[:180]
 
 
+def sniff_mime(raw: bytes) -> str | None:
+    """Detect MIME from magic bytes (first bytes of file)."""
+    if raw.startswith(b"%PDF"):
+        return "application/pdf"
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if len(raw) >= 3 and raw[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if raw.startswith(b"GIF87a") or raw.startswith(b"GIF89a"):
+        return "image/gif"
+    if len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    if raw.startswith(b"PK") and b"word/" in raw[:4096]:
+        return DOCX_MIME
+    return None
+
+
+def resolve_upload_mime(raw: bytes, filename: str, declared_mime: str | None) -> str:
+    """
+    Determine a trusted MIME type for storage.
+
+    Mobile and some browsers send application/octet-stream for PDFs; we accept
+    allowed types when magic bytes (or PDF signature for .pdf) match.
+    """
+    declared = (declared_mime or "").split(";")[0].strip().lower()
+    sniffed = sniff_mime(raw[:512] if len(raw) > 512 else raw)
+
+    if sniffed:
+        if sniffed not in ALLOWED_MIME:
+            raise ValueError("unsupported_type")
+        if declared in ALLOWED_MIME and declared != sniffed:
+            raise ValueError("mime_content_mismatch")
+        return sniffed
+
+    if declared in ALLOWED_MIME:
+        if declared == "application/pdf" and not raw.startswith(b"%PDF"):
+            raise ValueError("invalid_pdf")
+        if declared.startswith("image/"):
+            raise ValueError("invalid_file_content")
+        return declared
+
+    if declared in _GENERIC_MIME:
+        ext = Path(_safe_stem(filename or "")).suffix.lower()
+        by_ext = _EXT_TO_MIME.get(ext)
+        if by_ext == "application/pdf":
+            if raw.startswith(b"%PDF"):
+                return "application/pdf"
+            raise ValueError("invalid_pdf")
+        if by_ext == DOCX_MIME:
+            if raw.startswith(b"PK"):
+                return DOCX_MIME
+            raise ValueError("invalid_file_content")
+        if by_ext in ALLOWED_MIME:
+            raise ValueError("invalid_file_content")
+
+    raise ValueError("unsupported_type")
+
+
 def save_upload(file: FileStorage, faculty_profile_id: int) -> tuple[str, str, int, str]:
     if not file or not file.filename:
         raise ValueError("missing_file")
@@ -47,9 +117,7 @@ def save_upload(file: FileStorage, faculty_profile_id: int) -> tuple[str, str, i
         raise ValueError("empty_file")
     if len(raw) > MAX_BYTES:
         raise ValueError("file_too_large")
-    mime = (file.mimetype or "").split(";")[0].strip().lower()
-    if mime not in ALLOWED_MIME:
-        raise ValueError("unsupported_type")
+    mime = resolve_upload_mime(raw, file.filename or "", file.mimetype)
     digest = hashlib.sha256(raw).hexdigest()
     ext = Path(_safe_stem(file.filename)).suffix.lower()
     if not ext:

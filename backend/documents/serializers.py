@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from models import Document, FacultyProfile, User
 
-from documents.status_map import status_to_web
+from documents.ocr.queue import normalize_ocr_status
+from documents.review_display import review_display_status
+from documents.status_map import document_status_to_web, is_legacy_uploaded_draft
+
+_OCR_LIST_PREVIEW = 480
 
 
 def _iso(dt) -> str | None:
@@ -17,6 +21,7 @@ def document_to_web(
     faculty: FacultyProfile | None = None,
     reviewer: User | None = None,
     api_base: str = "",
+    ocr_detail: bool = False,
 ) -> dict:
     profile = faculty or doc.faculty_profile
     faculty_public = profile.public_id if profile else None
@@ -35,7 +40,10 @@ def document_to_web(
         "kraId": doc.kra_id or "",
         "criterionId": doc.criterion_id or "",
         "indicatorId": doc.indicator_id or "",
-        "status": status_to_web(doc.status),
+        "status": document_status_to_web(doc),
+        "reviewDisplayStatus": review_display_status(doc),
+        "approvalDecisionSource": (extracted.get("Approval decision source") or None),
+        "autoValidation": extracted.get("autoValidation"),
         "submittedAt": _iso(doc.submitted_at),
         "reviewedAt": _iso(doc.reviewed_at),
         "uploadedAt": _iso(doc.created_at),
@@ -55,10 +63,7 @@ def document_to_web(
             else None
         ),
         "reviewHistory": history,
-        "ocr": {
-            "status": doc.ocr_status or "pending",
-            "confidence": doc.ocr_confidence,
-        },
+        "ocr": _ocr_payload(doc, extracted, ocr_detail=ocr_detail),
     }
     if doc.status == "approved" and doc.verified_points is not None:
         payload["review"] = {
@@ -74,6 +79,29 @@ def document_to_web(
     return payload
 
 
+def _ocr_payload(doc: Document, extracted: dict, *, ocr_detail: bool) -> dict:
+    status = normalize_ocr_status(doc.ocr_status)
+    text = (doc.extracted_text or "").strip()
+    excerpt = (extracted.get("OCR excerpt") or "").strip()
+    if not excerpt and text:
+        excerpt = text[: _OCR_LIST_PREVIEW if not ocr_detail else 12000]
+    payload = {
+        "status": status,
+        "confidence": doc.ocr_confidence,
+        "error": extracted.get("OCR error"),
+        "completedAt": extracted.get("OCR completed at") or extracted.get("OCR failed at"),
+        "method": extracted.get("OCR method"),
+    }
+    if ocr_detail:
+        payload["content"] = excerpt
+        payload["extractedText"] = text or None
+    elif excerpt:
+        payload["contentPreview"] = excerpt[:_OCR_LIST_PREVIEW]
+    if status == "completed" and not excerpt and not text:
+        payload["empty"] = True
+    return payload
+
+
 def stats_from_documents(docs: list[Document]) -> dict:
     total = len(docs)
     pending = 0
@@ -83,10 +111,10 @@ def stats_from_documents(docs: list[Document]) -> dict:
     draft = 0
     for doc in docs:
         st = doc.status
-        if st == "draft":
-            draft += 1
-        elif st in ("pending_review", "reviewer_required"):
+        if is_legacy_uploaded_draft(doc) or st in ("pending_review", "reviewer_required"):
             pending += 1
+        elif st == "draft":
+            draft += 1
         elif st == "needs_revision":
             revision += 1
         elif st in ("approved", "valid"):

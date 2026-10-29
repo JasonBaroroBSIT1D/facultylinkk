@@ -280,6 +280,8 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
         _uploadedCount = i + 1;
       }
       if (!mounted) return;
+      await AppState.instance.refreshData(label: 'Refreshing documents...', soft: true);
+      if (!mounted) return;
       setState(() {
         _progress = 1;
         _phase = _UploadPhase.success;
@@ -336,7 +338,7 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Each file is saved under the selected KRA and criterion. OCR and validation run automatically; some documents may be system-approved or queued for review.',
+                  'Each file is saved under the selected KRA and criterion. Successful uploads are submitted for reviewer validation automatically. Text extraction (OCR) runs on the server in the background.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.textSecondary, height: 1.45),
                 ),
@@ -360,7 +362,7 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
         children: [
           const InfoBanner(
             message:
-                'Choose the KRA, criterion, and indicator that match your evidence, then attach files. Uploads are saved as drafts until you submit them for reviewer validation.',
+                'Choose the KRA, criterion, and indicator that match your evidence, then attach files. Uploads are sent to your assigned reviewer for preparation and verification.',
           ),
           const SizedBox(height: 18),
           DropdownButtonFormField<String>(
@@ -556,8 +558,8 @@ class _SuccessView extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             count == 1
-                ? 'Your original file was saved under the selected KRA and criterion with Pending Review status. A reviewer still confirms the score.'
-                : '$count files were saved under the selected KRA and criterion with Pending Review status. A reviewer still confirms the scores.',
+                ? 'Upload completed and the document is Pending Review. Text extraction (OCR) continues on the server—you can track status on the document details screen when processing finishes.'
+                : '$count files were saved with Pending Review status. Text extraction runs on the server for each file; open a document to see when processing completes.',
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.textSecondary, height: 1.45),
           ),

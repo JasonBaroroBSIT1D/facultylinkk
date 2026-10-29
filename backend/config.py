@@ -80,3 +80,17 @@ class Config:
     @classmethod
     def sqlalchemy_database_uri(cls) -> str:
         return cls.database_url()
+
+    TESSERACT_CMD = (os.getenv("TESSERACT_CMD") or "").strip()
+    OCR_INLINE_AFTER_UPLOAD = (os.getenv("OCR_INLINE_AFTER_UPLOAD") or "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    OCR_WORKER_POLL_SECONDS = max(1, int(os.getenv("OCR_WORKER_POLL_SECONDS", "3")))
+
+    # SET/SEF automatic approval (disabled by default; see Admin policy API + instance JSON)
+    SET_SEF_AUTO_APPROVAL_ENABLED = (os.getenv("SET_SEF_AUTO_APPROVAL_ENABLED") or "").strip()
+    SET_SEF_AUTO_APPROVAL_ALLOW_ADMIN_TOGGLE = (
+        os.getenv("SET_SEF_AUTO_APPROVAL_ALLOW_ADMIN_TOGGLE") or ""
+    ).strip()

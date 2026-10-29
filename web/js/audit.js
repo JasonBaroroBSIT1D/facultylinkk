@@ -22,13 +22,12 @@ FL.audit = {
 
   render: function () {
     return `
-      <div class="page-head">
-        <div>
-          <p class="eyebrow">Transparency and security</p>
-          <h1>Audit Log</h1>
-          <p class="lede">Actions recorded for FacultyLink document review, assignments, and account activity. Official committee records remain with the institution.</p>
-        </div>
-      </div>
+      <div class="portal-page">
+      ${FL.ui.pageHeader({
+        eyebrow: "FacultyLink",
+        title: "Audit Log",
+        lede: "Actions recorded for document review, assignments, and account activity."
+      })}
       <div class="toolbar">
         <label class="search">
           <span class="sr-only">Search audit log</span>
@@ -47,6 +46,7 @@ FL.audit = {
       </div>
       <div class="card">
         <div class="table-wrap" id="audit-table"></div>
+      </div>
       </div>`;
   },
 

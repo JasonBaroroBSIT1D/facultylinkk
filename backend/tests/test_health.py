@@ -5,3 +5,5 @@ def test_health_endpoint(client):
     assert data["status"] == "ok"
     assert data["application"] == "FacultyLink API"
     assert data["database"] in {"connected", "error"}
+    assert "ocr" in data
+    assert "available" in data["ocr"]

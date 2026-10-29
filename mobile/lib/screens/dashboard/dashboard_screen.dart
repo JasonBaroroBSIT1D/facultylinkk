@@ -9,7 +9,7 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/assigned_reviewer_card.dart';
 import '../../widgets/app_logo.dart';
 import '../../widgets/common.dart';
-import '../../widgets/kra_card.dart';
+import '../../widgets/kra_dashboard_section.dart';
 import '../../widgets/preparation_period_card.dart';
 import '../../widgets/progress_ring.dart';
 import '../../widgets/simulation_result_card.dart';
@@ -31,168 +31,157 @@ class DashboardScreen extends StatelessWidget {
 
         return Scaffold(
           body: RefreshIndicator(
-            onRefresh: () => state.refreshData(label: 'Refreshing documents...'),
+            onRefresh: () =>
+                state.refreshData(label: 'Refreshing documents...'),
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-              SliverToBoxAdapter(child: _Header(faculty: faculty, unread: unread)),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-                sliver: SliverList.list(
-                  children: [
-                    _SimulationSummary(simulation: dash.simulation),
-                    const SizedBox(height: 12),
-                    const PreparationPeriodCard(compact: true),
-                    const SizedBox(height: 12),
-                    const AssignedReviewerCard(compact: true),
-                    const SizedBox(height: 12),
-                    _ProgressOverview(dash: dash),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        StatTile(
-                          value: '${state.validatedCount}',
-                          label: 'Validated',
-                          color: AppColors.success,
-                          onTap: () => state.openDocuments(),
-                        ),
-                        const SizedBox(width: 8),
-                        StatTile(
-                          value: '${state.pendingCount}',
-                          label: 'Pending review',
-                          color: AppColors.warning,
-                          onTap: () => state.openDocuments(),
-                        ),
-                        const SizedBox(width: 8),
-                        StatTile(
-                          value: '${state.actionRequiredCount}',
-                          label: 'Needs action',
-                          color: AppColors.error,
-                          onTap: () => state.openDocuments(),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 22),
-                    const SectionHeader(title: 'Key Result Areas'),
-                    GridView.count(
-                      crossAxisCount: 2,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      mainAxisSpacing: 10,
-                      crossAxisSpacing: 10,
-                      childAspectRatio: 0.82,
-                      children: [
-                        for (final kra in dash.kraScores)
-                          KraCard(
-                            score: kra,
-                            compact: true,
-                            onTap: () {
-                              Navigator.pushNamed(
-                                context,
-                                AppRoutes.kraDetails,
-                                arguments: kra.type,
-                              );
-                            },
+                SliverToBoxAdapter(
+                  child: _Header(faculty: faculty, unread: unread),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                  sliver: SliverList.list(
+                    children: [
+                      _SimulationSummary(simulation: dash.simulation),
+                      const SizedBox(height: 12),
+                      const PreparationPeriodCard(compact: true),
+                      const SizedBox(height: 12),
+                      const AssignedReviewerCard(compact: true),
+                      const SizedBox(height: 12),
+                      _ProgressOverview(dash: dash),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          StatTile(
+                            value: '${state.validatedCount}',
+                            label: 'Validated',
+                            color: AppColors.success,
+                            onTap: () => state.openDocuments(),
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    PrimaryButton(
-                      label: 'View Assessment',
-                      icon: Icons.insights_outlined,
-                      onPressed: () {
-                        state.openAssessment();
-                        Navigator.pushNamed(context, AppRoutes.assessment);
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    SecondaryButton(
-                      label: 'Monitor compliance',
-                      icon: Icons.fact_check_outlined,
-                      onPressed: () {
-                        state.openAssessment(innerTab: 1);
-                        Navigator.pushNamed(context, AppRoutes.assessment);
-                      },
-                    ),
-                    const SizedBox(height: 22),
-                    SectionHeader(
-                      title: 'Recent document activity',
-                      actionLabel: 'See all',
-                      onAction: state.openDocuments,
-                    ),
-                    ...dash.recentActivity.map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _ActivityTile(item: item),
+                          const SizedBox(width: 8),
+                          StatTile(
+                            value: '${state.pendingCount}',
+                            label: 'Pending review',
+                            color: AppColors.warning,
+                            onTap: () => state.openDocuments(),
+                          ),
+                          const SizedBox(width: 8),
+                          StatTile(
+                            value: '${state.actionRequiredCount}',
+                            label: 'Needs action',
+                            color: AppColors.error,
+                            onTap: () => state.openDocuments(),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    SectionHeader(
-                      title: 'Recent reviewer feedback',
-                      actionLabel: 'Documents',
-                      onAction: state.openDocuments,
-                    ),
-                    ...dash.recentFeedback.map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _FeedbackTile(item: item),
+                      const SizedBox(height: 22),
+                      KraDashboardSection(kraScores: dash.kraScores),
+                      const SizedBox(height: 14),
+                      PrimaryButton(
+                        label: 'View Assessment',
+                        icon: Icons.insights_outlined,
+                        onPressed: () {
+                          state.openAssessment();
+                          Navigator.pushNamed(context, AppRoutes.assessment);
+                        },
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    SectionHeader(
-                      title: 'Notifications',
-                      actionLabel: 'Open',
-                      onAction: state.openNotifications,
-                    ),
-                    if (state.notifications.isEmpty)
-                      const InfoBanner(
-                        message: 'You have no notifications right now.',
-                      )
-                    else
-                      ...state.notifications.take(3).map(
-                            (n) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                onTap: state.openNotifications,
-                                tileColor: AppColors.surface,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  side: const BorderSide(color: AppColors.divider),
-                                ),
-                                leading: Icon(n.kind.icon, color: AppColors.navy),
-                                title: Text(
-                                  n.title,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13,
+                      const SizedBox(height: 10),
+                      SecondaryButton(
+                        label: 'Monitor compliance',
+                        icon: Icons.fact_check_outlined,
+                        onPressed: () {
+                          state.openAssessment(innerTab: 1);
+                          Navigator.pushNamed(context, AppRoutes.assessment);
+                        },
+                      ),
+                      const SizedBox(height: 22),
+                      SectionHeader(
+                        title: 'Recent document activity',
+                        actionLabel: 'See all',
+                        onAction: state.openDocuments,
+                      ),
+                      ...dash.recentActivity.map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _ActivityTile(item: item),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SectionHeader(
+                        title: 'Recent reviewer feedback',
+                        actionLabel: 'Documents',
+                        onAction: state.openDocuments,
+                      ),
+                      ...dash.recentFeedback.map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _FeedbackTile(item: item),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SectionHeader(
+                        title: 'Notifications',
+                        actionLabel: 'Open',
+                        onAction: state.openNotifications,
+                      ),
+                      if (state.notifications.isEmpty)
+                        const InfoBanner(
+                          message: 'You have no notifications right now.',
+                        )
+                      else
+                        ...state.notifications
+                            .take(3)
+                            .map(
+                              (n) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: ListTile(
+                                  onTap: state.openNotifications,
+                                  tileColor: AppColors.surface,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    side: const BorderSide(
+                                      color: AppColors.divider,
+                                    ),
                                   ),
+                                  leading: Icon(
+                                    n.kind.icon,
+                                    color: AppColors.navy,
+                                  ),
+                                  title: Text(
+                                    n.title,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    n.message,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  trailing:
+                                      n.visualState ==
+                                          NotificationVisualState.read
+                                      ? null
+                                      : const Icon(
+                                          Icons.circle,
+                                          size: 8,
+                                          color: AppColors.navy,
+                                        ),
                                 ),
-                                subtitle: Text(
-                                  n.message,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                trailing: n.visualState ==
-                                        NotificationVisualState.read
-                                    ? null
-                                    : const Icon(
-                                        Icons.circle,
-                                        size: 8,
-                                        color: AppColors.navy,
-                                      ),
                               ),
                             ),
-                          ),
-                    const SizedBox(height: 8),
-                    PrimaryButton(
-                      label: 'Simulate Rank Upgrade',
-                      icon: Icons.trending_up_rounded,
-                      onPressed: state.openSimulation,
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      PrimaryButton(
+                        label: 'Simulate Rank Upgrade',
+                        icon: Icons.trending_up_rounded,
+                        onPressed: state.openSimulation,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
             ),
           ),
         );
@@ -222,11 +211,7 @@ class _Header extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              AppColors.navyDark,
-              AppColors.navy,
-              Color(0xFF0A4A6E),
-            ],
+            colors: [AppColors.navyDark, AppColors.navy, Color(0xFF0A4A6E)],
           ),
         ),
         child: Padding(
@@ -263,10 +248,7 @@ class _Header extends StatelessWidget {
                   InkWell(
                     onTap: AppState.instance.openProfile,
                     customBorder: const CircleBorder(),
-                    child: FacultyAvatar(
-                      name: faculty.fullName,
-                      size: 36,
-                    ),
+                    child: FacultyAvatar(name: faculty.fullName, size: 36),
                   ),
                 ],
               ),
@@ -355,11 +337,7 @@ class _HeaderIconButton extends StatelessWidget {
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onPressed,
-          child: SizedBox(
-            width: 38,
-            height: 38,
-            child: Center(child: child),
-          ),
+          child: SizedBox(width: 38, height: 38, child: Center(child: child)),
         ),
       ),
     );
@@ -367,10 +345,7 @@ class _HeaderIconButton extends StatelessWidget {
 }
 
 class _HeaderChip extends StatelessWidget {
-  const _HeaderChip({
-    required this.icon,
-    required this.label,
-  });
+  const _HeaderChip({required this.icon, required this.label});
 
   final IconData icon;
   final String label;
@@ -461,7 +436,10 @@ class _ProgressOverview extends StatelessWidget {
                   const SizedBox(height: 4),
                   const Text(
                     'Preview scores only. Official evaluation is separate.',
-                    style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textTertiary,
+                    ),
                   ),
                 ],
               ),

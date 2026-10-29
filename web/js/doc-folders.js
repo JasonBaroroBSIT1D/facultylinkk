@@ -6,11 +6,12 @@ window.FL = window.FL || {};
 FL.docFolders = {
   statusBadge: function (status) {
     const map = {
-      draft: ["pending", "Draft"],
       "pending-review": ["pending", "Pending review"],
       "reviewer-required": ["pending", "Reviewer required"],
       revision: ["warn", "Needs revision"],
       approved: ["valid", "Approved"],
+      "simulation-auto-accepted": ["valid", "Auto-accepted for simulation"],
+      "simulation-reviewer-validated": ["valid", "Reviewer-validated for simulation"],
       rejected: ["invalid", "Rejected"],
       invalid: ["invalid", "Invalid"]
     };
@@ -24,9 +25,9 @@ FL.docFolders = {
   },
 
   _counts: function (rows) {
-    const out = { total: rows.length, pending: 0, approved: 0, revision: 0, rejected: 0, draft: 0 };
+    const out = { total: rows.length, pending: 0, approved: 0, revision: 0, rejected: 0 };
     rows.forEach(function (doc) {
-      if (doc.status === "draft") out.draft += 1;
+      if (doc.status === "draft" && doc.hasFile !== false) out.pending += 1;
       else if (doc.status === "approved" || doc.status === "system-approved") out.approved += 1;
       else if (doc.status === "revision") out.revision += 1;
       else if (doc.status === "rejected") out.rejected += 1;
@@ -92,7 +93,6 @@ FL.docFolders = {
             ${queueOnly ? "" : `<label class="filter"><span>Status</span>
               <select id="doc-folder-status">
                 <option value="">All statuses</option>
-                <option value="draft">Draft</option>
                 <option value="pending-review">Pending review</option>
                 <option value="revision">Needs revision</option>
                 <option value="approved">Approved</option>

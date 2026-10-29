@@ -38,7 +38,7 @@ JWT: `Authorization: Bearer <accessToken>`. Role checks enforced **on the server
 | Faculty | list, create, delete, assign reviewer, send credentials | `GET/POST/DELETE /api/admin/faculty`, `POST .../reviewer`, `POST .../credentials` |
 | Reviewers | list, create, delete, credentials | `GET/POST/DELETE /api/admin/reviewers`, `POST .../credentials` |
 | Documents | monitor all | `GET /api/admin/documents`, `GET /api/admin/documents/:id` |
-| KRA configuration | publish weights/rules | `GET/PUT /api/admin/kra-configuration`, `GET/PATCH /api/admin/scoring-rules` |
+| KRA configuration | draft, validate, publish | `GET/PUT /api/admin/kra-configuration/draft`, `POST .../validate-publish`, `POST .../publish`, `GET .../published`, `GET .../versions` |
 | Evaluation schedule | CRUD periods | `GET/PUT /api/admin/evaluation-periods` |
 | Reports | analytics | `GET /api/admin/reports` |
 | Notifications | list, mark read | `GET/PATCH /api/notifications` |
@@ -76,7 +76,7 @@ Reviewers **must only** receive faculty/documents where `faculty_profiles.review
 Upload flow (Phase 7–8):
 
 1. `POST /api/faculty/documents` (multipart) → store file + metadata  
-2. Background/process: OCR + classification → update `documents.ocr_status`, `extracted_info`  
+2. Background/process: Tesseract OCR / PDF text → update `documents.ocr_status`, `extracted_text`, `extracted_info` (see `backend/docs/OCR.md`)  
 3. Reviewer web lists document → `POST review`  
 4. Faculty polls or refresh → updated `status`, `reviewer_remarks`, `verified_points`
 
@@ -89,7 +89,42 @@ Upload flow (Phase 7–8):
 | Configurable rules | `kra_scoring_rules`, `kra_configuration` | Admin-managed; no invented official point tables in code without validation |
 | Estimated (self-assessment) | `kra_scores.estimated_points`, `documents.estimated_points` | Faculty-facing |
 | Verified (reviewer) | `kra_scores.verified_points`, `documents.verified_points` | After review |
-| Rank simulation | `rank_simulations` | Separate estimated vs verified totals; preparatory only |
+| Rank simulation | `rank_simulations` (legacy row) + **dynamic engine** | Faculty dashboard and `GET /api/faculty/me/rank-simulation` compute from PostgreSQL evidence and published KRA config; separate validated vs provisional; preparatory only |
+
+### Faculty rank simulation (dynamic)
+
+`GET /api/faculty/me/rank-simulation` (JWT faculty, `Cache-Control: no-store`)
+
+Response shape:
+
+```json
+{
+  "simulation": {
+    "currentRank": "Instructor I",
+    "targetRank": "Instructor II",
+    "nextPossibleRank": "Instructor II",
+    "eligibilityStatus": "provisionally_on_track | eligible_validated | under_assessment | additional_requirements | rules_unavailable",
+    "eligibilityLabel": "human-readable",
+    "validatedKraPoints": 0,
+    "provisionalKraPoints": 18.5,
+    "weightedValidatedScore": null,
+    "weightedProvisionalScore": 11.1,
+    "requiredWeightedScore": null,
+    "progressPercent": null,
+    "progressLabel": "Assessment incomplete | …",
+    "teachingEffectiveness": { "combinedProvisionalPoints", "combinedValidatedPoints", "set", "sef" },
+    "kraScores": [ { "kraId", "label", "assessed", "validatedPoints", "provisionalPoints", "statusLabel", … } ],
+    "missingRequirements": [ { "id", "category", "text" } ],
+    "areasToImprove": [ { "kraId", "recommendedPoints", "guidance" } ],
+    "configurationComplete": true,
+    "isDynamic": true
+  }
+}
+```
+
+Dashboard `simulation` uses the same engine via `simulation_for_mobile()` (subset of fields plus `teachingEffectivenessScore`).
+
+Optional published Admin JSON key: `rankUpgradeThresholds` → map of rank name → `{ "requiredWeightedScore": number }` for progress %; if absent, progress stays “Assessment incomplete”.
 
 ---
 

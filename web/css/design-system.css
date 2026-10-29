@@ -1,37 +1,50 @@
 /*
-  FacultyLink design tokens — capstone frontend theme.
-  Import before site.css / main.css component rules.
+  FacultyLink design tokens — shared Admin & Reviewer portals.
 */
 :root {
   --fl-primary: #102a43;
-  --fl-secondary: #2563eb;
-  --fl-accent: #06b6d4;
-  --fl-background: #f8fafc;
+  --fl-primary-2: #183b56;
+  --fl-accent: #0d9488;
+  --fl-accent-soft: rgba(13, 148, 136, 0.12);
+  --fl-background: #f5f7fa;
   --fl-surface: #ffffff;
+  --fl-ink: #172b4d;
+  --fl-muted: #64748b;
+  --fl-border: #e2e8f0;
   --fl-success: #059669;
   --fl-warning: #d97706;
   --fl-error: #dc2626;
+  --fl-info: #2563eb;
 
-  /* Map legacy public-site variables */
-  --fl-navy-950: #0a1628;
-  --fl-navy-900: var(--fl-primary);
-  --fl-navy-800: #1e3a5f;
-  --fl-navy-700: #243b53;
-  --fl-blue: var(--fl-secondary);
-  --fl-cyan: var(--fl-accent);
-  --fl-cyan-strong: #0891b2;
-  --fl-cyan-deep: #0e7490;
-  --fl-paper: var(--fl-background);
+  --fl-radius-sm: 8px;
+  --fl-radius-md: 12px;
+  --fl-radius-lg: 16px;
+  --fl-shadow-sm: 0 1px 2px rgba(16, 42, 67, 0.06);
+  --fl-shadow-md: 0 4px 14px rgba(16, 42, 67, 0.08);
+  --fl-space-1: 4px;
+  --fl-space-2: 8px;
+  --fl-space-3: 12px;
+  --fl-space-4: 16px;
+  --fl-space-5: 20px;
+  --fl-font-sans: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
 
-  /* Map legacy portal variables */
+  /* Legacy portal aliases */
   --navy: var(--fl-primary);
-  --navy-2: #1e3a5f;
+  --navy-2: var(--fl-primary-2);
   --paper: var(--fl-background);
   --card: var(--fl-surface);
-  --teal: var(--fl-secondary);
-  --teal-2: #1d4ed8;
+  --ink: var(--fl-ink);
+  --muted: var(--fl-muted);
+  --line: var(--fl-border);
+  --teal: var(--fl-accent);
+  --teal-2: #0f766e;
+  --info: var(--fl-info);
+  --info-bg: #eff6ff;
   --ok: var(--fl-success);
+  --ok-bg: #ecfdf5;
   --warn: var(--fl-warning);
+  --warn-bg: #fffbeb;
   --bad: var(--fl-error);
-  --info: var(--fl-secondary);
+  --bad-bg: #fef2f2;
+  --shadow: var(--fl-shadow-md);
 }

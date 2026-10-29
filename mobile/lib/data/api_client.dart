@@ -6,6 +6,7 @@ import 'api_config.dart';
 import 'api_http.dart';
 import 'app_auth_exception.dart';
 import 'token_storage.dart';
+import 'upload_mime.dart';
 
 class ApiClient {
   ApiClient({http.Client? httpClient, TokenStorage? tokenStorage})
@@ -48,6 +49,24 @@ class ApiClient {
 
   Future<Map<String, dynamic>> fetchFacultyDashboard() async {
     return _getJson('/api/faculty/me/dashboard', authenticated: true, allowRefresh: true);
+  }
+
+  /// Backend SET/SEF aggregation and Criterion A summary (published Admin config).
+  Future<Map<String, dynamic>> fetchTeachingEffectiveness() async {
+    return _getJson(
+      '/api/faculty/me/teaching-effectiveness',
+      authenticated: true,
+      allowRefresh: true,
+    );
+  }
+
+  /// Dynamic rank-upgrade simulation (PostgreSQL + published scoring).
+  Future<Map<String, dynamic>> fetchRankSimulation() async {
+    return _getJson(
+      '/api/faculty/me/rank-simulation',
+      authenticated: true,
+      allowRefresh: true,
+    );
   }
 
   Future<Map<String, dynamic>> fetchMyAssignedReviewer() async {
@@ -96,6 +115,7 @@ class ApiClient {
           'file',
           fileBytes,
           filename: fileName,
+          contentType: mediaTypeForUploadFileName(fileName),
         ),
       );
       final streamed = await apiSend(_http, request);
@@ -113,6 +133,14 @@ class ApiClient {
     final doc = data['document'];
     if (doc is Map<String, dynamic>) return doc;
     return data;
+  }
+
+  Future<Map<String, dynamic>> fetchFacultyDocument(String documentId) async {
+    return _getJson(
+      '/api/faculty/me/documents/$documentId',
+      authenticated: true,
+      allowRefresh: true,
+    );
   }
 
   Future<Map<String, dynamic>> submitFacultyDocument(String documentId) async {

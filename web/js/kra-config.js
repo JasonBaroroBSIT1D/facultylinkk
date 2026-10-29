@@ -1,7 +1,6 @@
 /**
  * Shared Administrator / Reviewer KRA configuration UI.
  * Renders official rules from FL.rules (DBM–CHED JC No. 01, s. 2026 — Annex A).
- * Score overrides persist via mock API / localStorage until PostgreSQL integration exists.
  */
 window.FL = window.FL || {};
 
@@ -13,12 +12,6 @@ FL.kraConfig = {
     kra4: "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M20 6h-4V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4c-1.1 0-2 .9-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2zM10 4h4v2h-4V4zm6 14H8v-2h8v2z\"/></svg>"
   },
 
-  persistenceNote: function () {
-    return "Official criteria and evidence come from " + FL.rules.annex + " in rules.js. "
-      + "Saved point overrides are stored in this browser via the demo API (localStorage), not in PostgreSQL "
-      + "kra_configuration until a Flask admin endpoint is connected.";
-  },
-
   configStatusLabel: function (editable) {
     if (!editable) return { kind: "valid", text: "Published reference" };
     const saved = FL.store && FL.store.kraSettings ? FL.store.kraSettings : {};
@@ -27,7 +20,7 @@ FL.kraConfig = {
       || !!(saved.indicators && Object.keys(saved.indicators).length)
       || !!(saved.indicatorMeta && Object.keys(saved.indicatorMeta).length);
     return hasOverrides
-      ? { kind: "pending", text: "Custom scores saved locally" }
+      ? { kind: "pending", text: "Custom scores saved" }
       : { kind: "valid", text: "Official Annex A defaults" };
   },
 
@@ -133,9 +126,9 @@ FL.kraConfig = {
           <button type="button" class="btn btn-ghost btn-small" data-kra-detail-close aria-label="Close">Close</button>
         </header>
         <div class="kra-detail-body">
-          <p class="kra-detail-note">${editable
-            ? "Edits apply to this institution's saved KRA configuration (local demo storage). Official Annex A defaults remain in rules.js until restored."
-            : "Read-only reference from the published KRA configuration."}</p>
+          ${editable
+            ? ""
+            : "<p class=\"kra-detail-note\">Read-only reference from the published KRA configuration.</p>"}
           <div class="kra-detail-grid">
             <section class="kra-detail-card">
               <h3><span class="kra-detail-icon" aria-hidden="true">BI</span> Basic information</h3>
@@ -331,6 +324,27 @@ FL.kraConfig = {
 
   mount: function (page, session, view) {
     const editable = !(view && view.readonly);
+    const begin = function () {
+      FL.kraConfig._mountReady(page, session, view, editable);
+    };
+    if (editable && FL.store.usesRealAdminApi()) {
+      page.innerHTML = FL.ui.loading("Loading KRA configuration…");
+      FL.store.loadKraConfigurationDraft().then(begin).catch(function (err) {
+        page.innerHTML = FL.ui.empty("Configuration unavailable", err.message || "Could not load draft.");
+      });
+      return;
+    }
+    if (!editable && FL.store.usesLiveReviewerApi()) {
+      page.innerHTML = FL.ui.loading("Loading published scoring reference…");
+      FL.store.loadPublishedKraConfiguration().then(begin).catch(function () {
+        begin();
+      });
+      return;
+    }
+    begin();
+  },
+
+  _mountReady: function (page, session, view, editable) {
     const draft = FL.rules.scoreDraft();
     let activeKra = FL.rules.kras[0].id;
     const openCriteria = {};
@@ -343,6 +357,34 @@ FL.kraConfig = {
 
     if (FL.rules.kras[0].criteria[0]) openCriteria[FL.rules.kras[0].criteria[0].id] = true;
 
+    const draftMeta = (FL.store.kraConfigurationDraft && FL.store.kraConfigurationDraft.metadata) || {};
+    FL.store.kraConfigurationDraftMetadata = draftMeta;
+
+    const paintPublishBanner = function () {
+      const el = document.getElementById("kra-publish-banner");
+      if (!el) return;
+      const summary = FL.store.kraConfigurationPublishedSummary;
+      const published = FL.store.kraConfigurationPublished;
+      const src = summary || (published && {
+        version: published.metadata && published.metadata.version,
+        publishedAt: published.publishedAt,
+        effectiveFrom: published.metadata && published.metadata.effectiveFrom,
+        setSefFormulaVerified: published.metadata && published.metadata.setSefScoring
+          && published.metadata.setSefScoring.officialFormulaVerified
+      });
+      if (!src) {
+        el.textContent = editable
+          ? "No configuration is published yet. Save a draft, then publish with an effective date. SET/SEF points use the verified JC 01 s. 2026 method when publish validation passes."
+          : "No published configuration in the database. Displaying Annex A reference defaults from the application rules.";
+        return;
+      }
+      el.textContent = "Published v" + (src.version != null ? src.version : "—")
+        + (src.effectiveFrom ? " · effective " + src.effectiveFrom : "")
+        + (src.publishedAt ? " · published " + FL.formatDocStamp(src.publishedAt) : "")
+        + (src.setSefFormulaVerified === false ? " · SET/SEF official scoring inactive on this version" : "");
+    };
+    paintPublishBanner();
+
     const status = FL.kraConfig.configStatusLabel(editable);
 
     page.innerHTML = `
@@ -352,13 +394,6 @@ FL.kraConfig = {
         ${editable ? "<p class=\"lede\">Review and adjust Annex A point values used by FacultyLink scoring. Criteria, indicators, and evidence text remain official.</p>"
           : "<p class=\"lede\">These are the scores published from KRA Configuration. Reviewers can read them and cannot change them.</p>"}
       </div></div>
-      <div class="kra-persist-note callout">${FL.esc(FL.kraConfig.persistenceNote())}</div>
-      <details class="callout kra-source"><summary>Rule source</summary>
-        <p>${editable
-          ? "Scores start from " + FL.esc(FL.rules.annex) + " and can be changed here. Saved scores are what FacultyLink uses. " + FL.esc(FL.scoring.formula)
-          : "Published from " + FL.esc(FL.rules.annex) + ". " + FL.esc(FL.scoring.formula)}</p>
-        <p>${FL.rules.globalConditions.map(FL.esc).join(" ")}</p>
-      </details>
       <div class="kra-config-shell">
         <div class="kra-toolbar-sticky">
           <label class="search kra-search"><span class="sr-only">Search rules</span>
@@ -367,10 +402,14 @@ FL.kraConfig = {
           <div id="kra-search-results" class="kra-search-results" hidden></div>
           ${editable ? `
             <div class="kra-action-bar">
-              <button class="btn btn-primary" id="save-scores" type="button">Save scores</button>
+              <button class="btn btn-primary" id="save-scores" type="button">Save draft</button>
+              <button class="btn btn-ghost" id="publish-scores" type="button">Publish configuration</button>
+              <button class="btn btn-ghost" id="kra-history" type="button">Version history</button>
               <button class="btn btn-ghost" id="reset-scores" type="button">Restore official scores</button>
               <span id="kra-unsaved" class="kra-unsaved" hidden>Unsaved changes</span>
-            </div>` : ""}
+            </div>
+            <p id="kra-publish-banner" class="note kra-publish-banner"></p>` : `
+            <p id="kra-publish-banner" class="note kra-publish-banner"></p>`}
           <div id="kra-nav" class="kra-nav" role="tablist" aria-label="Key Result Areas"></div>
         </div>
         <p id="score-error" class="form-error" hidden></p>
@@ -795,6 +834,120 @@ FL.kraConfig = {
       return;
     }
 
+    const publishValidationHtml = function (assessment) {
+      const summary = assessment && assessment.summary;
+      const checks = (assessment && assessment.checks) || [];
+      const summaryBlock = summary
+        ? "<div class=\"kra-publish-summary card-inset\">"
+          + "<p><strong>Guideline:</strong> " + FL.esc(summary.guidelineLabel || "") + "</p>"
+          + "<p><strong>SET/SEF method:</strong> " + FL.esc(summary.scoringMethodLabel || "") + "</p>"
+          + "<p class=\"sub\">" + FL.esc(summary.section10Note || "") + "</p>"
+          + "</div>"
+        : "";
+      const list = checks.length
+        ? "<ul class=\"kra-publish-checks\">" + checks.map(function (row) {
+          const mark = row.ok ? "✓" : "✗";
+          const cls = row.ok ? "is-ok" : "is-fail";
+          return "<li class=\"" + cls + "\"><span aria-hidden=\"true\">" + mark + "</span> " + FL.esc(row.message || "") + "</li>";
+        }).join("") + "</ul>"
+        : "<p class=\"sub\">Validation results will appear here.</p>";
+      return summaryBlock + list;
+    };
+
+    const runPublishValidation = function (effectiveFrom, slotId) {
+      const slot = document.getElementById(slotId);
+      if (slot) slot.innerHTML = FL.ui.loading("Checking configuration…");
+      return FL.store.validateKraPublish({ effectiveFrom: effectiveFrom }).then(function (assessment) {
+        if (slot) slot.innerHTML = publishValidationHtml(assessment);
+        const confirmBtn = document.querySelector("#modal-root [data-modal='confirm']");
+        if (confirmBtn) confirmBtn.disabled = !(assessment && assessment.ready);
+        return assessment;
+      }).catch(function (err) {
+        if (slot) slot.innerHTML = "<p class=\"form-error\">" + FL.esc(err.message || "Validation failed.") + "</p>";
+        return { ready: false };
+      });
+    };
+
+    document.getElementById("publish-scores").addEventListener("click", function () {
+      const settings = numericDraft();
+      if (!settings) {
+        showError("Enter scores from 0 through 10000.");
+        return;
+      }
+      showError("");
+      const defaultEff = draftMeta.effectiveFrom || "2023-08-01";
+      const draftMetaForSave = Object.assign({}, draftMeta, {
+        evaluationCoverage: draftMeta.evaluationCoverage || {
+          standardRequiredSemesters: 6,
+          description: "Three academic years, two semesters each (JC 01 s. 2026)."
+        }
+      });
+      const openPublishModal = function () {
+        FL.ui.modal({
+          title: "Publish Official Scoring Configuration",
+          body: "<p>Publishing creates a new version in PostgreSQL. Draft saves do not affect Reviewer or Faculty calculations until you publish.</p>"
+            + "<label class=\"field\"><span>Effective date</span><input id=\"pub-effective\" type=\"date\" value=\"" + FL.esc(defaultEff) + "\"></label>"
+            + "<div id=\"pub-validation-slot\">" + FL.ui.loading("Checking configuration…") + "</div>",
+          confirmLabel: "Publish",
+          onConfirm: function () {
+            const effectiveFrom = (document.getElementById("pub-effective").value || "").trim();
+            if (!effectiveFrom) {
+              FL.ui.toast("Effective date is required.", "danger");
+              return false;
+            }
+            return FL.store.publishKraConfiguration({
+              effectiveFrom: effectiveFrom,
+              metadata: { effectiveFrom: effectiveFrom }
+            }).then(function () {
+              FL.ui.toast("Configuration published.", "ok");
+              paintPublishBanner();
+              return FL.store.loadKraConfigurationDraft();
+            }).then(function () {
+              paintPublishBanner();
+              return true;
+            }).catch(function (err) {
+              FL.ui.toast(err.message || "Publish failed.", "danger");
+              return false;
+            });
+          }
+        });
+        const confirmBtn = document.querySelector("#modal-root [data-modal='confirm']");
+        if (confirmBtn) confirmBtn.disabled = true;
+        const effInput = document.getElementById("pub-effective");
+        const revalidate = function () {
+          const eff = (effInput && effInput.value || "").trim();
+          runPublishValidation(eff, "pub-validation-slot");
+        };
+        if (effInput) {
+          effInput.addEventListener("change", revalidate);
+          effInput.addEventListener("input", revalidate);
+        }
+        revalidate();
+      };
+      FL.store.saveKraSettings(settings, draftMetaForSave).then(openPublishModal).catch(function (err) {
+        showError(err.message || "Save the draft before publishing.");
+      });
+    });
+
+    document.getElementById("kra-history").addEventListener("click", function () {
+      FL.store.loadKraConfigurationVersions().then(function (data) {
+        const rows = data.versions || [];
+        const body = rows.length
+          ? "<div class=\"table-wrap\"><table class=\"data\"><thead><tr><th>Version</th><th>Status</th><th>Effective</th><th>Published</th><th>SET/SEF verified</th></tr></thead><tbody>"
+            + rows.map(function (row) {
+              return "<tr><td>" + FL.esc(String(row.version != null ? row.version : "—")) + "</td>"
+                + "<td>" + FL.esc(row.status) + "</td>"
+                + "<td>" + FL.esc(row.effectiveFrom || "—") + "</td>"
+                + "<td>" + FL.esc(row.publishedAt ? FL.formatDocStamp(row.publishedAt) : "—") + "</td>"
+                + "<td>" + (row.setSefFormulaVerified ? "Yes" : "No") + "</td></tr>";
+            }).join("") + "</tbody></table></div>"
+          : "<p>No published versions yet.</p>";
+        FL.ui.modal({ title: "Configuration history", body: body, confirmLabel: "Close", onConfirm: function () { return true; } });
+      }).catch(function (err) {
+        FL.ui.toast(err.message || "Could not load history.", "danger");
+      });
+    });
+
     document.getElementById("save-scores").addEventListener("click", function () {
       const settings = numericDraft();
       if (!settings) {
@@ -821,7 +974,7 @@ FL.kraConfig = {
         button.disabled = false;
         button.removeAttribute("aria-busy");
         button.textContent = idle;
-        FL.ui.toast("Scores saved to local configuration.", "ok");
+        FL.ui.toast("Draft saved to PostgreSQL.", "ok");
         draw();
       }).catch(function (error) {
         button.disabled = false;
@@ -834,7 +987,7 @@ FL.kraConfig = {
     document.getElementById("reset-scores").addEventListener("click", function () {
       FL.ui.modal({
         title: "Restore official scores",
-        body: "<p>This replaces saved score overrides and locally edited indicator text with the official DBM–CHED Joint Circular No. 01, s. 2026 Annex A values in rules.js.</p><p>Official criteria structure and contribution rules are unchanged.</p>",
+        body: "<p>This restores official Annex A point values and removes saved score overrides and edited indicator text.</p><p>Criteria structure and contribution rules are unchanged.</p>",
         confirmLabel: "Restore official scores",
         onConfirm: function () {
           return FL.store.saveKraSettings({ kras: {}, criteria: {}, indicators: {}, indicatorMeta: {} }).then(function () {

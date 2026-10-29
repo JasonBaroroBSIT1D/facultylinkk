@@ -26,7 +26,8 @@ FL.validation = {
   },
 
   effectiveAuthor: function (document) {
-    const fromInfo = FL.validation.infoValue(document, "Extracted names")
+    const fromInfo = FL.validation.infoValue(document, "Faculty name")
+      || FL.validation.infoValue(document, "Extracted names")
       || FL.validation.infoValue(document, "Extracted author(s)");
     if (fromInfo) return fromInfo;
     const authors = document.ocr && Array.isArray(document.ocr.authors) ? document.ocr.authors.filter(Boolean) : [];
@@ -34,8 +35,11 @@ FL.validation = {
   },
 
   effectiveDate: function (document) {
+    const year = FL.validation.infoValue(document, "Academic year");
+    const semester = FL.validation.infoValue(document, "Semester");
+    if (year && semester) return year + " · " + semester;
     return FL.validation.infoValue(document, "Extracted date")
-      || FL.validation.infoValue(document, "Academic year")
+      || year
       || (document.ocr && document.ocr.date ? String(document.ocr.date).trim() : "");
   },
 

@@ -31,6 +31,7 @@ class AppState extends ChangeNotifier {
   RankSimulation? _simulation;
   List<RequirementItem>? _requirements;
   PreparationPeriod? _preparationPeriod;
+  Map<String, dynamic>? _teachingEffectiveness;
 
   bool isSignedIn = false;
   bool mustChangePassword = false;
@@ -84,8 +85,10 @@ class AppState extends ChangeNotifier {
     return _preparationPeriod ?? FacultySessionDefaults.preparationPeriod;
   }
 
-  Map<String, dynamic>? get criterionA =>
-      _useMockAuthForTests ? MockData.criterionASample : null;
+  Map<String, dynamic>? get criterionA {
+    if (_useMockAuthForTests) return MockData.criterionASample;
+    return _teachingEffectiveness;
+  }
 
   bool get profileLoaded => _profileLoaded;
   bool _profileLoaded = false;
@@ -393,7 +396,45 @@ class AppState extends ChangeNotifier {
     if (!skipProtectedApis) {
       await fetchAssignedReviewer(quiet: true);
       await fetchDocumentsFromApi(quiet: true);
+      await fetchTeachingEffectivenessFromApi(quiet: true);
+      await refreshRankSimulationFromApi(quiet: true);
     }
+  }
+
+  Future<void> fetchTeachingEffectivenessFromApi({bool quiet = false}) async {
+    if (_useMockAuthForTests || !isSignedIn) return;
+    try {
+      _teachingEffectiveness = await _api.fetchTeachingEffectiveness();
+    } catch (_) {
+      _teachingEffectiveness = null;
+      if (!quiet) rethrow;
+    }
+    notifyListeners();
+  }
+
+  Future<void> refreshRankSimulationFromApi({bool quiet = false}) async {
+    if (_useMockAuthForTests || !isSignedIn) return;
+    try {
+      final data = await _api.fetchRankSimulation();
+      _simulation = FacultyApiMapper.simulationFromFullPayload(data);
+      final kraRaw = data['simulation'];
+      if (kraRaw is Map<String, dynamic>) {
+        final scores = kraRaw['kraScores'];
+        if (scores is List) {
+          _kraScores = scores
+              .whereType<Map>()
+              .map((e) => KraScore.fromApi(Map<String, dynamic>.from(e)))
+              .toList();
+        }
+        final te = kraRaw['teachingEffectiveness'];
+        if (te is Map<String, dynamic>) {
+          _teachingEffectiveness = Map<String, dynamic>.from(te);
+        }
+      }
+    } catch (_) {
+      if (!quiet) rethrow;
+    }
+    notifyListeners();
   }
 
   void _clearLiveSessionData() {
@@ -405,6 +446,7 @@ class AppState extends ChangeNotifier {
     _simulation = null;
     _requirements = null;
     _preparationPeriod = null;
+    _teachingEffectiveness = null;
     assignedReviewer = null;
     assignedReviewerError = null;
     assignedReviewerLoading = false;
@@ -552,6 +594,8 @@ class AppState extends ChangeNotifier {
         final doc = FacultyDocument.fromApi(saved);
         localDocumentBytes[doc.id] = Uint8List.fromList(fileBytes);
         addSubmittedDocument(doc);
+        await fetchTeachingEffectivenessFromApi(quiet: true);
+        await refreshRankSimulationFromApi(quiet: true);
         return doc.id;
       }
       await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -566,7 +610,7 @@ class AppState extends ChangeNotifier {
           category: category,
           kra: kra,
           submittedAt: DateTime.now(),
-          status: DocumentStatus.draft,
+          status: DocumentStatus.pendingReview,
           points: 0,
           fileName: fileName,
           criterionId: criterionId,
@@ -579,24 +623,6 @@ class AppState extends ChangeNotifier {
       );
       return packageId ?? 'pkg-sim-${DateTime.now().millisecondsSinceEpoch}';
     });
-  }
-
-  Future<FacultyDocument?> submitDocumentForReview(String documentId) async {
-    if (_useMockAuthForTests || !isSignedIn) return null;
-    final data = await _api.submitFacultyDocument(documentId);
-    final row = data['document'] ?? data;
-    if (row is! Map<String, dynamic>) return null;
-    final updated = FacultyDocument.fromApi(row);
-    final index = documents.indexWhere((d) => d.id == documentId);
-    if (index >= 0) {
-      documents = [
-        ...documents.sublist(0, index),
-        updated,
-        ...documents.sublist(index + 1),
-      ];
-    }
-    notifyListeners();
-    return updated;
   }
 
   Map<String, String> _simulatedExtraction(String fileName) {

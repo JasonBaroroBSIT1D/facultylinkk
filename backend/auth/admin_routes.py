@@ -288,3 +288,39 @@ def reactivate_account(public_id: str):
         db.session.rollback()
         return jsonify({"message": "Account was not reactivated."}), 500
     return jsonify(result), 200
+
+
+@admin_bp.get("/policies/set-sef-auto-approval")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def get_set_sef_auto_approval_policy():
+    if not _admin_user():
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from documents.set_sef_auto_approval.policy import policy_state_for_api
+
+    return jsonify({"policy": policy_state_for_api()}), 200
+
+
+@admin_bp.put("/policies/set-sef-auto-approval")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def put_set_sef_auto_approval_policy():
+    admin = _admin_user()
+    if not admin:
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from documents.set_sef_auto_approval.policy import set_admin_policy_enabled
+
+    body = _json_body()
+    enabled = body.get("enabled") is True
+    try:
+        state = set_admin_policy_enabled(enabled=enabled, admin_public_id=admin.public_id)
+    except ValueError as error:
+        if str(error) == "policy_toggle_not_allowed":
+            return jsonify(
+                {
+                    "message": (
+                        "SET/SEF simulation auto-accept cannot be enabled until the server "
+                        "allows Admin toggling (SET_SEF_AUTO_APPROVAL_ALLOW_ADMIN_TOGGLE)."
+                    )
+                }
+            ), 403
+        return jsonify({"message": "Policy was not updated."}), 400
+    return jsonify({"policy": state}), 200

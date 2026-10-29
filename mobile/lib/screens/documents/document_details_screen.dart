@@ -2,7 +2,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/app_state.dart';
-import '../../models/enums.dart';
 import '../../models/models.dart';
 import '../../navigation/app_routes.dart';
 import '../../theme/app_colors.dart';
@@ -61,6 +60,11 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
     'Document type',
     'Scoring formula',
   ];
+
+  bool get _isSetSefIndicator {
+    final id = document.indicatorId;
+    return id == 'kra1-a-student' || id == 'kra1-a-supervisor';
+  }
 
   Map<String, String> get _scoringInfo {
     final out = <String, String>{};
@@ -321,6 +325,52 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
               ],
             ),
           ),
+          if (_isSetSefIndicator) ...[
+            const SizedBox(height: 12),
+            _SectionCard(
+              title: 'SET / SEF extraction',
+              child: Column(
+                children: [
+                  _FactRow(
+                    label: 'Indicator verification',
+                    value: document.extractedInfo['Indicator verification status'] ?? '—',
+                  ),
+                  _FactRow(
+                    label: 'Evaluation type',
+                    value: document.extractedInfo['Evaluation type'] ?? '—',
+                  ),
+                  _FactRow(
+                    label: 'Faculty name',
+                    value: document.extractedInfo['Faculty name'] ??
+                        document.extractedInfo['Extracted names'] ??
+                        '—',
+                  ),
+                  _FactRow(
+                    label: 'Academic year',
+                    value: document.extractedInfo['Academic year'] ?? '—',
+                  ),
+                  _FactRow(
+                    label: 'Semester',
+                    value: document.extractedInfo['Semester'] ?? '—',
+                  ),
+                  _FactRow(
+                    label: 'Overall rating',
+                    value: document.extractedInfo['Extracted rating'] ?? '—',
+                  ),
+                  _FactRow(
+                    label: 'Rating scale',
+                    value: document.extractedInfo['Rating scale'] ?? '—',
+                  ),
+                  if (document.extractedInfo['Missing extraction fields']?.isNotEmpty == true)
+                    _FactRow(
+                      label: 'Unresolved fields',
+                      value: document.extractedInfo['Missing extraction fields']!,
+                      last: true,
+                    ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           _SectionCard(
             title: 'Overview',
@@ -367,6 +417,53 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
                   label: 'Credited Points',
                   value: document.creditedLabel,
                 ),
+                _FactRow(
+                  label: 'Text extraction (OCR)',
+                  value: document.ocrStatusLabel,
+                ),
+                if (document.ocrConfidence != null)
+                  _FactRow(
+                    label: 'OCR confidence',
+                    value: '${document.ocrConfidence!.toStringAsFixed(1)}%',
+                  ),
+                if (document.ocrError != null && document.ocrError!.trim().isNotEmpty)
+                  _FactRow(
+                    label: 'OCR note',
+                    value: document.ocrError!,
+                  ),
+                if (document.extractedInfo['OCR excerpt']?.trim().isNotEmpty == true) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Extracted text (preview)',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.navy,
+                          ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceMuted,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(
+                      document.extractedInfo['OCR excerpt']!.length > 1200
+                          ? '${document.extractedInfo['OCR excerpt']!.substring(0, 1200)}…'
+                          : document.extractedInfo['OCR excerpt']!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
                 _FactRow(
                   label: 'File',
                   value: document.hasFile ? 'On file' : 'Unavailable',
@@ -448,24 +545,6 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
                   fontSize: 13,
                 ),
               ),
-            ),
-          ],
-          if (document.status == DocumentStatus.draft) ...[
-            const SizedBox(height: 12),
-            PrimaryButton(
-              label: 'Submit for review',
-              icon: Icons.send_rounded,
-              onPressed: () async {
-                try {
-                  await AppState.instance.submitDocumentForReview(document.id);
-                  if (!context.mounted) return;
-                  showAppSnackBar(context, 'Submitted for reviewer validation.');
-                  Navigator.pop(context);
-                } catch (error) {
-                  if (!context.mounted) return;
-                  showAppSnackBar(context, '$error', error: true);
-                }
-              },
             ),
           ],
           if (document.canResubmit) ...[

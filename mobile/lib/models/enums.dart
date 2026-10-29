@@ -45,6 +45,20 @@ enum KraType {
     }
   }
 
+  /// Compact dashboard module title (detail screens use [label]).
+  String get dashboardModuleTitle {
+    switch (this) {
+      case KraType.instruction:
+        return 'Instruction';
+      case KraType.research:
+        return 'Research & Innovation';
+      case KraType.extension:
+        return 'Extension Services';
+      case KraType.professionalDevelopment:
+        return 'Professional Development';
+    }
+  }
+
   IconData get icon {
     switch (this) {
       case KraType.instruction:

@@ -85,6 +85,7 @@ class FacultyProfile(TimestampMixin, db.Model):
     years_of_service = db.Column(db.Integer, nullable=False, default=0)
     employment_status = db.Column(db.String(40), nullable=False, default="Active")
     reviewer_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), index=True)
+    evaluation_eligibility_json = db.Column(JSON, nullable=True)
 
     user = db.relationship("User", back_populates="faculty_profile", foreign_keys=[user_id])
     reviewer = db.relationship("User", foreign_keys=[reviewer_user_id])
@@ -147,6 +148,24 @@ class Document(TimestampMixin, db.Model):
     faculty_profile = db.relationship("FacultyProfile", back_populates="documents")
     replaces_document = db.relationship("Document", remote_side=[id], foreign_keys=[replaces_document_id])
     reviewer = db.relationship("User", foreign_keys=[reviewer_user_id])
+
+
+class DocumentOcrJob(TimestampMixin, db.Model):
+    """Persistent OCR work queue (recoverable across worker restarts)."""
+
+    __tablename__ = "document_ocr_jobs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey("documents.id"), nullable=False, index=True)
+    status = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    max_attempts = db.Column(db.Integer, nullable=False, default=3)
+    file_hash = db.Column(db.String(64), nullable=False)
+    locked_at = db.Column(db.DateTime(timezone=True))
+    locked_by = db.Column(db.String(64))
+    last_error = db.Column(db.Text)
+
+    document = db.relationship("Document", backref=db.backref("ocr_jobs", lazy="dynamic"))
 
 
 class KraScoringRule(TimestampMixin, db.Model):

@@ -1,0 +1,222 @@
+/*
+  FacultyLink Admin & Reviewer — shared page chrome (Evidence Workspace reference).
+*/
+
+.portal-page,
+.evidence-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fl-space-4);
+  max-width: 1280px;
+  margin: 0 auto;
+  width: 100%;
+  font-family: var(--fl-font-sans);
+}
+
+.portal-page h1,
+.portal-page h2,
+.portal-page h3,
+.portal-page .card-head h2,
+.evidence-workspace h1,
+.evidence-workspace h2,
+.evidence-workspace h3 {
+  font-family: var(--fl-font-sans);
+  font-weight: 700;
+}
+
+/* Page header — matches Evidence Workspace */
+.portal-head,
+.evidence-head,
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--fl-space-3);
+  padding-bottom: var(--fl-space-3);
+  border-bottom: 1px solid var(--fl-border);
+  margin-bottom: 0;
+}
+
+.portal-head .eyebrow,
+.evidence-head .eyebrow,
+.page-head .eyebrow {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fl-accent);
+  font-weight: 700;
+  margin: 0 0 2px;
+}
+
+.portal-head h1,
+.evidence-head h1,
+.page-head h1 {
+  color: var(--fl-primary);
+  margin: 0 0 4px;
+  font-size: clamp(1.35rem, 2.2vw, 1.65rem);
+  font-weight: 700;
+  font-family: var(--fl-font-sans);
+  line-height: 1.2;
+}
+
+.portal-head .lede,
+.evidence-head .lede,
+.page-head .lede {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: 0.9rem;
+  max-width: 42rem;
+  line-height: 1.45;
+}
+
+/* Folder breadcrumbs — compact row below header */
+.evidence-crumb-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  font-size: 0.8rem;
+  color: var(--fl-muted);
+  line-height: 1.45;
+  padding: 6px 0 2px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.evidence-crumb-bar .evidence-crumb-link {
+  background: none;
+  border: 0;
+  color: var(--fl-info);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: none;
+  max-width: 100%;
+}
+
+.evidence-crumb-bar .evidence-crumb-link:hover { text-decoration: underline; }
+
+.evidence-crumb-bar .evidence-crumb-segment {
+  color: var(--fl-muted);
+}
+
+.evidence-crumb-bar .evidence-crumb-current {
+  color: var(--fl-primary);
+  font-weight: 600;
+}
+
+/* Cards inside portal pages */
+.portal-page .card,
+.page .card {
+  border-radius: var(--fl-radius-lg);
+  border: 1px solid var(--fl-border);
+  box-shadow: var(--fl-shadow-sm);
+  padding: var(--fl-space-4);
+  margin-bottom: var(--fl-space-4);
+}
+
+.portal-page .card-head h2,
+.page .card-head h2 {
+  font-size: 1rem;
+  color: var(--fl-primary);
+  margin: 0;
+}
+
+.portal-page .card-head,
+.page .card-head {
+  margin-bottom: var(--fl-space-3);
+}
+
+/* Metric tiles (Evidence Workspace stats) */
+.portal-metrics.evidence-stats,
+.page .evidence-stats {
+  margin-bottom: var(--fl-space-2);
+}
+
+/* Legacy stat grid — align with evidence stats when icons added in markup */
+.stat-grid.portal-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--fl-space-3);
+}
+
+.stat-grid.portal-metrics .stat {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 72px;
+  box-shadow: var(--fl-shadow-sm);
+  border-radius: var(--fl-radius-md);
+  border: 1px solid var(--fl-border);
+  padding: 10px 12px;
+}
+
+.stat-grid.portal-metrics .stat strong {
+  font-family: var(--fl-font-sans);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--fl-primary);
+  margin: 0;
+}
+
+.stat-grid.portal-metrics .stat span {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fl-muted);
+}
+
+.stat-grid.portal-metrics .stat small {
+  font-size: 0.76rem;
+  color: var(--fl-muted);
+  margin-top: 2px;
+}
+
+.stat-grid.portal-metrics .stat-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Tables — match Evidence directory density */
+.page table.data th,
+.page table.data td {
+  padding: 10px 12px;
+  vertical-align: middle;
+}
+
+.page table.data th {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--fl-muted);
+  font-weight: 600;
+}
+
+.page table.data tbody tr:hover {
+  background: #f8fafc;
+}
+
+/* Buttons — consistent with workspace */
+.page .btn-primary {
+  background: var(--fl-primary);
+  border-color: var(--fl-primary);
+}
+
+.page .btn-primary:hover {
+  background: var(--fl-primary-2);
+}
+
+.page .btn-ghost {
+  border-color: var(--fl-border);
+}
+
+@media (max-width: 768px) {
+  .portal-head,
+  .evidence-head,
+  .page-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

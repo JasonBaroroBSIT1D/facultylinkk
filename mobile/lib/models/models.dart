@@ -127,6 +127,9 @@ class KraScore {
     required this.documentCount,
     required this.statusLabel,
     required this.breakdown,
+    this.validatedPoints,
+    this.provisionalPoints,
+    this.assessed = true,
   });
 
   final KraType type;
@@ -135,6 +138,9 @@ class KraScore {
   final int documentCount;
   final String statusLabel;
   final List<KraBreakdownItem> breakdown;
+  final double? validatedPoints;
+  final double? provisionalPoints;
+  final bool assessed;
 
   double get progress =>
       targetPoints == 0 ? 0 : (currentPoints / targetPoints).clamp(0, 1);
@@ -154,13 +160,17 @@ class KraScore {
         );
       }
     }
+    final assessed = json['assessed'] as bool? ?? true;
     return KraScore(
       type: FacultyDocument.kraFromWebId(kraId),
       currentPoints: (json['currentPoints'] as num?)?.toInt() ?? 0,
-      targetPoints: (json['targetPoints'] as num?)?.toInt() ?? 0,
+      targetPoints: (json['targetPoints'] as num?)?.toInt() ?? 100,
       documentCount: (json['documentCount'] as num?)?.toInt() ?? 0,
       statusLabel: (json['statusLabel'] as String?) ?? 'Not yet calculated',
       breakdown: breakdown,
+      validatedPoints: (json['validatedPoints'] as num?)?.toDouble(),
+      provisionalPoints: (json['provisionalPoints'] as num?)?.toDouble(),
+      assessed: assessed,
     );
   }
 }
@@ -204,6 +214,9 @@ class FacultyDocument {
     this.simulationScoreSource,
     this.reviewerOversightStatus,
     this.scoringStatus,
+    this.ocrStatus,
+    this.ocrConfidence,
+    this.ocrError,
   });
 
   final String id;
@@ -231,6 +244,23 @@ class FacultyDocument {
   final String? simulationScoreSource;
   final String? reviewerOversightStatus;
   final String? scoringStatus;
+  final String? ocrStatus;
+  final double? ocrConfidence;
+  final String? ocrError;
+
+  String get ocrStatusLabel {
+    switch (ocrStatus) {
+      case 'completed':
+        return 'OCR completed';
+      case 'processing':
+        return 'Extracting text…';
+      case 'failed':
+        return 'Text extraction failed';
+      case 'pending':
+      default:
+        return 'Waiting for OCR';
+    }
+  }
 
   bool get countsInSimulation =>
       (effectiveSimulationScore != null && effectiveSimulationScore! > 0) ||
@@ -338,7 +368,22 @@ class FacultyDocument {
     if (submitted != null && submitted.isNotEmpty) {
       submittedAt = DateTime.tryParse(submitted) ?? submittedAt;
     }
-    final webStatus = statusFromWeb(statusRaw);
+    final hasFile = json['hasFile'] == true;
+    var webStatus = statusFromWeb(statusRaw);
+    if (webStatus == DocumentStatus.draft && hasFile) {
+      webStatus = DocumentStatus.pendingReview;
+    }
+    final ocrRaw = json['ocr'];
+    String? ocrStatus;
+    double? ocrConfidence;
+    String? ocrError;
+    if (ocrRaw is Map) {
+      ocrStatus = ocrRaw['status'] as String?;
+      if (ocrStatus == 'complete') ocrStatus = 'completed';
+      final conf = ocrRaw['confidence'];
+      if (conf is num) ocrConfidence = conf.toDouble();
+      ocrError = ocrRaw['error'] as String?;
+    }
     return FacultyDocument(
       id: (json['id'] as String?) ?? '',
       title: (json['title'] as String?) ?? (json['name'] as String?) ?? 'Document',
@@ -354,10 +399,13 @@ class FacultyDocument {
       criterionId: json['criterionId'] as String?,
       mimeType: json['mimeType'] as String?,
       fileSize: json['fileSize'] as int?,
-      hasFile: json['hasFile'] == true,
+      hasFile: hasFile,
       fileUrl: json['fileApiPath'] as String? ?? json['fileUrl'] as String?,
-      canDelete: webStatus == DocumentStatus.draft,
-      canReplace: webStatus == DocumentStatus.needsRevision || webStatus == DocumentStatus.draft,
+      canDelete: webStatus == DocumentStatus.draft && !hasFile,
+      canReplace: webStatus == DocumentStatus.needsRevision,
+      ocrStatus: ocrStatus,
+      ocrConfidence: ocrConfidence,
+      ocrError: ocrError,
     );
   }
 }
@@ -440,6 +488,15 @@ class RankSimulation {
     this.weightBand = '',
     this.appliedWeights = const {},
     this.isPlaceholder = false,
+    this.eligibilityStatus = 'under_assessment',
+    this.validatedKraPoints = 0,
+    this.provisionalKraPoints,
+    this.weightedValidatedScore,
+    this.weightedProvisionalScore,
+    this.teachingEffectivenessScore,
+    this.progressPercent,
+    this.progressLabel = '',
+    this.missingRequirements = const [],
   });
 
   final String currentRank;
@@ -453,12 +510,39 @@ class RankSimulation {
   final String weightBand;
   final Map<String, num> appliedWeights;
   final bool isPlaceholder;
+  final String eligibilityStatus;
+  final double validatedKraPoints;
+  final double? provisionalKraPoints;
+  final double? weightedValidatedScore;
+  final double? weightedProvisionalScore;
+  final double? teachingEffectivenessScore;
+  final double? progressPercent;
+  final String progressLabel;
+  final List<Map<String, dynamic>> missingRequirements;
 
-  double get progress =>
-      requiredPoints == 0 ? 0 : (currentPoints / requiredPoints).clamp(0, 1);
+  double get progress {
+    if (progressPercent != null) return (progressPercent! / 100).clamp(0, 1);
+    if (requiredPoints == 0) return 0;
+    return (currentPoints / requiredPoints).clamp(0, 1);
+  }
 
   int get remainingPoints =>
       (requiredPoints - currentPoints).clamp(0, requiredPoints);
+
+  String get eligibilityBadgeLabel {
+    switch (eligibilityStatus) {
+      case 'eligible_validated':
+        return 'Eligible (simulation)';
+      case 'provisionally_on_track':
+        return 'Provisionally on track';
+      case 'additional_requirements':
+        return 'Additional requirements needed';
+      case 'rules_unavailable':
+        return 'Rules unavailable';
+      default:
+        return 'Eligibility under assessment';
+    }
+  }
 }
 
 class RecentActivity {

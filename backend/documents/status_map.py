@@ -26,6 +26,31 @@ WEB_TO_DB = {
 PENDING_DB = frozenset({"pending_review", "needs_revision", "reviewer_required"})
 QUEUE_DB = frozenset({"pending_review", "needs_revision", "reviewer_required"})
 
+REVIEWED_DB = frozenset({"approved", "valid", "rejected"})
+
+
+def is_legacy_uploaded_draft(doc) -> bool:
+    """Uploaded rows still stored as draft before auto-submit workflow."""
+    if getattr(doc, "deleted_at", None):
+        return False
+    if doc.status != "draft":
+        return False
+    return bool(doc.file_path)
+
+
+def is_awaiting_review(doc) -> bool:
+    if getattr(doc, "deleted_at", None):
+        return False
+    if doc.status in PENDING_DB:
+        return True
+    return is_legacy_uploaded_draft(doc)
+
+
+def document_status_to_web(doc) -> str:
+    if is_legacy_uploaded_draft(doc):
+        return "pending-review"
+    return status_to_web(doc.status)
+
 
 def status_to_web(db_status: str | None) -> str:
     if not db_status:

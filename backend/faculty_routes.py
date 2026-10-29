@@ -7,6 +7,8 @@ from auth import assignment_queries as aq
 from auth import permissions as perm
 from auth.permissions import ROLE_FACULTY
 from faculty.faculty_payloads import faculty_dashboard_payload, faculty_profile_payload
+from faculty.rank_simulation_engine import compute_rank_simulation
+from documents.teaching_effectiveness import teaching_effectiveness_payload
 
 faculty_bp = Blueprint("faculty_api", __name__, url_prefix="/api/faculty")
 
@@ -38,6 +40,29 @@ def faculty_dashboard():
     if not profile:
         return jsonify({"message": "Faculty profile was not found."}), 404
     return jsonify(faculty_dashboard_payload(user, profile)), 200
+
+
+@faculty_bp.get("/me/rank-simulation")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_rank_simulation():
+    public_id = get_jwt_identity()
+    user = aq.current_faculty_user(public_id)
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    payload = compute_rank_simulation(user.faculty_profile)
+    resp = jsonify({"simulation": payload})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
+@faculty_bp.get("/me/teaching-effectiveness")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_teaching_effectiveness():
+    public_id = get_jwt_identity()
+    user = aq.current_faculty_user(public_id)
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify(teaching_effectiveness_payload(user.faculty_profile)), 200
 
 
 @faculty_bp.get("/me/reviewer")

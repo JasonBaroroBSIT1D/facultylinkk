@@ -13,8 +13,11 @@ from auth.permissions import ROLE_ADMINISTRATOR, ROLE_FACULTY, ROLE_REVIEWER
 from documents import directory as doc_dir
 from documents import service as doc_svc
 from documents.serializers import document_to_web, stats_from_documents
-from models import User
+from models import FacultyProfile, User
+from documents.metadata_correction import apply_metadata_correction
 from documents.storage import resolve_path
+from documents.evaluation_eligibility import apply_eligibility_update, payload_for_api, reviewer_can_manage
+from documents.teaching_effectiveness import indicator_folder_payload, teaching_effectiveness_payload
 faculty_docs_bp = Blueprint("faculty_documents", __name__, url_prefix="/api/faculty/me/documents")
 reviewer_docs_bp = Blueprint("reviewer_documents", __name__, url_prefix="/api/reviewer")
 admin_docs_bp = Blueprint("admin_documents", __name__, url_prefix="/api/admin/documents")
@@ -69,13 +72,21 @@ def faculty_upload_document():
             "missing_file": "Choose a file to upload.",
             "empty_file": "The file is empty.",
             "file_too_large": "The file exceeds the 25 MB limit.",
-            "unsupported_type": "Only PDF and image files are allowed.",
+            "unsupported_type": "Only PDF, Word (.docx), and image files are allowed.",
+            "duplicate_upload": "This exact file is already uploaded for the selected indicator.",
+            "invalid_pdf": "The file is not a valid PDF (missing PDF signature).",
+            "invalid_file_content": "The file content does not match a supported PDF or image format.",
+            "mime_content_mismatch": "The uploaded content type does not match the file contents.",
             "no_profile": "Faculty profile was not found.",
             "classification_required": "Select KRA, criterion, and indicator before uploading.",
             "invalid_replace_target": "The document to replace was not found.",
         }
         return jsonify({"message": messages.get(code, "Upload failed.")}), 400
-    payload = document_to_web(doc, api_base=_file_api_base("faculty", doc.public_id))
+    payload = document_to_web(
+        doc,
+        api_base=_file_api_base("faculty", doc.public_id),
+        ocr_detail=False,
+    )
     return jsonify({"document": payload}), 201
 
 
@@ -87,8 +98,40 @@ def faculty_get_document(public_id: str):
     if not doc or not user or not doc_svc.faculty_owns(user, doc):
         return jsonify({"message": "Document was not found."}), 404
     return jsonify(
-        document_to_web(doc, api_base=_file_api_base("faculty", doc.public_id))
+        document_to_web(
+            doc,
+            api_base=_file_api_base("faculty", doc.public_id),
+            ocr_detail=True,
+        )
     ), 200
+
+
+@faculty_docs_bp.post("/<public_id>/ocr/retry")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_retry_ocr(public_id: str):
+    user = aq.current_faculty_user(get_jwt_identity())
+    doc = doc_svc.get_document(public_id)
+    if not doc or not user or not doc_svc.faculty_owns(user, doc):
+        return jsonify({"message": "Document was not found."}), 404
+    if doc.ocr_status == "processing":
+        return jsonify({"message": "OCR is already in progress."}), 409
+    job = doc_svc.retry_document_ocr(doc)
+    if not job:
+        return jsonify({"message": "OCR cannot run without a stored file."}), 400
+    from documents.ocr.dispatch import maybe_dispatch_inline_worker
+    from flask import current_app
+
+    maybe_dispatch_inline_worker(current_app._get_current_object())
+    return jsonify(
+        {
+            "document": document_to_web(
+                doc,
+                api_base=_file_api_base("faculty", doc.public_id),
+                ocr_detail=True,
+            ),
+            "ocrJobId": job.id,
+        }
+    ), 202
 
 
 @faculty_docs_bp.get("/<public_id>/file")
@@ -237,8 +280,40 @@ def reviewer_get_document(public_id: str):
     if not doc or not user or not doc_svc.reviewer_can_access(user, doc):
         return jsonify({"message": "Document was not found."}), 404
     return jsonify(
-        document_to_web(doc, api_base=_file_api_base("reviewer", doc.public_id))
+        document_to_web(
+            doc,
+            api_base=_file_api_base("reviewer", doc.public_id),
+            ocr_detail=True,
+        )
     ), 200
+
+
+@reviewer_docs_bp.post("/documents/<public_id>/ocr/retry")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_retry_ocr(public_id: str):
+    user = aq.current_reviewer_user(get_jwt_identity())
+    doc = doc_svc.get_document(public_id)
+    if not doc or not user or not doc_svc.reviewer_can_access(user, doc):
+        return jsonify({"message": "Document was not found."}), 404
+    if doc.ocr_status == "processing":
+        return jsonify({"message": "OCR is already in progress."}), 409
+    job = doc_svc.retry_document_ocr(doc)
+    if not job:
+        return jsonify({"message": "OCR cannot run without a stored file."}), 400
+    from documents.ocr.dispatch import maybe_dispatch_inline_worker
+    from flask import current_app
+
+    maybe_dispatch_inline_worker(current_app._get_current_object())
+    return jsonify(
+        {
+            "document": document_to_web(
+                doc,
+                api_base=_file_api_base("reviewer", doc.public_id),
+                ocr_detail=True,
+            ),
+            "ocrJobId": job.id,
+        }
+    ), 202
 
 
 @reviewer_docs_bp.get("/documents/<public_id>/file")
@@ -258,6 +333,107 @@ def reviewer_download_file(public_id: str):
         as_attachment=not inline,
         download_name=doc.file_name or "document",
     )
+
+
+@reviewer_docs_bp.post("/documents/<public_id>/correct-metadata")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_correct_metadata(public_id: str):
+    user = aq.current_reviewer_user(get_jwt_identity())
+    doc = doc_svc.get_document(public_id)
+    if not doc or not user or not doc_svc.reviewer_can_access(user, doc):
+        return jsonify({"message": "Document was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    try:
+        doc = apply_metadata_correction(user, doc, body)
+    except ValueError as error:
+        code = str(error)
+        messages = {
+            "reason_required": "Enter a brief reason for the correction (at least 8 characters).",
+            "no_changes": "Change at least one extracted field before saving.",
+        }
+        return jsonify({"message": messages.get(code, "Correction could not be saved.")}), 400
+    payload = document_to_web(
+        doc,
+        api_base=_file_api_base("reviewer", doc.public_id),
+        ocr_detail=True,
+    )
+    return jsonify({"document": payload}), 200
+
+
+@reviewer_docs_bp.get("/me/teaching-effectiveness")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_teaching_effectiveness():
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    faculty_public = (request.args.get("facultyId") or request.args.get("faculty_id") or "").strip()
+    if not faculty_public:
+        return jsonify({"message": "facultyId is required."}), 400
+    profile = FacultyProfile.query.filter_by(public_id=faculty_public).first()
+    if not profile or profile.reviewer_user_id != user.id:
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    resp = jsonify(teaching_effectiveness_payload(profile))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/evaluation-eligibility")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_get_evaluation_eligibility(faculty_public_id: str):
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = FacultyProfile.query.filter_by(public_id=faculty_public_id).first()
+    if not profile or not reviewer_can_manage(user, profile):
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    return jsonify(payload_for_api(profile)), 200
+
+
+@reviewer_docs_bp.put("/me/faculty/<faculty_public_id>/evaluation-eligibility")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_put_evaluation_eligibility(faculty_public_id: str):
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = FacultyProfile.query.filter_by(public_id=faculty_public_id).first()
+    if not profile or not reviewer_can_manage(user, profile):
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    try:
+        profile = apply_eligibility_update(user, profile, body)
+    except ValueError as error:
+        code = str(error)
+        messages = {
+            "forbidden": "This faculty member is not assigned to you.",
+            "justification_required": "Enter a justification (at least 16 characters).",
+            "invalid_section10_code": "Select a valid Section 10 circumstance from the catalog.",
+            "evidence_attestation_required": "Confirm supporting evidence is on file before verification.",
+            "evidence_summary_required": "Summarize the supporting evidence on file (at least 16 characters).",
+            "eligible_semester_count_required": "Enter the verified eligible semester count for this circumstance.",
+            "eligible_semester_count_too_high": "Eligible semester count cannot exceed the standard six-semester period.",
+        }
+        return jsonify({"message": messages.get(code, "Eligibility was not saved.")}), 400
+    return jsonify(payload_for_api(profile)), 200
+
+
+@reviewer_docs_bp.get("/me/set-sef-indicator")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_set_sef_indicator():
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    faculty_public = (request.args.get("facultyId") or request.args.get("faculty_id") or "").strip()
+    indicator_id = (request.args.get("indicatorId") or request.args.get("indicator_id") or "").strip()
+    if not faculty_public or not indicator_id:
+        return jsonify({"message": "facultyId and indicatorId are required."}), 400
+    if indicator_id not in ("kra1-a-student", "kra1-a-supervisor"):
+        return jsonify({"message": "Indicator is not a SET/SEF teaching effectiveness indicator."}), 400
+    profile = FacultyProfile.query.filter_by(public_id=faculty_public).first()
+    if not profile or profile.reviewer_user_id != user.id:
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    resp = jsonify(indicator_folder_payload(profile, indicator_id))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
 
 
 @reviewer_docs_bp.post("/documents/<public_id>/review")
@@ -336,6 +512,40 @@ def admin_list_documents():
     return jsonify({"documents": rows, "stats": stats_from_documents(docs)}), 200
 
 
+@admin_docs_bp.get("/faculty/<faculty_public_id>/evaluation-eligibility")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_get_evaluation_eligibility(faculty_public_id: str):
+    profile = FacultyProfile.query.filter_by(public_id=faculty_public_id).first()
+    if not profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify(payload_for_api(profile)), 200
+
+
+@admin_docs_bp.get("/faculty/<faculty_public_id>/teaching-effectiveness")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_faculty_teaching_effectiveness(faculty_public_id: str):
+    profile = FacultyProfile.query.filter_by(public_id=faculty_public_id).first()
+    if not profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    resp = jsonify(teaching_effectiveness_payload(profile))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
+@admin_docs_bp.get("/faculty/<faculty_public_id>/set-sef-indicator")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_set_sef_indicator(faculty_public_id: str):
+    indicator_id = (request.args.get("indicatorId") or request.args.get("indicator_id") or "").strip()
+    if indicator_id not in ("kra1-a-student", "kra1-a-supervisor"):
+        return jsonify({"message": "Indicator is not a SET/SEF teaching effectiveness indicator."}), 400
+    profile = FacultyProfile.query.filter_by(public_id=faculty_public_id).first()
+    if not profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    resp = jsonify(indicator_folder_payload(profile, indicator_id))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
 @admin_docs_bp.get("/<public_id>")
 @perm.roles_required(ROLE_ADMINISTRATOR)
 def admin_get_document(public_id: str):
@@ -343,8 +553,39 @@ def admin_get_document(public_id: str):
     if not doc:
         return jsonify({"message": "Document was not found."}), 404
     return jsonify(
-        document_to_web(doc, api_base=_file_api_base("admin", doc.public_id))
+        document_to_web(
+            doc,
+            api_base=_file_api_base("admin", doc.public_id),
+            ocr_detail=True,
+        )
     ), 200
+
+
+@admin_docs_bp.post("/<public_id>/ocr/retry")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_retry_ocr(public_id: str):
+    doc = doc_svc.get_document(public_id)
+    if not doc:
+        return jsonify({"message": "Document was not found."}), 404
+    if doc.ocr_status == "processing":
+        return jsonify({"message": "OCR is already in progress."}), 409
+    job = doc_svc.retry_document_ocr(doc)
+    if not job:
+        return jsonify({"message": "OCR cannot run without a stored file."}), 400
+    from documents.ocr.dispatch import maybe_dispatch_inline_worker
+    from flask import current_app
+
+    maybe_dispatch_inline_worker(current_app._get_current_object())
+    return jsonify(
+        {
+            "document": document_to_web(
+                doc,
+                api_base=_file_api_base("admin", doc.public_id),
+                ocr_detail=True,
+            ),
+            "ocrJobId": job.id,
+        }
+    ), 202
 
 
 @admin_docs_bp.get("/<public_id>/file")

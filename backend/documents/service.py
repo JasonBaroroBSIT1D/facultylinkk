@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from flask import current_app
+
 from extensions import db
-from models import Document, FacultyProfile, User
+from models import AuditLog, Document, FacultyProfile, User
 
 from documents.serializers import document_to_web, stats_from_documents
-from documents.status_map import QUEUE_DB, status_from_web
-from documents.storage import save_upload
+from documents.status_map import QUEUE_DB, is_legacy_uploaded_draft, status_from_web
+from documents.storage import resolve_path, save_upload
+from documents.ocr.dispatch import maybe_dispatch_inline_worker
+from documents.ocr import queue as ocr_queue
 
 
 def utcnow() -> datetime:
@@ -39,9 +43,31 @@ def append_review_history(doc: Document, *, actor: User, action: str, remarks: s
             "action": action,
             "remarks": remarks,
             "status": status_after,
+            "decisionSource": "reviewer_manual",
         }
     )
     info["reviewHistory"] = history[-50:]
+    info["Approval decision source"] = "reviewer_manual"
+    prior_source = (info.get("autoValidation") or {}).get("decisionSource")
+    if prior_source == "system_auto_approval" and action in ("reject", "revision", "approve"):
+        import json
+
+        db.session.add(
+            AuditLog(
+                actor_user_id=actor.id,
+                action="Reviewer override of SET/SEF automatic approval",
+                target_id=doc.public_id,
+                detail=json.dumps(
+                    {
+                        "documentId": doc.public_id,
+                        "reviewAction": action,
+                        "previousAutoApproval": True,
+                        "remarks": remarks,
+                    },
+                    ensure_ascii=False,
+                )[:4000],
+            )
+        )
     doc.extracted_info = info
 
 
@@ -116,6 +142,23 @@ def create_upload(
         raise ValueError("classification_required")
     title = (title or "").strip() or (file.filename if file else "Document")
     relative, digest, size, mime = save_upload(file, profile.id)
+    if not replaces_public_id:
+        duplicate = (
+            _active_docs_query()
+            .filter_by(
+                faculty_profile_id=profile.id,
+                file_hash=digest,
+                indicator_id=indicator_id,
+            )
+            .first()
+        )
+    else:
+        duplicate = None
+    if duplicate:
+        stored = resolve_path(relative)
+        if stored and stored.is_file():
+            stored.unlink()
+        raise ValueError("duplicate_upload")
     replaces_id = None
     version = 1
     if replaces_public_id:
@@ -136,7 +179,7 @@ def create_upload(
         kra_id=kra_id,
         criterion_id=criterion_id,
         indicator_id=indicator_id,
-        status="draft",
+        status="pending_review",
         extracted_info={},
         ocr_status="pending",
         submitted_at=utcnow(),
@@ -146,7 +189,19 @@ def create_upload(
     if hasattr(doc, "replaces_document_id"):
         doc.replaces_document_id = replaces_id
     db.session.add(doc)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        stored = resolve_path(relative)
+        if stored and stored.is_file():
+            stored.unlink()
+        raise
+    ocr_queue.enqueue_document_ocr(doc)
+    try:
+        maybe_dispatch_inline_worker(current_app._get_current_object())
+    except RuntimeError:
+        pass
     return doc
 
 
@@ -237,7 +292,7 @@ def patch_from_web_payload(doc: Document, body: dict) -> Document:
 
 def queue_for_reviewer(reviewer: User) -> list[Document]:
     docs = list_reviewer_documents(reviewer)
-    return [d for d in docs if d.status in QUEUE_DB]
+    return [d for d in docs if d.status in QUEUE_DB or is_legacy_uploaded_draft(d)]
 
 
 def serialize_many(docs: list[Document], *, api_base: str = "") -> list[dict]:
@@ -246,3 +301,7 @@ def serialize_many(docs: list[Document], *, api_base: str = "") -> list[dict]:
 
 def aggregate_stats(docs: list[Document]) -> dict:
     return stats_from_documents(docs)
+
+
+def retry_document_ocr(doc: Document):
+    return ocr_queue.retry_document_ocr(doc)

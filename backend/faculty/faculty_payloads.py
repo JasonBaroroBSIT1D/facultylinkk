@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
+from faculty.rank_simulation_engine import compute_rank_simulation, kra_scores_for_mobile, simulation_for_mobile
 from models import Document, EvaluationPeriod, FacultyProfile, KraScore, RankSimulation, User
 
 MOBILE_KRA_KEYS = ("kra1", "kra2", "kra3", "kra4")
@@ -185,7 +186,7 @@ def _recent_feedback(profile: FacultyProfile, limit: int = 5) -> list[dict]:
 
 
 def faculty_dashboard_payload(user: User, profile: FacultyProfile) -> dict:
-    kra_scores = _kra_scores_payload(profile)
+    kra_scores = kra_scores_for_mobile(profile)
     total_verified = sum(item["currentPoints"] for item in kra_scores)
     docs = (
         Document.query.filter_by(faculty_profile_id=profile.id)
@@ -195,7 +196,7 @@ def faculty_dashboard_payload(user: User, profile: FacultyProfile) -> dict:
     validated = sum(1 for d in docs if d.status in ("approved", "valid", "validated"))
     pending = sum(1 for d in docs if d.status in ("pending_review", "pending-review", "processing"))
     action = sum(1 for d in docs if d.status in ("needs_revision", "revision", "rejected", "invalid"))
-    sim = _simulation_payload(profile)
+    sim = simulation_for_mobile(profile)
 
     return {
         "totalPoints": total_verified,

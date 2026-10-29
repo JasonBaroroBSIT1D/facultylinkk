@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from sqlalchemy import case, desc, func, or_
+from sqlalchemy import and_, case, desc, func, or_
 
 from extensions import db
 from models import Document, FacultyProfile, User
 
+from documents.status_map import is_awaiting_review
+
 _PENDING = ("pending_review", "reviewer_required", "needs_revision")
+_LEGACY_PENDING = and_(Document.status == "draft", Document.file_path.isnot(None))
 _APPROVED = ("approved", "valid")
 _REVISION = ("needs_revision",)
 _REJECTED = ("rejected",)
@@ -18,7 +21,12 @@ def _doc_stats_subquery():
         db.session.query(
             Document.faculty_profile_id.label("profile_id"),
             func.count(Document.id).label("doc_total"),
-            func.sum(case((Document.status.in_(_PENDING), 1), else_=0)).label("doc_pending"),
+            func.sum(
+                case(
+                    (or_(Document.status.in_(_PENDING), _LEGACY_PENDING), 1),
+                    else_=0,
+                )
+            ).label("doc_pending"),
             func.sum(case((Document.status.in_(_APPROVED), 1), else_=0)).label("doc_approved"),
             func.sum(case((Document.status.in_(_REVISION), 1), else_=0)).label("doc_revision"),
             func.sum(case((Document.status.in_(_REJECTED), 1), else_=0)).label("doc_rejected"),
@@ -53,7 +61,7 @@ def workspace_stats(*, reviewer_user_id: int | None = None) -> dict:
 
     docs = doc_q.all()
     faculty_with_docs = len({d.faculty_profile_id for d in docs})
-    pending = sum(1 for d in docs if d.status in _PENDING)
+    pending = sum(1 for d in docs if is_awaiting_review(d))
     approved = sum(1 for d in docs if d.status in _APPROVED)
     revision = sum(1 for d in docs if d.status in _REVISION)
     rejected = sum(1 for d in docs if d.status in _REJECTED)

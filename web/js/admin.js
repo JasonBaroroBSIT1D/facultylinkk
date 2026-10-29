@@ -27,19 +27,18 @@ FL.admin = {
     });
     const maxAverage = Math.max.apply(null, kraBars.map(function (bar) { return bar.max; }));
     document.getElementById("page").innerHTML = `
-      <div class="page-head">
-        <div>
-          <p class="eyebrow">${FL.esc(FL.institution.name)}</p>
-          <h1>Administrator Dashboard</h1>
-          <p class="lede">Faculty readiness, document validation, KRA estimates, reviewer activity, and compliance under DBM–CHED Joint Circular No. 01, s. 2026.</p>
-        </div>
-      </div>
-      <div class="stat-grid">
-        <article class="stat"><span>Faculty</span><strong>${faculty.length}</strong><small>${attention} need attention</small></article>
-        <article class="stat"><span>Documents</span><strong>${docs.length}</strong><small>${approved} approved</small></article>
-        <article class="stat"><span>Awaiting validation</span><strong>${pending}</strong><small>Invalid, unclassified, or in queue</small></article>
-        <article class="stat"><span>Valid documents</span><strong>${counts.valid}</strong><small>${counts.invalid} invalid · ${counts["reviewer-required"]} for reviewer</small></article>
-      </div>
+      <div class="portal-page">
+      ${FL.ui.pageHeader({
+        eyebrow: "FacultyLink",
+        title: "Administrator Dashboard",
+        lede: "Overview of faculty readiness, evidence, and reviewer activity."
+      })}
+      ${FL.ui.metricGrid([
+        { label: "Faculty", value: faculty.length, hint: attention + " need attention", iconKey: "faculty", accent: "teal" },
+        { label: "Documents", value: docs.length, hint: approved + " approved", iconKey: "documents" },
+        { label: "Awaiting validation", value: pending, hint: "Invalid, unclassified, or in queue", iconKey: "validation", accent: "warn" },
+        { label: "Valid documents", value: counts.valid, hint: counts.invalid + " invalid · " + counts["reviewer-required"] + " for reviewer", iconKey: "approved", accent: "ok" }
+      ])}
       <div class="split">
         <article class="card">
           <div class="card-head"><h2>KRA estimates</h2></div>
@@ -97,6 +96,7 @@ FL.admin = {
             return `<li><strong>${FL.esc(reviewer.name)}</strong><span>${assigned} faculty · ${open} documents needing action</span></li>`;
           }).join("")}</ul>
         </article>
+      </div>
       </div>`;
   },
 
@@ -655,7 +655,7 @@ FL.admin = {
     const user = FL.store.userById(session.userId);
     const page = document.getElementById("page");
     page.innerHTML = `
-      <div class="page-head"><div><p class="eyebrow">Account</p><h1>My Profile</h1><p class="lede">Administrator account for FacultyLink evaluation support.</p></div></div>
+      <div class="portal-page">${FL.ui.pageHeader({ eyebrow: "FacultyLink", title: "My Profile", lede: "Administrator account for FacultyLink evaluation support." })}
       <article class="card profile-card">
         <div class="profile-banner"><span class="avatar large">${FL.esc(user.name.split(" ").map(function (part) { return part[0]; }).slice(0, 2).join(""))}</span><div><h2>${FL.esc(user.name)}</h2><p>${FL.esc(user.title)}</p>${FL.ui.badge("info", "Administrator")}</div></div>
         <form id="profile-form" class="form-grid">
@@ -666,7 +666,8 @@ FL.admin = {
           <label class="field field-wide"><span>Assignment</span><input id="profile-spec" value="${FL.esc(user.specialization)}"></label>
           <div class="field-wide"><button class="btn btn-primary" type="submit">Save profile</button></div>
         </form>
-      </article>`;
+      </article>
+      </div>`;
     document.getElementById("profile-form").addEventListener("submit", function (event) {
       event.preventDefault();
       user.office = document.getElementById("profile-office").value.trim();

@@ -7,6 +7,7 @@ import '../../models/models.dart';
 import '../../navigation/app_routes.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/common.dart';
+import '../../widgets/compact_folder_card.dart';
 import '../../widgets/document_card.dart';
 import 'document_flow_args.dart';
 
@@ -227,14 +228,17 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
         _KraHeader(kra: widget.kra, subtitle: widget.kra.label),
         const SizedBox(height: 16),
         for (final criterion in criteria)
-          _FolderTile(
-            icon: Icons.folder_outlined,
-            iconColor: AppColors.kra(widget.kra),
-            title: criterion['name']?.toString() ?? 'Criterion',
-            subtitle:
-                '${(criterion['indicators'] as List? ?? []).length} indicators · '
-                '${_docCountForCriterion(criterion['id']?.toString() ?? '')} uploads',
-            onTap: () => _openCriterion(criterion['id']?.toString()),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: CompactFolderCard(
+              icon: Icons.folder_outlined,
+              iconColor: AppColors.kra(widget.kra),
+              title: criterion['name']?.toString() ?? 'Criterion',
+              subtitle:
+                  '${(criterion['indicators'] as List? ?? []).length} indicators · '
+                  '${_docCountForCriterion(criterion['id']?.toString() ?? '')} uploads',
+              onTap: () => _openCriterion(criterion['id']?.toString()),
+            ),
           ),
       ],
     );
@@ -264,12 +268,15 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
         ),
         const SizedBox(height: 12),
         for (final indicator in indicators)
-          _FolderTile(
-            icon: Icons.description_outlined,
-            iconColor: AppColors.kra(widget.kra),
-            title: indicator['name']?.toString() ?? 'Indicator',
-            subtitle: '${_docsForIndicator(indicator['id']?.toString() ?? '').length} documents',
-            onTap: () => _openIndicator(indicator['id']?.toString()),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: CompactFolderCard(
+              icon: Icons.description_outlined,
+              iconColor: AppColors.kra(widget.kra),
+              title: indicator['name']?.toString() ?? 'Indicator',
+              subtitle: '${_docsForIndicator(indicator['id']?.toString() ?? '').length} documents',
+              onTap: () => _openIndicator(indicator['id']?.toString()),
+            ),
           ),
       ],
     );
@@ -368,6 +375,7 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: DocumentCard(
+                showOcr: true,
                 document: doc,
                 onTap: () {
                   Navigator.pushNamed(
@@ -399,21 +407,23 @@ class _KraHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.divider),
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
               color: AppColors.kraSoft(kra),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(kra.icon, color: AppColors.kra(kra)),
+            child: Icon(kra.icon, color: AppColors.kra(kra), size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -433,71 +443,6 @@ class _KraHeader extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _FolderTile extends StatelessWidget {
-  const _FolderTile({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.divider),
-            ),
-            child: Row(
-              children: [
-                Icon(icon, color: iconColor, size: 26),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.navy,
-                          height: 1.3,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
