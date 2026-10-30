@@ -297,3 +297,69 @@ class _CriterionAOverview extends StatelessWidget {
     );
   }
 }
+
+class ImprovementOpportunitiesScreen extends StatelessWidget {
+  const ImprovementOpportunitiesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final sim = AppState.instance.simulation;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Improvement opportunities')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const InfoBanner(
+            message:
+                'These suggestions are based on gaps in your current self-assessment preview.',
+          ),
+          const SizedBox(height: 16),
+          for (final area in sim.areasToImprove)
+            Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      area.kra.label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.kra(area.kra),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Possible additional points: +${area.recommendedPoints}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      area.guidance,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SecondaryButton(
+                      label: 'Upload evidence',
+                      icon: Icons.upload_file_outlined,
+                      onPressed: () {
+                        Navigator.pushNamed(
+                          context,
+                          AppRoutes.uploadDocument,
+                          arguments: area.kra,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

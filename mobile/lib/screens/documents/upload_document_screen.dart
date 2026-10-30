@@ -1,4 +1,5 @@
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -186,27 +187,56 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
   }
 
   Future<void> _pickFiles() async {
-    final result = await FilePicker.platform.pickFiles(
-      withData: true,
-      allowMultiple: true,
-      type: FileType.custom,
-      allowedExtensions: _allowedExtensions,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final pending = <_PendingUpload>[];
-    for (final file in result.files) {
-      final bytes = file.bytes;
-      if (bytes == null) continue;
-      pending.add(
-        _PendingUpload(
-          fileName: file.name,
-          bytes: bytes,
-          fromCamera: false,
-        ),
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        withData: true,
+        allowMultiple: true,
+        // Browser/Windows combinations can fail to return a file when the
+        // native dialog uses a long custom-extension filter. On web, accept
+        // the selection first and validate its extension below.
+        type: kIsWeb ? FileType.any : FileType.custom,
+        allowedExtensions: kIsWeb ? null : _allowedExtensions,
+      );
+      if (result == null) return;
+      if (result.files.isEmpty) {
+        if (!mounted) return;
+        showAppSnackBar(context, 'No files were selected.', error: true);
+        return;
+      }
+
+      final pending = <_PendingUpload>[];
+      final unreadable = <String>[];
+      for (final file in result.files) {
+        final bytes = file.bytes;
+        if (bytes == null) {
+          unreadable.add(file.name);
+          continue;
+        }
+        pending.add(
+          _PendingUpload(
+            fileName: file.name,
+            bytes: bytes,
+            fromCamera: false,
+          ),
+        );
+      }
+      if (!mounted) return;
+      _addFiles(pending);
+      if (unreadable.isNotEmpty) {
+        showAppSnackBar(
+          context,
+          'Could not read: ${unreadable.take(3).join(', ')}. Make sure the file is available offline, then try again.',
+          error: true,
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        'Could not open the selected file. Make sure it is available offline, then try again. ($error)',
+        error: true,
       );
     }
-    if (!mounted) return;
-    _addFiles(pending);
   }
 
   void _addFiles(List<_PendingUpload> incoming) {
@@ -216,6 +246,14 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
     final existing = {for (final f in _files) f.fileName.toLowerCase()};
 
     for (final file in incoming) {
+      final dot = file.fileName.lastIndexOf('.');
+      final extension = dot < 0
+          ? ''
+          : file.fileName.substring(dot + 1).toLowerCase();
+      if (!_allowedExtensions.contains(extension)) {
+        rejected.add('${file.fileName} (unsupported file type)');
+        continue;
+      }
       if (file.size > _maxBytes) {
         rejected.add('${file.fileName} (over 16 MB)');
         continue;
