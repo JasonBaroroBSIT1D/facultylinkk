@@ -32,6 +32,7 @@ class AppState extends ChangeNotifier {
   List<RequirementItem>? _requirements;
   PreparationPeriod? _preparationPeriod;
   Map<String, dynamic>? _teachingEffectiveness;
+  final Map<String, Map<String, dynamic>> _setSefIndicatorBlocks = {};
 
   bool isSignedIn = false;
   bool mustChangePassword = false;
@@ -89,6 +90,9 @@ class AppState extends ChangeNotifier {
     if (_useMockAuthForTests) return MockData.criterionASample;
     return _teachingEffectiveness;
   }
+
+  Map<String, dynamic>? setSefIndicatorBlock(String indicatorId) =>
+      _setSefIndicatorBlocks[indicatorId];
 
   bool get profileLoaded => _profileLoaded;
   bool _profileLoaded = false;
@@ -397,6 +401,8 @@ class AppState extends ChangeNotifier {
       await fetchAssignedReviewer(quiet: true);
       await fetchDocumentsFromApi(quiet: true);
       await fetchTeachingEffectivenessFromApi(quiet: true);
+      await fetchSetSefIndicatorFromApi('kra1-a-student', quiet: true);
+      await fetchSetSefIndicatorFromApi('kra1-a-supervisor', quiet: true);
       await refreshRankSimulationFromApi(quiet: true);
     }
   }
@@ -410,6 +416,67 @@ class AppState extends ChangeNotifier {
       if (!quiet) rethrow;
     }
     notifyListeners();
+  }
+
+  Future<Map<String, dynamic>?> fetchSetSefIndicatorFromApi(
+    String indicatorId, {
+    bool quiet = false,
+  }) async {
+    if (_useMockAuthForTests || !isSignedIn) return null;
+    try {
+      final block = await _api.fetchSetSefIndicator(indicatorId);
+      _setSefIndicatorBlocks[indicatorId] = block;
+      notifyListeners();
+      return block;
+    } catch (_) {
+      if (!quiet) rethrow;
+      return null;
+    }
+  }
+
+  Future<FacultyDocument?> refreshFacultyDocument(String documentId, {bool quiet = false}) async {
+    if (_useMockAuthForTests || !isSignedIn) return documentById(documentId);
+    try {
+      final raw = await _api.fetchFacultyDocument(documentId);
+      final payload = raw['document'] is Map<String, dynamic>
+          ? raw['document'] as Map<String, dynamic>
+          : raw;
+      final updated = FacultyDocument.fromApi(payload);
+      final index = documents.indexWhere((d) => d.id == documentId);
+      if (index >= 0) {
+        documents = [
+          ...documents.sublist(0, index),
+          updated,
+          ...documents.sublist(index + 1),
+        ];
+      }
+      notifyListeners();
+      return updated;
+    } catch (_) {
+      if (!quiet) rethrow;
+      return documentById(documentId);
+    }
+  }
+
+  /// Poll OCR until complete/failed or timeout; refreshes teaching scores when done.
+  Future<FacultyDocument?> pollDocumentAfterUpload(
+    String documentId, {
+    int maxAttempts = 24,
+    Duration interval = const Duration(seconds: 3),
+  }) async {
+    if (_useMockAuthForTests || !isSignedIn) return documentById(documentId);
+    FacultyDocument? latest;
+    for (var i = 0; i < maxAttempts; i++) {
+      latest = await refreshFacultyDocument(documentId, quiet: true);
+      final status = latest?.ocrStatus;
+      if (status == 'completed' || status == 'failed') break;
+      await Future<void>.delayed(interval);
+    }
+    await fetchTeachingEffectivenessFromApi(quiet: true);
+    await fetchSetSefIndicatorFromApi('kra1-a-student', quiet: true);
+    await fetchSetSefIndicatorFromApi('kra1-a-supervisor', quiet: true);
+    await refreshRankSimulationFromApi(quiet: true);
+    return latest;
   }
 
   Future<void> refreshRankSimulationFromApi({bool quiet = false}) async {
@@ -447,6 +514,7 @@ class AppState extends ChangeNotifier {
     _requirements = null;
     _preparationPeriod = null;
     _teachingEffectiveness = null;
+    _setSefIndicatorBlocks.clear();
     assignedReviewer = null;
     assignedReviewerError = null;
     assignedReviewerLoading = false;
@@ -594,8 +662,7 @@ class AppState extends ChangeNotifier {
         final doc = FacultyDocument.fromApi(saved);
         localDocumentBytes[doc.id] = Uint8List.fromList(fileBytes);
         addSubmittedDocument(doc);
-        await fetchTeachingEffectivenessFromApi(quiet: true);
-        await refreshRankSimulationFromApi(quiet: true);
+        unawaited(pollDocumentAfterUpload(doc.id));
         return doc.id;
       }
       await Future<void>.delayed(const Duration(milliseconds: 600));

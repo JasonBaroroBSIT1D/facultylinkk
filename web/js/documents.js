@@ -488,6 +488,8 @@ FL.documents = {
         page.innerHTML = FL.ui.empty("Missing document", "The document record was not found, or it is not assigned to you.");
         return;
       }
+      const tevFocus = params.get("tev");
+      if (tevFocus) doc._highlightTev = tevFocus;
       return FL.documents.hydrateAuthenticatedFile(doc).finally(function () {
         FL.documents.paintReview(session, doc, canDecide);
       });
@@ -544,6 +546,7 @@ FL.documents = {
         </div>
       </header>
       ${FL.documents.compactWorkflowHtml(doc, scored)}
+      ${FL.documents.teachingEvaluationsPanelHtml(doc, canDecide)}
       <div class="review-tabs" role="tablist" aria-label="Document review sections">
         <button type="button" role="tab" id="review-tab-btn-review" data-tab="review" aria-controls="review-tab-panel-review" aria-selected="true">Review</button>
         <button type="button" role="tab" id="review-tab-btn-ocr" data-tab="ocr" aria-controls="review-tab-panel-ocr" aria-selected="false" tabindex="-1">OCR Details</button>
@@ -693,6 +696,12 @@ FL.documents = {
       }
       FL.documents.bindDecision(session, doc);
       FL.documents.bindExtractionCorrection(session, doc, canDecide);
+      FL.documents.bindTeachingEvaluationActions(session, doc, canDecide);
+    }
+    if (doc._highlightTev) {
+      const focusEl = document.getElementById("tev-" + doc._highlightTev);
+      if (focusEl && focusEl.tagName === "DETAILS") focusEl.open = true;
+      if (focusEl) focusEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   },
 
@@ -1372,6 +1381,143 @@ FL.documents = {
           }).join("")}
         </ol>
       </section>`;
+  },
+
+  teachingEvaluationsPanelHtml: function (doc, canDecide) {
+    const list = doc.teachingEvaluations;
+    if (!list || !list.length) return "";
+    const summary = doc.teachingEvaluationSummary || {};
+    const note = summary.note
+      || "Each extracted SET/SEF semester requires its own reviewer validation.";
+    const cards = list.map(function (tev, idx) {
+      const tevId = tev.id || tev.teachingEvaluationId;
+      const status = tev.reviewerValidationStatus || "pending-review";
+      const highlight = doc._highlightTev === tevId ? " teaching-eval-record--focus" : "";
+      const flags = [];
+      if (tev.incompleteExtraction) flags.push("Incomplete OCR");
+      if (tev.duplicatePeriodWarning) flags.push("Duplicate period");
+      if (tev.missingFields && tev.missingFields.length) {
+        flags.push("Missing: " + tev.missingFields.join(", "));
+      }
+      return `<details class="teaching-eval-record card-inset${highlight}" id="tev-${FL.esc(tevId)}" data-tev-id="${FL.esc(tevId)}">
+        <summary class="teaching-eval-summary">
+          <span>${FL.esc(tev.evaluationType || "—")} · ${FL.esc(tev.academicYear || "—")} · ${FL.esc(tev.semester || "—")}</span>
+          ${FL.evidence.statusBadge(status)}
+          ${flags.length ? `<span class="sub">${FL.esc(flags.join(" · "))}</span>` : ""}
+        </summary>
+        <div class="teaching-eval-body">
+          <dl class="set-sef-calc-grid">
+            <div><dt>Evaluation type</dt><dd>${FL.esc(tev.evaluationType || "—")}</dd></div>
+            <div><dt>Overall rating</dt><dd>${FL.esc(tev.ratingRaw || "—")}</dd></div>
+            <div><dt>Rating scale</dt><dd>${tev.ratingScale != null ? FL.esc(String(tev.ratingScale)) : "—"}</dd></div>
+            <div><dt>OCR extraction</dt><dd>${FL.esc(tev.extractionStatus || "—")}</dd></div>
+            <div><dt>OCR verification</dt><dd>${FL.esc(tev.ocrVerificationStatus || "—")}</dd></div>
+            <div><dt>Source section</dt><dd>${FL.esc(tev.sourceSectionRef || "—")}</dd></div>
+            <div><dt>Reviewer validation</dt><dd>${FL.evidence.statusBadge(status)}</dd></div>
+          </dl>
+          ${tev.reviewerRemarks ? `<p class="note"><strong>Remarks:</strong> ${FL.esc(tev.reviewerRemarks)}</p>` : ""}
+          ${canDecide ? FL.documents.teachingEvaluationFormHtml(tev, idx) : ""}
+        </div>
+      </details>`;
+    }).join("");
+    return `<section class="card review-section" id="teaching-evaluations-panel" aria-label="Extracted teaching evaluations">
+      <div class="card-head"><h2>Extracted SET/SEF records (${list.length})</h2></div>
+      <p class="note">${FL.esc(note)} Open the original PDF above to verify the section for each record.</p>
+      <div class="teaching-eval-list">${cards}</div>
+    </section>`;
+  },
+
+  teachingEvaluationFormHtml: function (tev, idx) {
+    const tevId = tev.id || tev.teachingEvaluationId;
+    const prefix = "tev-" + idx + "-";
+    return `<div class="correction-grid teaching-eval-form" data-tev-form="${FL.esc(tevId)}">
+      <label class="field"><span>Evaluation type</span>
+        <select id="${prefix}type">
+          <option value="">— unchanged —</option>
+          <option value="SET"${tev.evaluationType === "SET" ? " selected" : ""}>SET</option>
+          <option value="SEF"${tev.evaluationType === "SEF" ? " selected" : ""}>SEF</option>
+        </select></label>
+      <label class="field"><span>Academic year</span>
+        <input id="${prefix}year" type="text" value="${FL.esc(tev.academicYear || "")}" placeholder="e.g. 2024-2025"></label>
+      <label class="field"><span>Semester</span>
+        <input id="${prefix}sem" type="text" value="${FL.esc(tev.semester || "")}" placeholder="e.g. 1st Semester"></label>
+      <label class="field"><span>Overall rating</span>
+        <input id="${prefix}rating" type="text" inputmode="decimal" value="${FL.esc(tev.ratingRaw || "")}"></label>
+      <label class="field"><span>Rating scale</span>
+        <input id="${prefix}scale" type="text" inputmode="decimal" value="${tev.ratingScale != null ? FL.esc(String(tev.ratingScale)) : ""}"></label>
+      <label class="field field-span"><span>Remarks / reason</span>
+        <textarea id="${prefix}remarks" rows="3" placeholder="Required for reject or revision; required when correcting fields">${FL.esc(tev.reviewerRemarks || "")}</textarea></label>
+      <p class="field-error" id="${prefix}error"></p>
+      <div class="decision-row">
+        <button class="btn btn-primary btn-small" type="button" data-tev-id="${FL.esc(tevId)}" data-tev-decision="approve">Approve record</button>
+        <button class="btn btn-danger btn-small" type="button" data-tev-id="${FL.esc(tevId)}" data-tev-decision="reject">Reject record</button>
+        <button class="btn btn-warning btn-small" type="button" data-tev-id="${FL.esc(tevId)}" data-tev-decision="revision">Needs revision</button>
+        <button class="btn btn-ghost btn-small" type="button" data-tev-id="${FL.esc(tevId)}" data-tev-decision="save">Save corrections only</button>
+      </div>
+    </div>`;
+  },
+
+  bindTeachingEvaluationActions: function (session, doc, canDecide) {
+    if (!canDecide || !doc.teachingEvaluations || !doc.teachingEvaluations.length) return;
+    const list = doc.teachingEvaluations;
+    document.querySelectorAll("[data-tev-decision]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const tevId = btn.getAttribute("data-tev-id");
+        const decision = btn.getAttribute("data-tev-decision");
+        const idx = list.findIndex(function (row) {
+          return (row.id || row.teachingEvaluationId) === tevId;
+        });
+        if (idx < 0) return;
+        const prefix = "tev-" + idx + "-";
+        const errEl = document.getElementById(prefix + "error");
+        if (errEl) errEl.textContent = "";
+        const remarks = (document.getElementById(prefix + "remarks").value || "").trim();
+        const payload = { remarks: remarks, reason: remarks };
+        const typeEl = document.getElementById(prefix + "type");
+        const yearEl = document.getElementById(prefix + "year");
+        const semEl = document.getElementById(prefix + "sem");
+        const ratingEl = document.getElementById(prefix + "rating");
+        const scaleEl = document.getElementById(prefix + "scale");
+        const typeVal = typeEl && typeEl.value ? typeEl.value.trim() : "";
+        const yearVal = (yearEl.value || "").trim();
+        const semVal = (semEl.value || "").trim();
+        const ratingVal = (ratingEl.value || "").trim();
+        const scaleVal = (scaleEl.value || "").trim();
+        const baseline = list[idx];
+        if (typeVal && typeVal !== (baseline.evaluationType || "")) payload.evaluationType = typeVal;
+        if (yearVal && yearVal !== (baseline.academicYear || "")) payload.academicYear = yearVal;
+        if (semVal && semVal !== (baseline.semester || "")) payload.semester = semVal;
+        if (ratingVal && ratingVal !== (baseline.ratingRaw || "")) payload.ratingRaw = ratingVal;
+        if (scaleVal && String(baseline.ratingScale != null ? baseline.ratingScale : "") !== scaleVal) {
+          payload.ratingScale = scaleVal;
+        }
+        if (decision !== "save") payload.decision = decision;
+        if ((decision === "reject" || decision === "revision") && remarks.length < 8) {
+          if (errEl) errEl.textContent = "Enter remarks (at least 8 characters) for rejection or revision.";
+          return;
+        }
+        const hasFieldChange = payload.evaluationType || payload.academicYear || payload.semester
+          || payload.ratingRaw || payload.ratingScale;
+        if ((decision === "save" || hasFieldChange) && remarks.length < 8) {
+          if (errEl) errEl.textContent = "Enter a reason in remarks when correcting fields (at least 8 characters).";
+          return;
+        }
+        if (decision === "save" && !hasFieldChange) {
+          if (errEl) errEl.textContent = "Change at least one field or use Approve / Reject / Revision.";
+          return;
+        }
+        FL.store.submitTeachingEvaluationReview(session, doc.id, tevId, payload).then(function (data) {
+          if (data.document) Object.assign(doc, data.document);
+          if (data.teachingEvaluation && idx >= 0) {
+            list[idx] = data.teachingEvaluation;
+          }
+          FL.ui.toast("Teaching evaluation record saved.", "ok");
+          FL.documents.paintReview(session, doc, canDecide);
+        }).catch(function (error) {
+          if (errEl) errEl.textContent = error.message || "Could not save record review.";
+        });
+      });
+    });
   },
 
   decisionHtml: function (doc, canDecide) {

@@ -1,4 +1,5 @@
 import 'enums.dart';
+import 'teaching_evaluation_record.dart';
 
 class AssignedReviewer {
   const AssignedReviewer({
@@ -217,6 +218,8 @@ class FacultyDocument {
     this.ocrStatus,
     this.ocrConfidence,
     this.ocrError,
+    this.teachingEvaluations,
+    this.teachingEvaluationSummary,
   });
 
   final String id;
@@ -247,6 +250,14 @@ class FacultyDocument {
   final String? ocrStatus;
   final double? ocrConfidence;
   final String? ocrError;
+  final List<TeachingEvaluationRecord>? teachingEvaluations;
+  final Map<String, dynamic>? teachingEvaluationSummary;
+
+  bool get hasLinkedTeachingEvaluations =>
+      teachingEvaluations != null && teachingEvaluations!.isNotEmpty;
+
+  static bool isSetSefIndicatorId(String? id) =>
+      id == 'kra1-a-student' || id == 'kra1-a-supervisor';
 
   String get ocrStatusLabel {
     switch (ocrStatus) {
@@ -384,6 +395,20 @@ class FacultyDocument {
       if (conf is num) ocrConfidence = conf.toDouble();
       ocrError = ocrRaw['error'] as String?;
     }
+    List<TeachingEvaluationRecord>? linkedEvaluations;
+    final tevRaw = json['teachingEvaluations'];
+    if (tevRaw is List) {
+      linkedEvaluations = tevRaw
+          .whereType<Map>()
+          .map((e) => TeachingEvaluationRecord.fromApi(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    Map<String, dynamic>? tevSummary;
+    final sumRaw = json['teachingEvaluationSummary'];
+    if (sumRaw is Map) {
+      tevSummary = Map<String, dynamic>.from(sumRaw);
+    }
+
     return FacultyDocument(
       id: (json['id'] as String?) ?? '',
       title: (json['title'] as String?) ?? (json['name'] as String?) ?? 'Document',
@@ -406,6 +431,8 @@ class FacultyDocument {
       ocrStatus: ocrStatus,
       ocrConfidence: ocrConfidence,
       ocrError: ocrError,
+      teachingEvaluations: linkedEvaluations,
+      teachingEvaluationSummary: tevSummary,
     );
   }
 }

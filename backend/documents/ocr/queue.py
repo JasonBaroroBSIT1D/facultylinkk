@@ -26,6 +26,7 @@ from documents.ocr.set_sef_metadata import (
 )
 from documents.set_sef_auto_approval.apply import maybe_auto_approve_after_ocr
 from documents.storage import resolve_path
+from documents.teaching_evaluation_sync import sync_teaching_evaluations_for_document
 
 WORKER_ID = f"{socket.gethostname()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
@@ -128,6 +129,12 @@ def _apply_success(doc: Document, result, job: DocumentOcrJob) -> None:
         info,
         text=text,
         indicator_id=doc.indicator_id,
+        extraction_method=result.method,
+    )
+    sync_teaching_evaluations_for_document(
+        doc,
+        text=text,
+        ocr_confidence=result.confidence,
         extraction_method=result.method,
     )
     doc.ocr_status = "completed"

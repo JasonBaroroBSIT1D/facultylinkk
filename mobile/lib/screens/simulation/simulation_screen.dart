@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/common.dart';
 import '../../widgets/rank_upgrade_simulation_card.dart';
+import '../../widgets/teaching_effectiveness_summary_card.dart';
 
 class SimulationScreen extends StatefulWidget {
   const SimulationScreen({super.key});
@@ -124,7 +125,7 @@ class _SimulationScreenState extends State<SimulationScreen> {
                 ),
                 if (state.criterionA != null) ...[
                   const SizedBox(height: 18),
-                  _CriterionAOverview(data: state.criterionA!),
+                  TeachingEffectivenessSummaryCard(data: state.criterionA!),
                 ],
                 if (sim.areasToImprove.isNotEmpty) ...[
                   const SizedBox(height: 18),
@@ -245,55 +246,6 @@ class _KraBar extends StatelessWidget {
           color: color,
         ),
       ],
-    );
-  }
-}
-
-class _CriterionAOverview extends StatelessWidget {
-  const _CriterionAOverview({required this.data});
-
-  final Map<String, dynamic> data;
-
-  @override
-  Widget build(BuildContext context) {
-    final set = data['set'] as Map<String, dynamic>? ?? {};
-    final sef = data['sef'] as Map<String, dynamic>? ?? {};
-    final total = data['combinedProvisionalPoints'] ?? data['criterionPoints'];
-    final validated = data['combinedValidatedPoints'];
-
-    String block(String title, Map<String, dynamic> block) {
-      final cov = block['coverageSummary'] as Map<String, dynamic>? ?? {};
-      final filled = cov['includedPeriods'] ?? block['filledCount'] ?? 0;
-      final required = cov['requiredPeriods'] ?? block['requiredSemesters'] ?? '—';
-      final prov = block['provisionalPoints'] ?? block['points'];
-      final val = block['validatedPoints'];
-      return '$title · periods $filled/$required'
-          '${prov != null ? ' · projected $prov' : ''}'
-          '${val != null ? ' · validated $val' : ''}';
-    }
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Teaching effectiveness detail (SET + SEF)',
-              style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
-            ),
-            const SizedBox(height: 8),
-            Text(block('SET', set), style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 4),
-            Text(block('SEF', sef), style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 8),
-            Text(
-              'Criterion A combined — projected: ${total ?? '—'} · validated: ${validated ?? '—'}',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

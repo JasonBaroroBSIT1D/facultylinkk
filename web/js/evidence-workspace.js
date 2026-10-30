@@ -54,11 +54,23 @@ FL.evidence = {
   },
 
   reviewDocHref: function (doc, reviewBase) {
+    const tevId = doc.teachingEvaluationId || doc.tevId || "";
     return reviewBase + "?id=" + encodeURIComponent(doc.id || doc.documentId)
       + (doc.facultyId ? "&faculty=" + encodeURIComponent(doc.facultyId) : "")
       + (doc.kraId ? "&kra=" + encodeURIComponent(doc.kraId) : "")
       + (doc.criterionId ? "&criterion=" + encodeURIComponent(doc.criterionId) : "")
-      + (doc.indicatorId ? "&indicator=" + encodeURIComponent(doc.indicatorId) : "");
+      + (doc.indicatorId ? "&indicator=" + encodeURIComponent(doc.indicatorId) : "")
+      + (tevId ? "&tev=" + encodeURIComponent(tevId) : "");
+  },
+
+  setSefRecordWarningsHtml: function (row) {
+    const parts = [];
+    if (row.incompleteExtraction) parts.push('<span class="ev-pill ev-pill-warn">Incomplete OCR</span>');
+    if (row.duplicatePeriodWarning) parts.push('<span class="ev-pill ev-pill-warn">Duplicate period</span>');
+    if (row.missingFields && row.missingFields.length) {
+      parts.push('<span class="ev-pill ev-pill-warn">Missing: ' + FL.esc(row.missingFields.join(", ")) + "</span>");
+    }
+    return parts.length ? parts.join(" ") : "—";
   },
 
   setSefAggregationLabel: function (methodId) {
@@ -270,8 +282,10 @@ FL.evidence = {
     }
   },
 
-  setSefUploadCountFromTe: function (indicatorId, payload) {
-    if (!FL.evidence.isSetSefIndicator(indicatorId) || !payload) return null;
+  setSefUploadCountFromTe: function (indicatorId, payload, block) {
+    if (!FL.evidence.isSetSefIndicator(indicatorId)) return null;
+    if (block && Array.isArray(block.evaluationRecords)) return block.evaluationRecords.length;
+    if (!payload) return null;
     if (indicatorId === "kra1-a-student") {
       return ((payload.set || {}).coverageSummary || {}).totalUploads;
     }
@@ -1052,7 +1066,7 @@ FL.evidence = {
   },
 
   _paintSetSefIndicatorTable: function (host, session, state, isAdmin, hit, localDocs, reviewBase, block) {
-    const rows = (block && block.documents) || [];
+    const rows = (block && (block.evaluationRecords || block.documents)) || [];
     const ctx = {
       facultyId: state.facultyId,
       kraId: state.kraId || "kra1",
@@ -1070,34 +1084,41 @@ FL.evidence = {
     };
     const tableBody = rows.length ? rows.map(function (row) {
       const doc = mergeDoc(row);
+      doc.teachingEvaluationId = row.teachingEvaluationId || row.id;
       const href = FL.evidence.reviewDocHref(doc, reviewBase);
       const fileName = row.fileName || doc.fileName || doc.id;
-      const ocrV = row.ocrVerificationStatus || (doc.extractedInfo && doc.extractedInfo["Indicator verification status"]) || "—";
-      const displaySt = row.reviewDisplayStatus
+      const ocrV = row.extractionStatus || row.ocrVerificationStatus
+        || (doc.extractedInfo && doc.extractedInfo["SET/SEF extraction status"])
+        || (doc.extractedInfo && doc.extractedInfo["Indicator verification status"]) || "—";
+      const displaySt = row.reviewerValidationStatus || row.reviewDisplayStatus
         || (doc.status === "approved" && (row.approvalDecisionSource || (doc.extractedInfo && doc.extractedInfo["Approval decision source"])) === "system_auto_approval"
           ? "simulation-auto-accepted"
           : doc.status === "approved"
             ? "simulation-reviewer-validated"
             : doc.status || row.reviewBucket || "pending-review");
+      const evalType = row.evaluationType || "—";
       return `<tr>
+        <td>${FL.esc(evalType)}</td>
         <td>${FL.esc(row.academicYear || "—")}</td>
         <td>${FL.esc(row.semester || "—")}</td>
-        <td><a class="set-sef-file-link" href="${href}">${FL.esc(fileName)}</a></td>
+        <td><a class="set-sef-file-link" href="${href}">${FL.esc(fileName)}</a>${row.sourceSectionRef ? `<div class="sub">${FL.esc(row.sourceSectionRef)}</div>` : ""}</td>
         <td>${FL.esc(row.ratingRaw || "—")}</td>
         <td>${FL.esc(row.ratingScale != null ? row.ratingScale : "—")}</td>
         <td>${FL.esc(ocrV)}</td>
         <td>${FL.evidence.statusBadge(displaySt === "accepted" ? "approved" : displaySt)}</td>
+        <td>${FL.evidence.setSefRecordWarningsHtml(row)}</td>
       </tr>`;
     }).join("") : "";
 
     host.innerHTML = `${hit ? `<div class="evidence-indicator-head"><h2>${FL.esc(hit.indicator.name)}</h2></div>` : ""}
+      <p class="note">Each row is one extracted SET or SEF semester from an uploaded PDF. Multiple rows may share the same filename when one file contains several evaluations.</p>
       <div class="table-wrap set-sef-table-wrap">
         <table class="data set-sef-evidence-table">
           <thead><tr>
-            <th>Academic year</th><th>Semester</th><th>Filename</th><th>Overall rating</th>
-            <th>Rating scale</th><th>OCR verification</th><th>Reviewer validation</th>
+            <th>Type</th><th>Academic year</th><th>Semester</th><th>Source file / section</th><th>Overall rating</th>
+            <th>Rating scale</th><th>OCR status</th><th>Reviewer validation</th><th>Flags</th>
           </tr></thead>
-          <tbody>${tableBody || `<tr><td colspan="7" class="sub">No SET/SEF documents uploaded yet.</td></tr>`}</tbody>
+          <tbody>${tableBody || `<tr><td colspan="9" class="sub">No SET/SEF evaluation records yet.</td></tr>`}</tbody>
         </table>
       </div>
       ${FL.evidence.setSefCalcPanelHtml(block)}`;

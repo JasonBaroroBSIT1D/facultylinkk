@@ -169,6 +169,7 @@ def documents_refresh_set_sef_extraction(apply: bool) -> None:
     from models import Document
 
     from documents.ocr.set_sef_metadata import apply_set_sef_to_extracted_info, is_set_sef_indicator
+    from documents.teaching_evaluation_sync import sync_teaching_evaluations_for_document
 
     docs = Document.query.filter(
         Document.deleted_at.is_(None),
@@ -185,10 +186,17 @@ def documents_refresh_set_sef_extraction(apply: bool) -> None:
     for doc in targets:
         info = dict(doc.extracted_info or {})
         method = info.get("OCR method") or info.get("Extraction method")
+        text = (doc.extracted_text or "").strip()
         doc.extracted_info = apply_set_sef_to_extracted_info(
             info,
-            text=(doc.extracted_text or "").strip(),
+            text=text,
             indicator_id=doc.indicator_id,
+            extraction_method=method,
+        )
+        sync_teaching_evaluations_for_document(
+            doc,
+            text=text,
+            ocr_confidence=doc.ocr_confidence,
             extraction_method=method,
         )
         updated += 1

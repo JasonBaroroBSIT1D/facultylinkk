@@ -10,6 +10,7 @@ import '../../widgets/common.dart';
 import '../../widgets/kra_card.dart';
 import '../../widgets/progress_ring.dart';
 import '../../widgets/status_badge.dart';
+import '../../widgets/teaching_effectiveness_summary_card.dart';
 
 class AssessmentScreen extends StatefulWidget {
   const AssessmentScreen({super.key});
@@ -83,21 +84,44 @@ class _AssessmentScreenState extends State<AssessmentScreen>
   }
 }
 
-class _KraScoresTab extends StatelessWidget {
+class _KraScoresTab extends StatefulWidget {
   const _KraScoresTab();
+
+  @override
+  State<_KraScoresTab> createState() => _KraScoresTabState();
+}
+
+class _KraScoresTabState extends State<_KraScoresTab> {
+  @override
+  void initState() {
+    super.initState();
+    if (AppState.instance.isSignedIn && !AppState.instance.usesMockAuth) {
+      AppState.instance.fetchTeachingEffectivenessFromApi(quiet: true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final scores = AppState.instance.kraScores;
     final total = scores.fold<int>(0, (sum, item) => sum + item.currentPoints);
+    final te = AppState.instance.criterionA;
+    final liveTe = !AppState.instance.usesMockAuth && te != null;
 
-    return ListView(
+    return ListenableBuilder(
+      listenable: AppState.instance,
+      builder: (context, _) {
+        final criterionA = AppState.instance.criterionA;
+        return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
-        const InfoBanner(
-          message:
-              'Point values are mock previews for this prototype. Official scoring will be applied later.',
-        ),
+        if (liveTe && criterionA != null) ...[
+          TeachingEffectivenessSummaryCard(data: criterionA),
+          const SizedBox(height: 14),
+        ] else
+          const InfoBanner(
+            message:
+                'Teaching effectiveness scores load from the server when you are signed in with a live account.',
+          ),
         const SizedBox(height: 14),
         Card(
           child: Padding(
@@ -159,6 +183,8 @@ class _KraScoresTab extends StatelessWidget {
           const SizedBox(height: 10),
         ],
       ],
+    );
+      },
     );
   }
 }

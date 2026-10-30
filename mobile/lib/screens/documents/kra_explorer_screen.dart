@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../data/app_state.dart';
 import '../../data/mock_kra_catalog.dart';
+import '../../data/teaching_effectiveness_mapper.dart';
+import '../../models/teaching_evaluation_record.dart';
 import '../../models/enums.dart';
 import '../../models/models.dart';
 import '../../navigation/app_routes.dart';
@@ -9,6 +11,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/common.dart';
 import '../../widgets/compact_folder_card.dart';
 import '../../widgets/document_card.dart';
+import '../../widgets/teaching_evaluation_record_tile.dart';
 import 'document_flow_args.dart';
 
 /// Faculty KRA → criterion → indicator document explorer.
@@ -41,13 +44,20 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
   Map<String, dynamic>? _kraNode;
   String? _criterionId;
   String? _indicatorId;
+  bool _loadingSetSef = false;
+  List<TeachingEvaluationRecord> _evaluationRecords = const [];
+  String? _setSefLoadError;
 
   @override
   void initState() {
     super.initState();
     _criterionId = widget.initialCriterionId;
     _indicatorId = widget.initialIndicatorId;
-    _load();
+    _load().then((_) {
+      if (FacultyDocument.isSetSefIndicatorId(_indicatorId)) {
+        _loadSetSefRecords(_indicatorId!);
+      }
+    });
   }
 
   Future<void> _load() async {
@@ -130,7 +140,38 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
   }
 
   void _openIndicator(String? id) {
-    setState(() => _indicatorId = id);
+    setState(() {
+      _indicatorId = id;
+      _evaluationRecords = const [];
+      _setSefLoadError = null;
+    });
+    if (FacultyDocument.isSetSefIndicatorId(id)) {
+      _loadSetSefRecords(id!);
+    }
+  }
+
+  Future<void> _loadSetSefRecords(String indicatorId) async {
+    if (AppState.instance.usesMockAuth) return;
+    setState(() {
+      _loadingSetSef = true;
+      _setSefLoadError = null;
+    });
+    try {
+      final cached = AppState.instance.setSefIndicatorBlock(indicatorId);
+      final block = cached ??
+          await AppState.instance.fetchSetSefIndicatorFromApi(indicatorId);
+      if (!mounted || _indicatorId != indicatorId) return;
+      setState(() {
+        _evaluationRecords = TeachingEffectivenessMapper.recordsFromBlock(block);
+        _loadingSetSef = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingSetSef = false;
+        _setSefLoadError = e.toString();
+      });
+    }
   }
 
   void _handleBack() {
@@ -274,7 +315,7 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
               icon: Icons.description_outlined,
               iconColor: AppColors.kra(widget.kra),
               title: indicator['name']?.toString() ?? 'Indicator',
-              subtitle: '${_docsForIndicator(indicator['id']?.toString() ?? '').length} documents',
+              subtitle: _indicatorCountLabel(indicator['id']?.toString() ?? ''),
               onTap: () => _openIndicator(indicator['id']?.toString()),
             ),
           ),
@@ -282,8 +323,24 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
     );
   }
 
+  String _indicatorCountLabel(String indicatorId) {
+    if (FacultyDocument.isSetSefIndicatorId(indicatorId)) {
+      final block = AppState.instance.setSefIndicatorBlock(indicatorId);
+      final counts = TeachingEffectivenessMapper.recordCounts(block);
+      final detected = counts['detected'];
+      if (detected != null && detected > 0) {
+        return '$detected evaluation record${detected == 1 ? '' : 's'}';
+      }
+    }
+    final n = _docsForIndicator(indicatorId).length;
+    return '$n document${n == 1 ? '' : 's'}';
+  }
+
   Widget _buildIndicatorDocs() {
     final indicatorId = _indicatorId ?? '';
+    if (FacultyDocument.isSetSefIndicatorId(indicatorId)) {
+      return _buildSetSefIndicatorRecords(indicatorId);
+    }
     final docs = _docsForIndicator(indicatorId);
     final indicator = _findIndicator(_indicatorId);
     final evidence = indicator?['evidence'];
@@ -394,6 +451,104 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
               ),
             ),
       ],
+    );
+  }
+
+  Widget _buildSetSefIndicatorRecords(String indicatorId) {
+    final indicator = _findIndicator(_indicatorId);
+    final docs = _docsForIndicator(indicatorId);
+    final uniqueDocIds = _evaluationRecords.map((r) => r.documentId).toSet();
+
+    return RefreshIndicator(
+      onRefresh: () => _loadSetSefRecords(indicatorId),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          if (indicator != null) ...[
+            Text(
+              indicator['name']?.toString() ?? '',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 17,
+                color: AppColors.navy,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Each row is one semester extracted from your uploads. Several rows may share the same PDF when one file contains multiple evaluations.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (_loadingSetSef)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_setSefLoadError != null)
+            ErrorState(message: _setSefLoadError!, onRetry: () => _loadSetSefRecords(indicatorId))
+          else if (_evaluationRecords.isEmpty)
+            EmptyState(
+              icon: Icons.upload_file_outlined,
+              title: 'No evaluation records yet',
+              message: docs.isEmpty
+                  ? 'Upload a SET or SEF PDF to begin OCR extraction.'
+                  : 'OCR may still be processing. Pull to refresh.',
+            )
+          else ...[
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Semester records',
+                    style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
+                  ),
+                ),
+                Text(
+                  '${_evaluationRecords.length} record${_evaluationRecords.length == 1 ? '' : 's'}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            for (final record in _evaluationRecords)
+              TeachingEvaluationRecordTile(
+                record: record,
+                onTap: () {
+                  Navigator.pushNamed(
+                    context,
+                    AppRoutes.documentDetails,
+                    arguments: record.documentId,
+                  );
+                },
+              ),
+          ],
+          if (uniqueDocIds.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Source uploads',
+              style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
+            ),
+            const SizedBox(height: 8),
+            for (final doc in docs.where((d) => uniqueDocIds.contains(d.id)))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: DocumentCard(
+                  showOcr: true,
+                  document: doc,
+                  onTap: () {
+                    Navigator.pushNamed(context, AppRoutes.documentDetails, arguments: doc.id);
+                  },
+                  onView: () {
+                    Navigator.pushNamed(context, AppRoutes.documentDetails, arguments: doc.id);
+                  },
+                ),
+              ),
+          ],
+        ],
+      ),
     );
   }
 }

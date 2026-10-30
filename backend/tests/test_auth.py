@@ -2,13 +2,15 @@ from unittest.mock import patch
 
 import pytest
 
-pytestmark = pytest.mark.skip(
-    reason=(
-        "PostgreSQL integration tests are disabled while using a single application "
-        "database (facultylink). Re-enable after an isolated test database or in-memory "
-        "strategy is configured."
-    )
-)
+pytestmark = [
+    pytest.mark.skip(
+        reason=(
+            "PostgreSQL integration tests are disabled to protect the facultylink "
+            "database. See tests/db_safety.py and docs/DATABASE_SAFETY.md."
+        )
+    ),
+    pytest.mark.db_write,
+]
 
 from extensions import db
 from models import FacultyProfile, User

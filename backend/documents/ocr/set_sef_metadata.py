@@ -15,6 +15,10 @@ _VERIFICATION_MISMATCH = "POSSIBLE_MISMATCH"
 _VERIFICATION_UNDETERMINED = "UNDETERMINED"
 _VERIFICATION_FAILED = "PROCESSING_FAILED"
 
+EXTRACTION_COMPLETE = "complete"
+EXTRACTION_PARTIAL = "partial"
+EXTRACTION_AMBIGUOUS = "ambiguous"
+
 _SET_PHRASES = (
     "student evaluation of teachers",
     "student evaluation of teaching",
@@ -75,6 +79,19 @@ _TITLE_LINE_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+_SECTION_HEADER_RE = re.compile(
+    r"(?m)^(?:"
+    r"(?:student|supervisor)\s+evaluation\s+of\s+(?:teachers?|faculty|teaching)"
+    r"|(?:SET|SEF)\s+(?:summary|rating|report|evaluation)"
+    r")\s*$",
+    re.IGNORECASE,
+)
+
+_PAGE_MARKER_RE = re.compile(
+    r"(?:\[(?:Page|PAGE)\s*(\d+)\]|^---+\s*Page\s+(\d+)\s*---+$)",
+    re.MULTILINE,
+)
+
 
 @dataclass
 class SetSefExtraction:
@@ -89,6 +106,24 @@ class SetSefExtraction:
     verification_status: str = _VERIFICATION_UNDETERMINED
     missing_fields: list[str] = field(default_factory=list)
     ambiguous_fields: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SetSefEvaluationRecord:
+    """One SET or SEF semester evaluation detected within a document."""
+
+    evaluation_type: str | None = None  # "SET" | "SEF"
+    academic_year: str | None = None
+    semester: str | None = None
+    overall_rating: str | None = None
+    rating_scale: str | None = None
+    extraction_status: str = EXTRACTION_PARTIAL
+    source_section_ref: str | None = None
+    faculty_name: str | None = None
+    document_title: str | None = None
+    missing_fields: list[str] = field(default_factory=list)
+    ambiguous_fields: list[str] = field(default_factory=list)
+    uncertainty_notes: list[str] = field(default_factory=list)
 
 
 def _normalize_year(start: str, end: str) -> str:
@@ -129,8 +164,9 @@ def _evaluation_type_label(kind: str | None, text: str) -> str | None:
         return "Student Evaluation of Teaching"
     if kind == "SEF":
         return "Supervisor Evaluation of Teaching"
-    if _TITLE_LINE_RE.search(text):
-        line = _TITLE_LINE_RE.search(text).group(0).strip()
+    title_match = _TITLE_LINE_RE.search(text)
+    if title_match:
+        line = title_match.group(0).strip()
         return line[0].upper() + line[1:]
     return None
 
@@ -147,6 +183,217 @@ def _extract_title(text: str, kind: str | None) -> str | None:
     if first and len(first) <= 120:
         return first
     return None
+
+
+def _line_number_at(text: str, index: int) -> int:
+    return text[:index].count("\n") + 1
+
+
+def _page_hint_at(text: str, index: int) -> str | None:
+    """Nearest page marker at or before index in extracted text."""
+    prefix = text[:index]
+    last_page: str | None = None
+    for match in _PAGE_MARKER_RE.finditer(text):
+        if match.start() > index:
+            break
+        page = match.group(1) or match.group(2)
+        if page:
+            last_page = page
+    if last_page:
+        return f"page:{last_page}"
+    page_breaks = prefix.count("\f")
+    if page_breaks:
+        return f"page:{page_breaks + 1}"
+    return None
+
+
+def _extract_faculty_name(block: str) -> str | None:
+    name_match = _FACULTY_NAME_RE.search(block)
+    if not name_match:
+        return None
+    name = re.sub(r"\s+", " ", name_match.group(1)).strip(" .,")
+    return name if len(name) >= 3 else None
+
+
+def _extract_year(block: str) -> str | None:
+    year_match = _YEAR_RE.search(block) or _YEAR_FALLBACK.search(block)
+    if not year_match:
+        return None
+    return _normalize_year(year_match.group(1), year_match.group(2))
+
+
+def _extract_semester_after(block: str, after_index: int = 0) -> str | None:
+    sem_match = _SEMESTER_RE.search(block, pos=after_index)
+    if not sem_match:
+        return None
+    return _normalize_semester(sem_match.group(0))
+
+
+def _extract_rating_after(block: str, after_index: int = 0) -> tuple[str | None, str | None]:
+    sub = block[after_index:]
+    rating_match = _RATING_FRACTION_RE.search(sub)
+    if rating_match:
+        num, denom = rating_match.group(1), rating_match.group(2)
+        return f"{num} / {denom}", denom
+    pct = _RATING_PERCENT_RE.search(sub)
+    if pct:
+        return f"{pct.group(1)}%", "100"
+    return None, None
+
+
+def _record_extraction_status(record: SetSefEvaluationRecord) -> str:
+    if record.ambiguous_fields:
+        return EXTRACTION_AMBIGUOUS
+    required = ("evaluation type", "academic year", "semester", "overall rating")
+    missing = set(record.missing_fields)
+    if any(f in missing for f in required):
+        return EXTRACTION_PARTIAL
+    if record.evaluation_type in ("SET", "SEF") and record.academic_year and record.semester and record.overall_rating:
+        return EXTRACTION_COMPLETE
+    return EXTRACTION_PARTIAL
+
+
+def _parse_block_to_record(block: str, *, section_ref: str, doc_faculty: str | None) -> SetSefEvaluationRecord:
+    block = block.strip()
+    lower = block.lower()
+    kind = _detect_kind(lower)
+    record = SetSefEvaluationRecord(source_section_ref=section_ref)
+    record.evaluation_type = kind
+    record.document_title = _extract_title(block, kind)
+    record.faculty_name = _extract_faculty_name(block) or doc_faculty
+
+    year_match = _YEAR_RE.search(block) or _YEAR_FALLBACK.search(block)
+    year_pos = year_match.start() if year_match else 0
+    if year_match:
+        record.academic_year = _normalize_year(year_match.group(1), year_match.group(2))
+    else:
+        record.missing_fields.append("academic year")
+
+    sem_match = _SEMESTER_RE.search(block, pos=year_pos)
+    sem_pos = sem_match.start() if sem_match else year_pos
+    if sem_match:
+        record.semester = _normalize_semester(sem_match.group(0))
+    else:
+        record.missing_fields.append("semester")
+
+    rating_start = sem_match.end() if sem_match else year_pos
+    rating, scale = _extract_rating_after(block, rating_start)
+    if rating:
+        record.overall_rating = rating
+        record.rating_scale = scale
+    else:
+        record.missing_fields.append("overall rating")
+
+    if not kind:
+        record.missing_fields.append("evaluation type")
+        record.ambiguous_fields.append("evaluation type")
+
+    rating_values: set[str] = set()
+    for match in _RATING_FRACTION_RE.finditer(block):
+        rating_values.add(f"{match.group(1)}/{match.group(2)}")
+    for match in _RATING_PERCENT_RE.finditer(block):
+        rating_values.add(f"{match.group(1)}%")
+    if len(rating_values) > 1:
+        record.ambiguous_fields.append("overall rating")
+        record.uncertainty_notes.append("Multiple distinct ratings in section; using first after semester.")
+
+    year_values: set[str] = set()
+    for match in _YEAR_RE.finditer(block):
+        year_values.add(_normalize_year(match.group(1), match.group(2)))
+    for match in _YEAR_FALLBACK.finditer(block):
+        year_values.add(_normalize_year(match.group(1), match.group(2)))
+    if len(year_values) > 1:
+        record.ambiguous_fields.append("academic year")
+        record.uncertainty_notes.append("Multiple academic years in section; using first in block.")
+
+    page_hint = _page_hint_at(block, 0)
+    if page_hint:
+        record.source_section_ref = f"{section_ref};{page_hint}"
+
+    record.extraction_status = _record_extraction_status(record)
+    return record
+
+
+def _split_into_blocks(raw: str) -> list[tuple[str, str]]:
+    text = (raw or "").replace("\r\n", "\n").strip()
+    if not text:
+        return []
+
+    headers = list(_SECTION_HEADER_RE.finditer(text))
+    if len(headers) >= 2:
+        blocks: list[tuple[str, str]] = []
+        for i, match in enumerate(headers):
+            start = match.start()
+            end = headers[i + 1].start() if i + 1 < len(headers) else len(text)
+            line_no = _line_number_at(text, start)
+            ref = f"section:{i + 1}:line{line_no}"
+            blocks.append((ref, text[start:end].strip()))
+        return blocks
+
+    if len(headers) == 1:
+        return [(f"section:1:line{_line_number_at(text, headers[0].start())}", text)]
+
+    year_spans: list[tuple[int, int]] = []
+    seen_anchors: list[tuple[int, str]] = []
+    for match in _YEAR_RE.finditer(text):
+        norm = _normalize_year(match.group(1), match.group(2))
+        seen_anchors.append((match.start(), norm))
+    for match in _YEAR_FALLBACK.finditer(text):
+        norm = _normalize_year(match.group(1), match.group(2))
+        if any(abs(match.start() - pos) < 16 and norm == existing for pos, existing in seen_anchors):
+            continue
+        seen_anchors.append((match.start(), norm))
+    seen_anchors.sort(key=lambda t: t[0])
+    collapsed: list[tuple[int, str]] = []
+    for pos, norm in seen_anchors:
+        if collapsed and norm == collapsed[-1][1] and pos - collapsed[-1][0] < 80:
+            continue
+        collapsed.append((pos, norm))
+    year_spans = [(pos, pos) for pos, _ in collapsed]
+
+    if len(year_spans) >= 2:
+        blocks = []
+        for i, (ystart, _) in enumerate(year_spans):
+            if i == 0:
+                chunk_start = text.rfind("\n\n", 0, ystart)
+                if chunk_start == -1:
+                    chunk_start = max(0, ystart - 400)
+            else:
+                chunk_start = ystart
+            next_start = year_spans[i + 1][0] if i + 1 < len(year_spans) else len(text)
+            chunk = text[chunk_start:next_start].strip()
+            line_no = _line_number_at(text, ystart)
+            blocks.append((f"period:{i + 1}:line{line_no}", chunk))
+        return blocks
+
+    return [("section:1", text)]
+
+
+def parse_set_sef_metadata_multi(text: str) -> list[SetSefEvaluationRecord]:
+    """
+    Detect zero or more SET/SEF evaluation records in document text.
+
+    Does not assume a fixed semester count. Does not invent missing fields.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return []
+
+    doc_faculty = _extract_faculty_name(raw)
+    blocks = _split_into_blocks(raw)
+    records: list[SetSefEvaluationRecord] = []
+    for section_ref, block in blocks:
+        if not block.strip():
+            continue
+        record = _parse_block_to_record(block, section_ref=section_ref, doc_faculty=doc_faculty)
+        records.append(record)
+
+    if not records and raw:
+        records.append(
+            _parse_block_to_record(raw, section_ref="section:1", doc_faculty=doc_faculty)
+        )
+
+    return records
 
 
 def parse_set_sef_metadata(text: str) -> SetSefExtraction:
@@ -217,6 +464,19 @@ def verify_selected_indicator(selected_indicator_id: str | None, extraction: Set
     if not selected_indicator_id or selected_indicator_id not in SET_SEF_INDICATOR_IDS:
         return _VERIFICATION_UNDETERMINED
     kind = extraction.detected_kind
+    if not kind:
+        return _VERIFICATION_UNDETERMINED
+    if selected_indicator_id in SET_INDICATOR_IDS and kind == "SET":
+        return _VERIFICATION_MATCH
+    if selected_indicator_id in SEF_INDICATOR_IDS and kind == "SEF":
+        return _VERIFICATION_MATCH
+    return _VERIFICATION_MISMATCH
+
+
+def verify_record_indicator(selected_indicator_id: str | None, record: SetSefEvaluationRecord) -> str:
+    if not selected_indicator_id or selected_indicator_id not in SET_SEF_INDICATOR_IDS:
+        return _VERIFICATION_UNDETERMINED
+    kind = record.evaluation_type
     if not kind:
         return _VERIFICATION_UNDETERMINED
     if selected_indicator_id in SET_INDICATOR_IDS and kind == "SET":

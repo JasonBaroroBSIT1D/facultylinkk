@@ -60,6 +60,15 @@ class ApiClient {
     );
   }
 
+  /// SET or SEF indicator folder: evaluation records + backend scoring block.
+  Future<Map<String, dynamic>> fetchSetSefIndicator(String indicatorId) async {
+    return _getJson(
+      '/api/faculty/me/set-sef-indicator?indicatorId=${Uri.encodeQueryComponent(indicatorId)}',
+      authenticated: true,
+      allowRefresh: true,
+    );
+  }
+
   /// Dynamic rank-upgrade simulation (PostgreSQL + published scoring).
   Future<Map<String, dynamic>> fetchRankSimulation() async {
     return _getJson(

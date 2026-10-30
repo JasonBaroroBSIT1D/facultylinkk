@@ -6,6 +6,10 @@ from models import Document, FacultyProfile
 
 from documents.scoring.set_sef_aggregate import build_criterion_a_summary
 from documents.status_map import document_status_to_web
+from documents.teaching_evaluation_serializers import (
+    apply_duplicate_period_flags,
+    folder_evaluation_records,
+)
 
 
 def faculty_eligibility_from_profile(profile: FacultyProfile) -> dict | None:
@@ -38,31 +42,33 @@ def teaching_effectiveness_payload(profile: FacultyProfile) -> dict:
 
 
 def indicator_folder_payload(profile: FacultyProfile, indicator_id: str) -> dict:
-    docs = [
-        d
-        for d in _active_docs_for_profile(profile.id)
-        if d.indicator_id == indicator_id
-    ]
+    all_docs = _active_docs_for_profile(profile.id)
     from documents.scoring.set_sef_aggregate import aggregate_indicator
 
     block = aggregate_indicator(
-        docs,
+        all_docs,
         indicator_id,
         faculty_eligibility=faculty_eligibility_from_profile(profile),
     )
     block["facultyId"] = profile.public_id
+
+    evaluation_records = folder_evaluation_records(profile.id, indicator_id, all_docs)
+    apply_duplicate_period_flags(evaluation_records)
+    block["evaluationRecords"] = evaluation_records
+    block["documents"] = evaluation_records
     block["documentSummaries"] = [
         {
-            "id": d.public_id,
-            "fileName": d.file_name,
-            "status": document_status_to_web(d),
-            "academicYear": (d.extracted_info or {}).get("Academic year"),
-            "semester": (d.extracted_info or {}).get("Semester"),
-            "rating": (d.extracted_info or {}).get("Extracted rating"),
-            "ratingScale": (d.extracted_info or {}).get("Rating scale"),
-            "ocrVerification": (d.extracted_info or {}).get("Indicator verification status"),
-            "reviewerValidationStatus": document_status_to_web(d),
+            "id": row.get("documentId"),
+            "fileName": row.get("fileName"),
+            "status": row.get("reviewerValidationStatus"),
+            "academicYear": row.get("academicYear"),
+            "semester": row.get("semester"),
+            "rating": row.get("ratingRaw"),
+            "ratingScale": row.get("ratingScale"),
+            "ocrVerification": row.get("ocrVerificationStatus"),
+            "reviewerValidationStatus": row.get("reviewerValidationStatus"),
+            "teachingEvaluationId": row.get("teachingEvaluationId"),
         }
-        for d in docs
+        for row in evaluation_records
     ]
     return block

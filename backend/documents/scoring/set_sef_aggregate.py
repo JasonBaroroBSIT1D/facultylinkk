@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from models import Document
+from models import Document, DocumentTeachingEvaluation
 
 from documents.scoring.circular_formula import (
     indicator_points_from_overall_rating,
@@ -90,7 +90,129 @@ def _review_bucket(status: str | None) -> str:
 
 
 def _period_rank(bucket: str) -> int:
-    return {"accepted": 4, "pending": 3, "revision": 2, "rejected": 1}.get(bucket, 0)
+    return {"accepted": 4, "pending": 3, "revision": 2, "rejected": 1, "incomplete": 0}.get(bucket, 0)
+
+
+def _iter_teaching_evaluations(doc: Document) -> list[Any]:
+    rel = getattr(doc, "teaching_evaluations", None)
+    if rel is None:
+        return []
+    try:
+        return list(rel.all())
+    except AttributeError:
+        try:
+            return list(rel)
+        except TypeError:
+            return []
+
+
+def _tev_review_bucket(reviewer_status: str | None, *, incomplete: bool) -> str:
+    if incomplete:
+        return "incomplete"
+    st = (reviewer_status or "").strip().lower().replace("-", "_")
+    if st in _APPROVED:
+        return "accepted"
+    if st in _REJECTED:
+        return "rejected"
+    if st == "needs_revision":
+        return "revision"
+    if st in _PENDING or not st:
+        return "pending"
+    return "pending"
+
+
+def _tev_incomplete(meta: dict) -> bool:
+    if not isinstance(meta, dict):
+        return False
+    if meta.get("missingFields"):
+        return True
+    return meta.get("extractionStatus") in ("partial", "ambiguous")
+
+
+def teaching_evaluation_period_row(
+    tev: DocumentTeachingEvaluation | Any,
+    doc: Document,
+    *,
+    default_scale: float = 100.0,
+) -> dict:
+    meta = dict(getattr(tev, "extracted_metadata", None) or {})
+    incomplete = _tev_incomplete(meta)
+    scale = getattr(tev, "rating_scale", None) or default_scale
+    try:
+        scale = float(scale)
+    except (TypeError, ValueError):
+        scale = default_scale
+    rating_pct = getattr(tev, "rating_percent", None)
+    scale_used = scale
+    rating_raw = (getattr(tev, "rating_raw", None) or "").strip()
+    if rating_pct is None and rating_raw:
+        rating_pct, scale_used = parse_rating_percent(rating_raw, default_scale=scale)
+    bucket = _tev_review_bucket(getattr(tev, "reviewer_validation_status", None), incomplete=incomplete)
+    return {
+        "teachingEvaluationId": getattr(tev, "public_id", None),
+        "documentId": doc.public_id,
+        "fileName": doc.file_name,
+        "academicYear": getattr(tev, "academic_year", None) or None,
+        "semester": getattr(tev, "semester", None) or None,
+        "ratingRaw": rating_raw or None,
+        "ratingPercent": rating_pct,
+        "ratingScale": scale_used,
+        "facultyName": (meta.get("facultyName") or meta.get("Faculty name") or None),
+        "evaluationType": getattr(tev, "evaluation_type", None),
+        "ocrVerificationStatus": getattr(tev, "ocr_verification_status", None),
+        "reviewStatus": document_status_to_web_from_tev(getattr(tev, "reviewer_validation_status", None)),
+        "reviewerValidationStatus": document_status_to_web_from_tev(
+            getattr(tev, "reviewer_validation_status", None)
+        ),
+        "reviewDisplayStatus": document_status_to_web_from_tev(getattr(tev, "reviewer_validation_status", None)),
+        "approvalDecisionSource": None,
+        "autoValidation": None,
+        "reviewBucket": bucket,
+        "ocrStatus": doc.ocr_status,
+        "submittedAt": doc.submitted_at.isoformat() if doc.submitted_at else None,
+        "sourceSectionRef": getattr(tev, "source_section_ref", None),
+        "incompleteExtraction": incomplete,
+    }
+
+
+def document_status_to_web_from_tev(reviewer_status: str | None) -> str:
+    st = (reviewer_status or "").strip().lower().replace("-", "_")
+    if not st:
+        return "pending-review"
+    from documents.status_map import DB_TO_WEB
+
+    return DB_TO_WEB.get(st, st.replace("_", "-"))
+
+
+def collect_period_rows(
+    docs: list[Document],
+    indicator_id: str,
+    *,
+    default_scale: float = 100.0,
+) -> list[dict]:
+    """Build semester rows from linked evaluations, with legacy document fallback."""
+    rows: list[dict] = []
+    for doc in docs:
+        children = [
+            tev
+            for tev in _iter_teaching_evaluations(doc)
+            if getattr(tev, "indicator_id", None) == indicator_id
+        ]
+        if children:
+            for tev in sorted(
+                children,
+                key=lambda t: (
+                    getattr(t, "academic_year", None) or "",
+                    getattr(t, "semester", None) or "",
+                    getattr(t, "public_id", None) or "",
+                ),
+            ):
+                rows.append(
+                    teaching_evaluation_period_row(tev, doc, default_scale=default_scale)
+                )
+        elif doc.indicator_id == indicator_id:
+            rows.append(document_period_row(doc, default_scale=default_scale))
+    return rows
 
 
 def document_period_row(doc: Document, *, default_scale: float = 100.0) -> dict:
@@ -142,11 +264,20 @@ def _dedupe_periods(rows: list[dict]) -> tuple[list[dict], list[dict]]:
         if not prev:
             by_key[key] = row
             continue
-        if _period_rank(row["reviewBucket"]) > _period_rank(prev["reviewBucket"]):
+        prev_bucket = prev["reviewBucket"]
+        row_bucket = row["reviewBucket"]
+        if _period_rank(row_bucket) > _period_rank(prev_bucket):
             prev["exclusionReason"] = "Duplicate period — superseded by higher-priority record"
             prev["includedInAverage"] = False
             excluded.append(prev)
             by_key[key] = row
+        elif prev_bucket == "accepted" and row_bucket == "accepted":
+            reason = "Conflict: multiple reviewer-approved records for this period"
+            for record in (prev, row):
+                record["exclusionReason"] = reason
+                record["includedInAverage"] = False
+                excluded.append(record)
+            by_key.pop(key, None)
         else:
             row["exclusionReason"] = "Duplicate period — another document covers this semester"
             row["includedInAverage"] = False
@@ -156,6 +287,9 @@ def _dedupe_periods(rows: list[dict]) -> tuple[list[dict], list[dict]]:
         if row["reviewBucket"] == "rejected":
             row["includedInAverage"] = False
             row["exclusionReason"] = row.get("exclusionReason") or "Rejected evidence"
+        elif row["reviewBucket"] == "incomplete":
+            row["includedInAverage"] = False
+            row["exclusionReason"] = row.get("exclusionReason") or "Incomplete or ambiguous OCR extraction"
         elif row.get("ratingPercent") is None:
             row["includedInAverage"] = False
             row["exclusionReason"] = row.get("exclusionReason") or "Rating not available"
@@ -164,6 +298,36 @@ def _dedupe_periods(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             row["exclusionReason"] = None
         chosen.append(row)
     return chosen, excluded
+
+
+def _record_status_counts(
+    rows: list[dict],
+    excluded: list[dict],
+    periods: list[dict],
+) -> dict[str, int]:
+    duplicate_excluded = sum(
+        1
+        for item in excluded
+        if item.get("exclusionReason")
+        and (
+            "Duplicate period" in item["exclusionReason"]
+            or "Conflict:" in item["exclusionReason"]
+        )
+    )
+    return {
+        "detectedEvaluationRecords": len(rows),
+        "verifiedEligibleRecords": sum(
+            1
+            for p in periods
+            if p.get("includedInAverage") and p.get("reviewBucket") == "accepted"
+        ),
+        "pendingRecords": sum(1 for r in rows if r.get("reviewBucket") == "pending"),
+        "rejectedOrRevisionRecords": sum(
+            1 for r in rows if r.get("reviewBucket") in ("rejected", "revision")
+        ),
+        "incompleteRecords": sum(1 for r in rows if r.get("reviewBucket") == "incomplete"),
+        "excludedDuplicateRecords": duplicate_excluded,
+    }
 
 
 def _ratings_from_periods(periods: list[dict]) -> list[float]:
@@ -182,8 +346,9 @@ def aggregate_indicator(
 ) -> dict:
     config = indicator_scoring_config(indicator_id)
     scale = config.get("ratingScale") or 100.0
-    rows = [document_period_row(d, default_scale=scale) for d in docs if d.indicator_id == indicator_id]
+    rows = collect_period_rows(docs, indicator_id, default_scale=scale)
     periods, excluded = _dedupe_periods(rows)
+    record_counts = _record_status_counts(rows, excluded, periods)
     included = [p for p in periods if p.get("includedInAverage")]
     accepted = [p for p in included if p.get("reviewBucket") == "accepted"]
 
@@ -283,7 +448,9 @@ def aggregate_indicator(
             "totalUploads": len(rows),
             "requiredPeriods": divisor_info.eligible_divisor,
             "evidencedRatings": len(all_ratings),
+            **record_counts,
         },
+        "recordCounts": record_counts,
         "aggregationMethod": aggregation_method,
         "ratingsUsed": all_ratings,
         "validatedRatingsUsed": validated_ratings,

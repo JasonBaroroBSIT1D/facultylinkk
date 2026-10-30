@@ -310,3 +310,26 @@ def test_review_display_auto_vs_reviewer():
 
 def test_validated_scoring_accepts_auto_approved_status():
     assert _review_bucket("approved") == "accepted"
+
+
+@patch("documents.set_sef_auto_approval.apply.is_auto_approval_active", return_value=True)
+@patch("documents.set_sef_auto_approval.apply.db")
+def test_apply_withholds_when_multiple_linked_evaluations(mock_db, _active):
+    from documents.set_sef_auto_approval.apply import maybe_auto_approve_after_ocr
+
+    doc = _doc(extracted_info=_complete_sef_info())
+    doc.teaching_evaluations = SimpleNamespace(count=lambda: 3)
+    mock_db.session.get.return_value = doc
+    job = SimpleNamespace(id=7)
+    with patch("documents.set_sef_auto_approval.apply.assess_document") as mock_assess:
+        mock_assess.return_value = SimpleNamespace(
+            eligible=True,
+            to_dict=lambda: {"eligible": True, "checks": {}},
+            withheld_reasons=[],
+            policy_version="1.1.0",
+        )
+        maybe_auto_approve_after_ocr(doc, job)
+    assert doc.status == "pending_review"
+    av = doc.extracted_info.get("autoValidation") or {}
+    assert av.get("decisionSource") == "withheld"
+    assert av.get("linkedTeachingEvaluationCount") == 3

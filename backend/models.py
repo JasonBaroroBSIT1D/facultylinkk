@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import JSON, UniqueConstraint
+from sqlalchemy import CheckConstraint, JSON, Index, UniqueConstraint
+from sqlalchemy.orm import validates
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from extensions import db
@@ -148,6 +149,96 @@ class Document(TimestampMixin, db.Model):
     faculty_profile = db.relationship("FacultyProfile", back_populates="documents")
     replaces_document = db.relationship("Document", remote_side=[id], foreign_keys=[replaces_document_id])
     reviewer = db.relationship("User", foreign_keys=[reviewer_user_id])
+    teaching_evaluations = db.relationship(
+        "DocumentTeachingEvaluation",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+        order_by="DocumentTeachingEvaluation.academic_year, DocumentTeachingEvaluation.semester",
+    )
+
+
+class DocumentTeachingEvaluation(TimestampMixin, db.Model):
+    """One SET or SEF semester evaluation linked to an uploaded document (Phase 1 storage only)."""
+
+    __tablename__ = "document_teaching_evaluations"
+
+    EVALUATION_TYPE_SET = "SET"
+    EVALUATION_TYPE_SEF = "SEF"
+    INDICATOR_BY_TYPE = {
+        EVALUATION_TYPE_SET: "kra1-a-student",
+        EVALUATION_TYPE_SEF: "kra1-a-supervisor",
+    }
+
+    id = db.Column(db.Integer, primary_key=True)
+    public_id = db.Column(
+        db.String(40), unique=True, nullable=False, default=lambda: new_public_id("tev_")
+    )
+    document_id = db.Column(
+        db.Integer, db.ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    evaluation_type = db.Column(db.String(8), nullable=False, index=True)
+    indicator_id = db.Column(db.String(80), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=True)
+    semester = db.Column(db.String(40), nullable=True)
+    rating_raw = db.Column(db.String(120), nullable=True)
+    rating_scale = db.Column(db.Float, nullable=True)
+    rating_percent = db.Column(db.Float, nullable=True)
+    extracted_metadata = db.Column(JSON, nullable=False, default=dict)
+    ocr_verification_status = db.Column(db.String(40), nullable=True)
+    reviewer_validation_status = db.Column(db.String(40), nullable=True)
+    reviewer_remarks = db.Column(db.Text, nullable=True)
+    correction_history_json = db.Column(JSON, nullable=False, default=list)
+    extraction_source = db.Column(db.String(40), nullable=False, default="ocr")
+    source_section_ref = db.Column(db.String(120), nullable=True)
+
+    document = db.relationship("Document", back_populates="teaching_evaluations")
+
+    __table_args__ = (
+        CheckConstraint(
+            "evaluation_type IN ('SET', 'SEF')",
+            name="ck_document_teaching_evaluations_type",
+        ),
+        CheckConstraint(
+            "(evaluation_type = 'SET' AND indicator_id = 'kra1-a-student') OR "
+            "(evaluation_type = 'SEF' AND indicator_id = 'kra1-a-supervisor')",
+            name="ck_document_teaching_evaluations_indicator",
+        ),
+        Index(
+            "uq_document_teaching_eval_period",
+            "document_id",
+            "evaluation_type",
+            "academic_year",
+            "semester",
+            unique=True,
+            postgresql_where=db.text("academic_year IS NOT NULL AND semester IS NOT NULL"),
+            sqlite_where=db.text("academic_year IS NOT NULL AND semester IS NOT NULL"),
+        ),
+    )
+
+    @validates("evaluation_type", "indicator_id")
+    def _validate_type_indicator_pair(self, key: str, value: str) -> str:
+        if key == "evaluation_type":
+            et = (value or "").strip().upper()
+            if et not in (self.EVALUATION_TYPE_SET, self.EVALUATION_TYPE_SEF):
+                raise ValueError("evaluation_type must be SET or SEF")
+            expected = self.INDICATOR_BY_TYPE[et]
+            if self.indicator_id and self.indicator_id != expected:
+                raise ValueError(f"indicator_id must be {expected} for evaluation type {et}")
+            if not self.indicator_id:
+                self.indicator_id = expected
+            return et
+        ind = (value or "").strip()
+        et = (self.evaluation_type or "").strip().upper()
+        if et:
+            expected = self.INDICATOR_BY_TYPE.get(et)
+            if expected and ind != expected:
+                raise ValueError(f"indicator_id must be {expected} for evaluation type {et}")
+        return ind
+
+    @property
+    def faculty_profile_id(self) -> int | None:
+        return self.document.faculty_profile_id if self.document else None
 
 
 class DocumentOcrJob(TimestampMixin, db.Model):

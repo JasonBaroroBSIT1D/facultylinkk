@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from extensions import db
-from models import AuditLog, Document, DocumentOcrJob
+from models import AuditLog, Document, DocumentOcrJob, DocumentTeachingEvaluation
 
 from documents.set_sef_auto_approval.assess import AutoApprovalAssessment, assess_document
 from documents.set_sef_auto_approval.policy import POLICY_VERSION, is_auto_approval_active
@@ -15,6 +15,27 @@ from documents.ocr.set_sef_metadata import is_set_sef_indicator
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _linked_teaching_evaluation_count(doc: Document) -> int:
+    rel = getattr(doc, "teaching_evaluations", None)
+    if rel is not None:
+        try:
+            return int(rel.count())
+        except (AttributeError, TypeError):
+            try:
+                return len(list(rel))
+            except TypeError:
+                pass
+    try:
+        count = (
+            db.session.query(DocumentTeachingEvaluation)
+            .filter_by(document_id=doc.id)
+            .count()
+        )
+        return int(count) if isinstance(count, int) else 0
+    except (RuntimeError, TypeError, ValueError):
+        return 0
 
 
 def append_system_auto_approval_history(doc: Document, *, remarks: str) -> None:
@@ -113,6 +134,21 @@ def maybe_auto_approve_after_ocr(doc: Document, job: DocumentOcrJob | None = Non
         info["autoValidation"] = assessment_dict
         doc.extracted_info = info
         return
+
+    linked_count = _linked_teaching_evaluation_count(doc)
+    if linked_count > 1:
+        assessment_dict["decisionSource"] = "withheld"
+        assessment_dict["policyActive"] = True
+        assessment_dict["withheldReasons"] = assessment.withheld_reasons + [
+            "Multiple linked teaching evaluation records require independent reviewer validation."
+        ]
+        assessment_dict["linkedTeachingEvaluationCount"] = linked_count
+        info["autoValidation"] = assessment_dict
+        info["Teaching evaluation independent validation"] = "required"
+        doc.extracted_info = info
+        return
+    if linked_count == 1:
+        info["Teaching evaluation independent validation"] = "required"
 
     previous_status = doc.status
     doc.status = "approved"

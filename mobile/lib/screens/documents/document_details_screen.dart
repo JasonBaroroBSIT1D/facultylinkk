@@ -10,6 +10,8 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/common.dart';
 import '../../widgets/dialogs.dart';
 import '../../widgets/status_badge.dart';
+import '../../widgets/teaching_evaluation_record_tile.dart';
+import '../../models/teaching_evaluation_record.dart';
 import 'document_viewer_screen.dart';
 
 class DocumentDetailsScreen extends StatelessWidget {
@@ -47,9 +49,28 @@ class _DocumentDetailsBody extends StatefulWidget {
 }
 
 class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
-  FacultyDocument get document => widget.document;
+  FacultyDocument get document =>
+      AppState.instance.documentById(widget.document.id) ?? widget.document;
   String? _localError;
   bool _working = false;
+  bool _detailLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!AppState.instance.usesMockAuth && AppState.instance.isSignedIn) {
+      _refreshDetail();
+    }
+  }
+
+  Future<void> _refreshDetail() async {
+    setState(() => _detailLoading = true);
+    try {
+      await AppState.instance.refreshFacultyDocument(document.id, quiet: true);
+    } finally {
+      if (mounted) setState(() => _detailLoading = false);
+    }
+  }
 
   static const _scoringKeys = [
     'Assigned KRA',
@@ -62,9 +83,15 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
   ];
 
   bool get _isSetSefIndicator {
-    final id = document.indicatorId;
-    return id == 'kra1-a-student' || id == 'kra1-a-supervisor';
+    if (FacultyDocument.isSetSefIndicatorId(document.indicatorId)) return true;
+    return document.hasLinkedTeachingEvaluations;
   }
+
+  List<TeachingEvaluationRecord> get _linkedEvaluations =>
+      document.teachingEvaluations ?? const [];
+
+  Iterable<TeachingEvaluationRecord> _evalsOfType(String type) =>
+      _linkedEvaluations.where((e) => e.evaluationType.toUpperCase() == type);
 
   Map<String, String> get _scoringInfo {
     final out = <String, String>{};
@@ -233,7 +260,10 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
         ),
       ),
       body: RefreshIndicator(
-        onRefresh: () => AppState.instance.refreshData(label: 'Refreshing documents...'),
+        onRefresh: () async {
+          await _refreshDetail();
+          await AppState.instance.fetchTeachingEffectivenessFromApi(quiet: true);
+        },
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -325,7 +355,48 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
               ],
             ),
           ),
-          if (_isSetSefIndicator) ...[
+          if (_detailLoading)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+          if (_linkedEvaluations.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _SectionCard(
+              title: 'Linked evaluation records (${_linkedEvaluations.length})',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (document.teachingEvaluationSummary?['note'] != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        '${document.teachingEvaluationSummary!['note']}',
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.35),
+                      ),
+                    ),
+                  if (_evalsOfType('SET').isNotEmpty) ...[
+                    const Text('SET', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy)),
+                    const SizedBox(height: 6),
+                    for (final record in _evalsOfType('SET'))
+                      TeachingEvaluationRecordTile(record: record, compact: true),
+                    const SizedBox(height: 10),
+                  ],
+                  if (_evalsOfType('SEF').isNotEmpty) ...[
+                    const Text('SEF', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy)),
+                    const SizedBox(height: 6),
+                    for (final record in _evalsOfType('SEF'))
+                      TeachingEvaluationRecordTile(record: record, compact: true),
+                  ],
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Reviewer decisions are read-only. Verification is performed by your assigned reviewer.',
+                    style: TextStyle(fontSize: 11, color: AppColors.textTertiary, height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (_isSetSefIndicator) ...[
             const SizedBox(height: 12),
             _SectionCard(
               title: 'SET / SEF extraction',

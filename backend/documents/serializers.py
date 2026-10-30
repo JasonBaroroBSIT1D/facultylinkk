@@ -5,6 +5,10 @@ from __future__ import annotations
 from models import Document, FacultyProfile, User
 
 from documents.ocr.queue import normalize_ocr_status
+from documents.teaching_evaluation_serializers import (
+    apply_duplicate_period_flags,
+    teaching_evaluation_to_web,
+)
 from documents.review_display import review_display_status
 from documents.status_map import document_status_to_web, is_legacy_uploaded_draft
 
@@ -76,6 +80,22 @@ def document_to_web(
     if doc.file_path and api_base:
         payload["fileApiPath"] = f"{api_base}/file"
         payload["fileUrl"] = f"{api_base}/file"
+    if ocr_detail:
+        evaluations = doc.teaching_evaluations.all() if hasattr(doc, "teaching_evaluations") else []
+        payload["teachingEvaluations"] = [
+            teaching_evaluation_to_web(row, doc) for row in evaluations
+        ]
+        apply_duplicate_period_flags(payload["teachingEvaluations"])
+        child_count = len(payload["teachingEvaluations"])
+        if child_count:
+            payload["teachingEvaluationSummary"] = {
+                "count": child_count,
+                "independentValidationRequired": True,
+                "note": (
+                    "Each linked SET/SEF semester record requires its own reviewer "
+                    "validation. Document-level approval does not verify every record."
+                ),
+            }
     return payload
 
 

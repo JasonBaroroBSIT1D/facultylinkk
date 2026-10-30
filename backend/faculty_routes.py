@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity
 
 from auth import assignment_queries as aq
@@ -8,7 +8,7 @@ from auth import permissions as perm
 from auth.permissions import ROLE_FACULTY
 from faculty.faculty_payloads import faculty_dashboard_payload, faculty_profile_payload
 from faculty.rank_simulation_engine import compute_rank_simulation
-from documents.teaching_effectiveness import teaching_effectiveness_payload
+from documents.teaching_effectiveness import indicator_folder_payload, teaching_effectiveness_payload
 
 faculty_bp = Blueprint("faculty_api", __name__, url_prefix="/api/faculty")
 
@@ -63,6 +63,21 @@ def faculty_teaching_effectiveness():
     if not user or not user.faculty_profile:
         return jsonify({"message": "Faculty profile was not found."}), 404
     return jsonify(teaching_effectiveness_payload(user.faculty_profile)), 200
+
+
+@faculty_bp.get("/me/set-sef-indicator")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_set_sef_indicator():
+    public_id = get_jwt_identity()
+    user = aq.current_faculty_user(public_id)
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    indicator_id = (request.args.get("indicatorId") or request.args.get("indicator_id") or "").strip()
+    if indicator_id not in ("kra1-a-student", "kra1-a-supervisor"):
+        return jsonify({"message": "Indicator is not a SET/SEF teaching effectiveness indicator."}), 400
+    resp = jsonify(indicator_folder_payload(user.faculty_profile, indicator_id))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
 
 
 @faculty_bp.get("/me/reviewer")

@@ -13,8 +13,10 @@ from auth.permissions import ROLE_ADMINISTRATOR, ROLE_FACULTY, ROLE_REVIEWER
 from documents import directory as doc_dir
 from documents import service as doc_svc
 from documents.serializers import document_to_web, stats_from_documents
-from models import FacultyProfile, User
+from models import DocumentTeachingEvaluation, FacultyProfile, User
 from documents.metadata_correction import apply_metadata_correction
+from documents.teaching_evaluation_review import apply_teaching_evaluation_review
+from documents.teaching_evaluation_serializers import teaching_evaluation_to_web
 from documents.storage import resolve_path
 from documents.evaluation_eligibility import apply_eligibility_update, payload_for_api, reviewer_can_manage
 from documents.teaching_effectiveness import indicator_folder_payload, teaching_effectiveness_payload
@@ -333,6 +335,45 @@ def reviewer_download_file(public_id: str):
         as_attachment=not inline,
         download_name=doc.file_name or "document",
     )
+
+
+@reviewer_docs_bp.post("/documents/<public_id>/teaching-evaluations/<tev_public_id>/review")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_review_teaching_evaluation(public_id: str, tev_public_id: str):
+    user = aq.current_reviewer_user(get_jwt_identity())
+    doc = doc_svc.get_document(public_id)
+    if not doc or not user or not doc_svc.reviewer_can_access(user, doc):
+        return jsonify({"message": "Document was not found."}), 404
+    tev = DocumentTeachingEvaluation.query.filter_by(
+        public_id=tev_public_id, document_id=doc.id
+    ).first()
+    if not tev:
+        return jsonify({"message": "Teaching evaluation record was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    try:
+        tev = apply_teaching_evaluation_review(user, doc, tev, body)
+    except ValueError as error:
+        code = str(error)
+        messages = {
+            "forbidden": "This document is not assigned to you.",
+            "invalid_decision": "Unknown review decision.",
+            "remarks_required": "Enter remarks explaining the revision or rejection (min. 8 characters).",
+            "reason_required": "Enter a reason for corrections (min. 8 characters).",
+            "no_changes": "Select a decision or change at least one field.",
+            "invalid_rating_scale": "Rating scale must be a number.",
+            "not_found": "Teaching evaluation record was not found.",
+        }
+        return jsonify({"message": messages.get(code, "Review could not be saved.")}), 400
+    return jsonify(
+        {
+            "teachingEvaluation": teaching_evaluation_to_web(tev, doc),
+            "document": document_to_web(
+                doc,
+                api_base=_file_api_base("reviewer", doc.public_id),
+                ocr_detail=True,
+            ),
+        }
+    ), 200
 
 
 @reviewer_docs_bp.post("/documents/<public_id>/correct-metadata")

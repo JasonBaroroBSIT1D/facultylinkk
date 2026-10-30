@@ -336,7 +336,7 @@ FL.store = {
   /** Drop stale SET/SEF rows for one indicator after live folder API returns. */
   syncSetSefIndicatorDocuments: function (facultyId, indicatorId, block) {
     if (!facultyId || !indicatorId || !block || typeof block !== "object") return;
-    const rows = block.documents || [];
+    const rows = block.evaluationRecords || block.documents || [];
     const apiIds = {};
     rows.forEach(function (row) {
       const id = row.documentId || row.id;
@@ -406,6 +406,23 @@ FL.store = {
       store.upsertDocument(saved);
       Object.assign(doc, saved);
       return saved;
+    });
+  },
+
+  submitTeachingEvaluationReview: function (session, documentId, tevId, payload) {
+    const store = this;
+    if (!store.usesLiveDocuments() || !session || session.role !== "reviewer") {
+      return Promise.reject(new Error("Live review API is not available."));
+    }
+    return FL.apiClient.adminRequest(
+      "POST",
+      "/api/reviewer/documents/" + encodeURIComponent(documentId)
+        + "/teaching-evaluations/" + encodeURIComponent(tevId) + "/review",
+      payload || {}
+    ).then(function (data) {
+      const saved = data.document || null;
+      if (saved && saved.id) store.upsertDocument(saved);
+      return data;
     });
   },
 
