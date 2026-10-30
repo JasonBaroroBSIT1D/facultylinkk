@@ -221,12 +221,15 @@ enum NotificationKind {
 enum NotificationVisualState { unread, read, actionRequired }
 
 enum PreparationPeriodStatus {
+  upcoming,
   open,
   closingSoon,
   closed;
 
   String get label {
     switch (this) {
+      case PreparationPeriodStatus.upcoming:
+        return 'Upcoming';
       case PreparationPeriodStatus.open:
         return 'Open';
       case PreparationPeriodStatus.closingSoon:
@@ -238,12 +241,14 @@ enum PreparationPeriodStatus {
 
   String get guidance {
     switch (this) {
+      case PreparationPeriodStatus.upcoming:
+        return 'The published Rank Upgrade and Reclassification evaluation period has not started yet. You may sign in, upload documents, and review provisional simulation scores while you prepare supporting evidence.';
       case PreparationPeriodStatus.open:
-        return 'Reviewers are currently available to review and provide feedback on your submitted documentary requirements.';
+        return 'The evaluation period is open. You may continue preparing evidence and provisional self-assessment; reviewers may provide preparatory feedback according to institutional policy.';
       case PreparationPeriodStatus.closingSoon:
         return 'The preparatory review period is ending soon. Please ensure that your documentary requirements are submitted for preparatory review.';
       case PreparationPeriodStatus.closed:
-        return 'The preparatory review period has ended. Reviewer validation for this preparation cycle is no longer available. Please wait for the next scheduled preparation period.';
+        return 'The evaluation period has ended. You may still view the schedule and continue document preparation where allowed; official submission and reviewer verification follow existing institutional restrictions for closed periods.';
     }
   }
 }

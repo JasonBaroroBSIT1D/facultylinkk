@@ -324,3 +324,42 @@ def put_set_sef_auto_approval_policy():
             ), 403
         return jsonify({"message": "Policy was not updated."}), 400
     return jsonify({"policy": state}), 200
+
+
+@admin_bp.get("/evaluation-periods")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def get_evaluation_periods():
+    if not _admin_user():
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from evaluation_periods import service as eval_periods
+
+    return jsonify({"evaluationPeriods": eval_periods.list_admin_periods_api()}), 200
+
+
+@admin_bp.put("/evaluation-periods")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def put_evaluation_periods():
+    if not _admin_user():
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from evaluation_periods import service as eval_periods
+
+    body = _json_body()
+    periods = body.get("periods")
+    if not isinstance(periods, list):
+        return jsonify({"message": "Enter evaluation schedule dates before saving."}), 400
+    try:
+        saved = eval_periods.save_admin_periods(periods)
+    except ValueError as error:
+        code = str(error)
+        if code == "end_before_start":
+            return jsonify({"message": "Enter a start date on or before the end date before publishing."}), 400
+        if code == "missing_dates_for_publish":
+            return jsonify({"message": "Enter a start date and end date before publishing."}), 400
+        if code.startswith("invalid_") or code.startswith("missing_"):
+            return jsonify({"message": "Enter valid start and end dates."}), 400
+        return jsonify({"message": "Evaluation schedule was not saved."}), 400
+    except Exception:
+        db.session.rollback()
+        return jsonify({"message": "Evaluation schedule was not saved."}), 500
+
+    return jsonify({"evaluationPeriods": saved, "message": "Evaluation schedule saved."}), 200

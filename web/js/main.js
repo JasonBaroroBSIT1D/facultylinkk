@@ -282,6 +282,17 @@ FL.boot = function () {
             return null;
           }));
         }
+        const schedulePages = ["admin-schedule", "reviewer-schedule", "reviewer-dashboard"];
+        if (
+          FL.store.usesRealAdminApi()
+          && (session.role === "administrator" || session.role === "reviewer")
+          && schedulePages.indexOf(page) !== -1
+        ) {
+          chain.push(FL.store.loadEvaluationPeriods(session).catch(function () {
+            FL.store.evaluationPeriods = [];
+            return null;
+          }));
+        }
         if (!chain.length) {
           finishBoot();
           return;

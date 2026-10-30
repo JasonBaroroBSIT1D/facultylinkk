@@ -159,10 +159,14 @@ abstract final class FacultyApiMapper {
 
   static PreparationPeriodStatus _prepStatus(String? raw) {
     switch (raw) {
+      case 'upcoming':
+        return PreparationPeriodStatus.upcoming;
       case 'closing_soon':
         return PreparationPeriodStatus.closingSoon;
       case 'closed':
         return PreparationPeriodStatus.closed;
+      case 'open':
+        return PreparationPeriodStatus.open;
       default:
         return PreparationPeriodStatus.open;
     }

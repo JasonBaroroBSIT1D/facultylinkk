@@ -770,8 +770,28 @@ FL.store = {
     });
   },
 
+  loadEvaluationPeriods: function (session) {
+    const store = this;
+    if (!store.usesRealAdminApi()) {
+      return Promise.resolve(store.evaluationPeriods);
+    }
+    const role = session && session.role;
+    const path =
+      role === "reviewer" ? "/api/reviewer/evaluation-periods" : "/api/admin/evaluation-periods";
+    return FL.apiClient.adminRequest("GET", path).then(function (data) {
+      store.evaluationPeriods = data.evaluationPeriods || [];
+      return store.evaluationPeriods;
+    });
+  },
+
   saveEvaluationPeriods: function (periods) {
     const store = this;
+    if (store.usesRealAdminApi()) {
+      return FL.apiClient.adminRequest("PUT", "/api/admin/evaluation-periods", { periods: periods }).then(function (data) {
+        store.evaluationPeriods = data.evaluationPeriods || periods;
+        return data;
+      });
+    }
     return FL.api.send("PUT", "/api/evaluation-periods", { periods: periods }).then(function (data) {
       store.evaluationPeriods = data.evaluationPeriods || periods;
       return data;

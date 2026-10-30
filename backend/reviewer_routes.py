@@ -30,3 +30,11 @@ def reviewer_get_published_kra_configuration():
         return jsonify({"published": None, "message": "No published configuration."}), 200
     payload = kra_svc.configuration_to_api(row)
     return jsonify({"published": payload, "kraSettings": payload["kraSettings"]}), 200
+
+
+@reviewer_bp.get("/evaluation-periods")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_get_evaluation_periods():
+    from evaluation_periods import service as eval_periods
+
+    return jsonify({"evaluationPeriods": eval_periods.list_published_periods_api()}), 200

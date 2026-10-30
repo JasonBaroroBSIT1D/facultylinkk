@@ -38,7 +38,7 @@ class PreparationPeriodCard extends StatelessWidget {
               ),
               SizedBox(height: 6),
               Text(
-                'No active evaluation schedule.',
+                'No published evaluation schedule.',
                 style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
               ),
             ],
@@ -50,7 +50,8 @@ class PreparationPeriodCard extends StatelessWidget {
     final start = formatDisplayDate(period.startDate);
     final end = formatDisplayDate(period.endDate);
     final until = formatDisplayDate(period.reviewerAvailableUntil);
-    final available = period.status != PreparationPeriodStatus.closed;
+    final available =
+        period.status == PreparationPeriodStatus.open || period.status == PreparationPeriodStatus.closingSoon;
 
     return Material(
       color: Colors.white,
@@ -150,9 +151,11 @@ class PreparationPeriodCard extends StatelessWidget {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        available
-                            ? 'Reviewers available until $until'
-                            : 'Reviewer window ended $until',
+                        period.status == PreparationPeriodStatus.upcoming
+                            ? 'Evaluation period begins $start'
+                            : available
+                                ? 'Reviewers available until $until'
+                                : 'Evaluation period ended $end',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -240,6 +243,12 @@ class PreparationPeriodCard extends StatelessWidget {
 
   static _StatusPalette _statusPalette(PreparationPeriodStatus status) {
     switch (status) {
+      case PreparationPeriodStatus.upcoming:
+        return const _StatusPalette(
+          color: AppColors.info,
+          soft: Color(0xFFE8F4FD),
+          icon: Icons.event_note_outlined,
+        );
       case PreparationPeriodStatus.open:
         return const _StatusPalette(
           color: AppColors.success,

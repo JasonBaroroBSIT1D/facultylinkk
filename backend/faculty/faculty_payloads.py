@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from faculty.rank_simulation_engine import compute_rank_simulation, kra_scores_for_mobile, simulation_for_mobile
-from models import Document, EvaluationPeriod, FacultyProfile, KraScore, RankSimulation, User
+from evaluation_periods import service as eval_periods
+from models import Document, FacultyProfile, KraScore, RankSimulation, User
 
 MOBILE_KRA_KEYS = ("kra1", "kra2", "kra3", "kra4")
 
@@ -119,27 +120,7 @@ def _simulation_payload(profile: FacultyProfile) -> dict | None:
 
 
 def _preparation_period_payload() -> dict | None:
-    period = (
-        EvaluationPeriod.query.filter(EvaluationPeriod.status != "draft")
-        .order_by(EvaluationPeriod.start_date.desc())
-        .first()
-    )
-    if not period:
-        return None
-    today = date.today()
-    status = "open"
-    if period.submission_close and today > period.submission_close:
-        status = "closed"
-    elif period.submission_close and (period.submission_close - today).days <= 14:
-        status = "closing_soon"
-    return {
-        "cycleName": period.label,
-        "startDate": _iso_date(period.start_date),
-        "endDate": _iso_date(period.end_date),
-        "reviewerAvailableUntil": _iso_date(period.review_close or period.end_date),
-        "status": status,
-        "periodType": period.period_type,
-    }
+    return eval_periods.faculty_preparation_period_api()
 
 
 def _recent_activity(profile: FacultyProfile, limit: int = 5) -> list[dict]:
