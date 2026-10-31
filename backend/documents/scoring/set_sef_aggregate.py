@@ -22,7 +22,18 @@ from documents.scoring.config_loader import (
     published_settings_root,
 )
 from documents.scoring.section10 import resolve_divisor
+from documents.document_ownership_verification import document_scoring_eligible
+from documents.scoring.semester_coverage import (
+    DUPLICATE_MESSAGE,
+    OUTSIDE_COVERAGE_MESSAGE,
+    applicable_period_keys_from_coverage,
+    period_key,
+    period_sort_key,
+    slot_status_label,
+    sort_period_keys,
+)
 from documents.review_display import review_display_status
+from documents.scoring.criterion_a_display import enrich_criterion_a_summary
 from documents.status_map import document_status_to_web
 
 _RATING_FRACTION = re.compile(
@@ -193,6 +204,7 @@ def collect_period_rows(
     """Build semester rows from linked evaluations, with legacy document fallback."""
     rows: list[dict] = []
     for doc in docs:
+        ownership_ok = document_scoring_eligible(doc)
         children = [
             tev
             for tev in _iter_teaching_evaluations(doc)
@@ -207,11 +219,22 @@ def collect_period_rows(
                     getattr(t, "public_id", None) or "",
                 ),
             ):
-                rows.append(
-                    teaching_evaluation_period_row(tev, doc, default_scale=default_scale)
-                )
+                row = teaching_evaluation_period_row(tev, doc, default_scale=default_scale)
+                if not ownership_ok:
+                    row["includedInAverage"] = False
+                    row["ownershipBlocked"] = True
+                    row["exclusionReason"] = row.get("exclusionReason") or (
+                        "Document ownership is not verified for scoring."
+                    )
+                    row["reviewBucket"] = "pending"
+                rows.append(row)
         elif doc.indicator_id == indicator_id:
-            rows.append(document_period_row(doc, default_scale=default_scale))
+            row = document_period_row(doc, default_scale=default_scale)
+            if not ownership_ok:
+                row["includedInAverage"] = False
+                row["ownershipBlocked"] = True
+                row["exclusionReason"] = "Document ownership is not verified for scoring."
+            rows.append(row)
     return rows
 
 
@@ -272,14 +295,17 @@ def _dedupe_periods(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             excluded.append(prev)
             by_key[key] = row
         elif prev_bucket == "accepted" and row_bucket == "accepted":
-            reason = "Conflict: multiple reviewer-approved records for this period"
-            for record in (prev, row):
-                record["exclusionReason"] = reason
-                record["includedInAverage"] = False
-                excluded.append(record)
-            by_key.pop(key, None)
+            keep, drop = prev, row
+            prev_at = prev.get("submittedAt") or ""
+            row_at = row.get("submittedAt") or ""
+            if row_at and (not prev_at or row_at < prev_at):
+                keep, drop = row, prev
+            drop["exclusionReason"] = DUPLICATE_MESSAGE
+            drop["includedInAverage"] = False
+            excluded.append(drop)
+            by_key[key] = keep
         else:
-            row["exclusionReason"] = "Duplicate period — another document covers this semester"
+            row["exclusionReason"] = DUPLICATE_MESSAGE + " — another document covers this semester"
             row["includedInAverage"] = False
             excluded.append(row)
     chosen = []
@@ -293,11 +319,46 @@ def _dedupe_periods(rows: list[dict]) -> tuple[list[dict], list[dict]]:
         elif row.get("ratingPercent") is None:
             row["includedInAverage"] = False
             row["exclusionReason"] = row.get("exclusionReason") or "Rating not available"
+        elif row.get("ownershipBlocked"):
+            row["includedInAverage"] = False
+            row["exclusionReason"] = row.get("exclusionReason") or (
+                "Document ownership is not verified for scoring."
+            )
         else:
             row["includedInAverage"] = True
             row["exclusionReason"] = None
         chosen.append(row)
     return chosen, excluded
+
+
+def _apply_coverage_window(
+    periods: list[dict],
+    excluded: list[dict],
+    *,
+    coverage: dict | None,
+    eligible_divisor: int | None,
+) -> None:
+    """Mark periods outside the applicable divisor / published coverage window."""
+    if not eligible_divisor or eligible_divisor <= 0:
+        return
+    keys = []
+    for row in periods:
+        pk = period_key(row.get("academicYear"), row.get("semester"))
+        if pk:
+            keys.append(pk)
+    applicable = applicable_period_keys_from_coverage(
+        coverage,
+        eligible_divisor=eligible_divisor,
+        evidenced_keys=keys,
+    )
+    for row in periods:
+        pk = period_key(row.get("academicYear"), row.get("semester"))
+        if not pk or pk in applicable:
+            continue
+        if row.get("includedInAverage"):
+            row["includedInAverage"] = False
+            row["exclusionReason"] = OUTSIDE_COVERAGE_MESSAGE
+            excluded.append(row)
 
 
 def _record_status_counts(
@@ -310,12 +371,26 @@ def _record_status_counts(
         for item in excluded
         if item.get("exclusionReason")
         and (
-            "Duplicate period" in item["exclusionReason"]
-            or "Conflict:" in item["exclusionReason"]
+            "already recorded" in item["exclusionReason"].lower()
+            or "duplicate" in item["exclusionReason"].lower()
+            or "superseded" in item["exclusionReason"].lower()
         )
+    )
+    outside_excluded = sum(
+        1
+        for item in excluded
+        if item.get("exclusionReason") and "outside the required" in item["exclusionReason"].lower()
+    )
+    unique_included = len(
+        {
+            period_key(p.get("academicYear"), p.get("semester"))
+            for p in periods
+            if p.get("includedInAverage") and period_key(p.get("academicYear"), p.get("semester"))
+        }
     )
     return {
         "detectedEvaluationRecords": len(rows),
+        "uniqueEligibleSemesters": unique_included,
         "verifiedEligibleRecords": sum(
             1
             for p in periods
@@ -327,15 +402,123 @@ def _record_status_counts(
         ),
         "incompleteRecords": sum(1 for r in rows if r.get("reviewBucket") == "incomplete"),
         "excludedDuplicateRecords": duplicate_excluded,
+        "excludedOutsideCoverageRecords": outside_excluded,
     }
 
 
 def _ratings_from_periods(periods: list[dict]) -> list[float]:
-    return [
-        float(p["ratingPercent"])
+    eligible = [
+        p
         for p in periods
         if p.get("includedInAverage") and p.get("ratingPercent") is not None
     ]
+    eligible.sort(
+        key=lambda p: period_sort_key(
+            period_key(p.get("academicYear"), p.get("semester")) or ("", "")
+        )
+    )
+    return [float(p["ratingPercent"]) for p in eligible]
+
+
+def build_semester_slots(
+    periods: list[dict],
+    excluded: list[dict],
+    *,
+    coverage: dict | None,
+    eligible_divisor: int | None,
+) -> list[dict]:
+    """Reviewer/faculty slot grid for one indicator (SET or SEF)."""
+    by_key: dict[tuple[str, str], dict] = {}
+    for row in periods + excluded:
+        pk = period_key(row.get("academicYear"), row.get("semester"))
+        if not pk:
+            continue
+        prev = by_key.get(pk)
+        if not prev or (row.get("includedInAverage") and not prev.get("includedInAverage")):
+            by_key[pk] = row
+
+    evidenced = sort_period_keys(list(by_key.keys()))
+    divisor = int(eligible_divisor or 0)
+    applicable = applicable_period_keys_from_coverage(
+        coverage,
+        eligible_divisor=divisor or len(evidenced) or 6,
+        evidenced_keys=evidenced,
+    )
+    slot_keys = sort_period_keys(list(applicable))
+    slots: list[dict] = []
+    for pk in slot_keys:
+        year, sem = pk
+        row = by_key.get(pk)
+        has_record = row is not None
+        included = bool(row and row.get("includedInAverage"))
+        reason = row.get("exclusionReason") if row else None
+        bucket = row.get("reviewBucket") if row else None
+        slots.append(
+            {
+                "academicYear": year,
+                "semester": sem,
+                "status": slot_status_label(
+                    has_record=has_record,
+                    included_in_scoring=included,
+                    exclusion_reason=reason,
+                    review_bucket=bucket,
+                ),
+                "includedInScoring": included,
+                "teachingEvaluationId": row.get("teachingEvaluationId") if row else None,
+                "documentId": row.get("documentId") if row else None,
+                "exclusionReason": reason,
+            }
+        )
+    while divisor > 0 and len(slots) < divisor:
+        slots.append(
+            {
+                "academicYear": None,
+                "semester": None,
+                "status": "Missing",
+                "includedInScoring": False,
+                "teachingEvaluationId": None,
+                "documentId": None,
+                "exclusionReason": None,
+            }
+        )
+    return slots
+
+
+def annotate_evaluation_records(
+    records: list[dict],
+    aggregate_block: dict,
+) -> None:
+    """Attach scoring eligibility fields to workspace evaluation rows (in place)."""
+    index: dict[str, dict] = {}
+    for row in (aggregate_block.get("periods") or []) + (aggregate_block.get("excludedPeriods") or []):
+        tev_id = row.get("teachingEvaluationId")
+        doc_id = row.get("documentId")
+        key = tev_id or doc_id
+        if key:
+            index[str(key)] = row
+        pk = period_key(row.get("academicYear"), row.get("semester"))
+        if pk:
+            index[f"period:{pk[0]}:{pk[1]}"] = row
+
+    for rec in records:
+        tev_id = rec.get("teachingEvaluationId")
+        hit = index.get(str(tev_id)) if tev_id else None
+        if not hit:
+            pk = period_key(rec.get("academicYear"), rec.get("semester"))
+            if pk:
+                hit = index.get(f"period:{pk[0]}:{pk[1]}")
+        if not hit:
+            continue
+        included = bool(hit.get("includedInAverage"))
+        reason = hit.get("exclusionReason")
+        rec["includedInScoring"] = included
+        rec["scoringExclusionReason"] = reason
+        rec["slotStatus"] = slot_status_label(
+            has_record=True,
+            included_in_scoring=included,
+            exclusion_reason=reason,
+            review_bucket=hit.get("reviewBucket"),
+        )
 
 
 def aggregate_indicator(
@@ -348,13 +531,18 @@ def aggregate_indicator(
     scale = config.get("ratingScale") or 100.0
     rows = collect_period_rows(docs, indicator_id, default_scale=scale)
     periods, excluded = _dedupe_periods(rows)
-    record_counts = _record_status_counts(rows, excluded, periods)
-    included = [p for p in periods if p.get("includedInAverage")]
-    accepted = [p for p in included if p.get("reviewBucket") == "accepted"]
-
     settings = published_settings_root() or {}
     coverage = config.get("evaluationCoverage") or settings.get("evaluationCoverage")
     divisor_info = resolve_divisor(coverage, faculty_eligibility)
+    _apply_coverage_window(
+        periods,
+        excluded,
+        coverage=coverage if isinstance(coverage, dict) else None,
+        eligible_divisor=divisor_info.eligible_divisor,
+    )
+    record_counts = _record_status_counts(rows, excluded, periods)
+    included = [p for p in periods if p.get("includedInAverage")]
+    accepted = [p for p in included if p.get("reviewBucket") == "accepted"]
 
     all_ratings = _ratings_from_periods(included)
     validated_ratings = _ratings_from_periods(accepted)
@@ -423,6 +611,12 @@ def aggregate_indicator(
         "documents": rows,
         "periods": periods,
         "excludedPeriods": excluded,
+        "semesterSlots": build_semester_slots(
+            periods,
+            excluded,
+            coverage=coverage if isinstance(coverage, dict) else None,
+            eligible_divisor=divisor_info.eligible_divisor,
+        ),
         "averageRatingPercent": provisional_oetr,
         "validatedAverageRatingPercent": validated_oetr,
         "overallRatingPercent": provisional_oetr if len(all_ratings) >= (divisor_info.eligible_divisor or 0) else None,
@@ -472,7 +666,7 @@ def build_criterion_a_summary(
     if set_block.get("validatedPoints") is not None and sef_block.get("validatedPoints") is not None:
         combined_validated = round(set_block["validatedPoints"] + sef_block["validatedPoints"], 2)
     config_complete = set_block["configuration"].get("complete") and sef_block["configuration"].get("complete")
-    return {
+    base = {
         "criterionId": CRITERION_A_ID,
         "criterionName": "Criterion A — Teaching Effectiveness",
         "set": set_block,
@@ -486,3 +680,4 @@ def build_criterion_a_summary(
         else "Scoring configuration incomplete for SET and/or SEF — publish applicable Admin settings.",
         "teachingEffectivenessFormula": "Teaching Effectiveness Points = SET Points + SEF Points (JC 01 s. 2026)",
     }
+    return enrich_criterion_a_summary(base)

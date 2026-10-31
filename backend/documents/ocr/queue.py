@@ -129,6 +129,7 @@ def _apply_success(doc: Document, result, job: DocumentOcrJob) -> None:
         info,
         text=text,
         indicator_id=doc.indicator_id,
+        criterion_id=doc.criterion_id,
         extraction_method=result.method,
     )
     sync_teaching_evaluations_for_document(
@@ -137,6 +138,17 @@ def _apply_success(doc: Document, result, job: DocumentOcrJob) -> None:
         ocr_confidence=result.confidence,
         extraction_method=result.method,
     )
+    try:
+        from documents.document_ownership_verification import apply_ownership_to_extracted_info
+        from documents.ownership_notifications import notify_ownership_issue_if_needed
+
+        doc.extracted_info = apply_ownership_to_extracted_info(doc, doc.faculty_profile)
+        notify_ownership_issue_if_needed(doc)
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception(
+            "Ownership verification after OCR failed for document %s",
+            doc.public_id,
+        )
     doc.ocr_status = "completed"
     job.status = "succeeded"
     job.last_error = None
@@ -159,6 +171,7 @@ def _apply_failure(doc: Document, job: DocumentOcrJob, *, code: str, message: st
     doc.extracted_info = mark_set_sef_processing_failed(
         info,
         indicator_id=doc.indicator_id,
+        criterion_id=doc.criterion_id,
         message=message,
     )
     doc.extracted_text = doc.extracted_text
@@ -238,6 +251,20 @@ def process_job(job_id: int) -> bool:
             message="Text extraction failed due to an internal error.",
         )
     db.session.commit()
+    if doc.faculty_profile_id and doc.ocr_status == "completed":
+        try:
+            from faculty.estimated_score_service import recalculate_faculty_estimated_scores
+
+            profile = doc.faculty_profile
+            if profile:
+                recalculate_faculty_estimated_scores(
+                    profile,
+                    actor=None,
+                    reason="ocr_completed",
+                    document_id=doc.public_id,
+                )
+        except Exception:
+            db.session.rollback()
     return True
 
 

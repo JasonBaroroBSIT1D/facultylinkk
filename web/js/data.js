@@ -405,14 +405,33 @@ FL.store = {
       const saved = data.document || data;
       store.upsertDocument(saved);
       Object.assign(doc, saved);
+      const facultyId = doc.facultyId || saved.facultyId;
+      if (facultyId) {
+        return store.loadEstimatedAssessment(facultyId).then(function () { return saved; });
+      }
       return saved;
     });
   },
 
+  resolveReviewerSession: function (session) {
+    if (session && session.role === "reviewer") return session;
+    try {
+      const stored = JSON.parse(sessionStorage.getItem("facultylink.session") || "null");
+      if (stored && stored.role === "reviewer") return stored;
+    } catch (error) {
+      return null;
+    }
+    return null;
+  },
+
   submitTeachingEvaluationReview: function (session, documentId, tevId, payload) {
     const store = this;
-    if (!store.usesLiveDocuments() || !session || session.role !== "reviewer") {
-      return Promise.reject(new Error("Live review API is not available."));
+    session = store.resolveReviewerSession(session);
+    if (!store.usesLiveDocuments() || !session) {
+      return Promise.reject(new Error("Sign in as a reviewer to save validation decisions."));
+    }
+    if (!documentId || !tevId) {
+      return Promise.reject(new Error("Missing document or evaluation record id."));
     }
     return FL.apiClient.adminRequest(
       "POST",
@@ -422,6 +441,22 @@ FL.store = {
     ).then(function (data) {
       const saved = data.document || null;
       if (saved && saved.id) store.upsertDocument(saved);
+      let facultyId = saved && saved.facultyId;
+      if (!facultyId) {
+        const prior = store.documentById(documentId);
+        facultyId = prior && prior.facultyId;
+      }
+      if (facultyId) {
+        return store.loadEstimatedAssessment(facultyId).then(
+          function () { return data; },
+          function (refreshErr) {
+            if (typeof console !== "undefined" && console.warn) {
+              console.warn("Estimated score refresh failed after validation:", refreshErr);
+            }
+            return data;
+          }
+        );
+      }
       return data;
     });
   },
@@ -490,25 +525,22 @@ FL.store = {
     return Promise.resolve(null);
   },
 
-  /** Remove SET/SEF rows from the in-memory store when live API reports none. */
+  /** Keep in-memory Criterion A parent PDFs aligned with unified workspace (do not hide unclassified uploads). */
   pruneSetSefDocumentsFromTeachingPayload: function (facultyId, payload) {
     if (!facultyId || !payload || typeof payload !== "object") return;
-    const setUploads = ((payload.set || {}).coverageSummary || {}).totalUploads || 0;
-    const sefUploads = ((payload.sef || {}).coverageSummary || {}).totalUploads || 0;
-    const setIds = payload.set && payload.set.documents ? payload.set.documents.map(function (r) {
-      return r.documentId;
-    }) : [];
-    const sefIds = payload.sef && payload.sef.documents ? payload.sef.documents.map(function (r) {
-      return r.documentId;
-    }) : [];
-    const allowed = {};
-    setIds.concat(sefIds).forEach(function (id) { if (id) allowed[id] = true; });
-    this.documents = this.documents.filter(function (d) {
-      if (d.facultyId !== facultyId) return true;
-      if (d.indicatorId !== "kra1-a-student" && d.indicatorId !== "kra1-a-supervisor") return true;
-      if (setUploads === 0 && sefUploads === 0) return false;
-      return !!allowed[d.id];
-    });
+    const workspace = payload.criterionAWorkspace;
+    if (workspace && Array.isArray(workspace.sourceDocuments)) {
+      workspace.sourceDocuments.forEach(function (row) {
+        if (!row || !row.documentId) return;
+        const idx = this.documents.findIndex(function (d) {
+          return d.facultyId === facultyId && d.id === row.documentId;
+        });
+        if (idx >= 0) {
+          this.documents[idx].criterionAWorkspace = row;
+        }
+      }, this);
+      return;
+    }
   },
 
   fetchSetSefIndicator: function (session, facultyId, indicatorId) {
@@ -767,6 +799,20 @@ FL.store = {
           }
         : null;
       return data;
+    });
+  },
+
+  loadEstimatedAssessment: function (facultyId) {
+    if (!this.usesLiveReviewerApi() || !facultyId) {
+      return Promise.resolve(null);
+    }
+    return FL.apiClient.adminRequest(
+      "GET",
+      "/api/reviewer/faculty/" + encodeURIComponent(facultyId) + "/estimated-assessment"
+    ).then(function (data) {
+      FL.store.estimatedAssessmentByFaculty = FL.store.estimatedAssessmentByFaculty || {};
+      FL.store.estimatedAssessmentByFaculty[facultyId] = data.estimatedAssessment || null;
+      return data.estimatedAssessment || null;
     });
   },
 

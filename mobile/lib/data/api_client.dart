@@ -101,7 +101,7 @@ class ApiClient {
     required String title,
     required String kraId,
     required String criterionId,
-    required String indicatorId,
+    String indicatorId = '',
     required String fileName,
     required List<int> fileBytes,
     String? replacesDocumentId,
@@ -149,6 +149,14 @@ class ApiClient {
       '/api/faculty/me/documents/$documentId',
       authenticated: true,
       allowRefresh: true,
+    );
+  }
+
+  Future<void> deleteFacultyDocument(String documentId) async {
+    await _send(
+      'DELETE',
+      '/api/faculty/me/documents/$documentId',
+      authenticated: true,
     );
   }
 
@@ -317,6 +325,9 @@ class ApiClient {
       };
       if (method == 'GET') {
         return apiGet(_http, uri, headers: headers);
+      }
+      if (method == 'DELETE') {
+        return apiDelete(_http, uri, headers: headers);
       }
       return apiPost(
         _http,

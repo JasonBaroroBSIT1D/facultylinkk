@@ -199,8 +199,7 @@ class _KraBar extends StatelessWidget {
       );
     }
 
-    final validated = score.validatedPoints;
-    final provisional = score.provisionalPoints;
+    final estimated = score.estimatedPoints ?? score.currentPoints.toDouble();
     final remaining = (score.targetPoints - score.currentPoints).clamp(0, score.targetPoints);
 
     return Column(
@@ -227,11 +226,10 @@ class _KraBar extends StatelessWidget {
           score.statusLabel,
           style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
         ),
-        if (validated != null || provisional != null)
-          Text(
-            'Validated: ${validated?.toStringAsFixed(1) ?? '—'} · Projected: ${provisional?.toStringAsFixed(1) ?? '—'}',
-            style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
-          ),
+        Text(
+          'Estimated: ${estimated.toStringAsFixed(1)} pts',
+          style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+        ),
         if (remaining > 0)
           Text(
             '$remaining possible ${remaining == 1 ? 'point' : 'points'} remaining in this KRA',

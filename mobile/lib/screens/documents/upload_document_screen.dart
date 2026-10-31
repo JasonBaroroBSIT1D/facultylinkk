@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/app_state.dart';
 import '../../models/enums.dart';
+import '../../models/models.dart';
 import '../../data/mock_kra_catalog.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/title_from_filename.dart';
@@ -147,7 +148,9 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
         _kras = list;
         _webKraId = initialWeb ?? (list.isNotEmpty ? list.first['id']?.toString() : null);
         _criterionId = widget.initialCriterionId;
-        _indicatorId = widget.initialIndicatorId;
+        _indicatorId = widget.initialCriterionId == FacultyDocument.criterionAId
+            ? null
+            : widget.initialIndicatorId;
         _loadingCatalog = false;
       });
     } catch (_) {
@@ -282,8 +285,15 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
       showAppSnackBar(context, 'Select or scan at least one file first.', error: true);
       return;
     }
-    if (_webKraId == null || _criterionId == null || _indicatorId == null) {
-      showAppSnackBar(context, 'Select a KRA, criterion, and indicator.', error: true);
+    final criterionAAuto = _criterionId == FacultyDocument.criterionAId;
+    if (_webKraId == null || _criterionId == null || (!criterionAAuto && _indicatorId == null)) {
+      showAppSnackBar(
+        context,
+        criterionAAuto
+            ? 'Select a KRA and criterion.'
+            : 'Select a KRA, criterion, and indicator.',
+        error: true,
+      );
       return;
     }
     final total = _files.length;
@@ -310,7 +320,7 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
           kraWebId: _webKraId,
           fileName: file.fileName,
           criterionId: _criterionId,
-          indicatorId: _indicatorId,
+          indicatorId: criterionAAuto ? null : _indicatorId,
           packageId: evidencePackageId,
           requirementIndex: total > 1 ? i : null,
           fileBytes: file.bytes,
@@ -398,9 +408,10 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
-          const InfoBanner(
-            message:
-                'Choose the KRA, criterion, and indicator that match your evidence, then attach files. Uploads are sent to your assigned reviewer for preparation and verification.',
+          InfoBanner(
+            message: _criterionId == FacultyDocument.criterionAId
+                ? 'Upload SET/SEF evaluation PDFs under Criterion A. The system detects Student vs Supervisor sections from the document text (OCR)—no manual indicator selection.'
+                : 'Choose the KRA, criterion, and indicator that match your evidence, then attach files. Uploads are sent to your assigned reviewer for preparation and verification.',
           ),
           const SizedBox(height: 18),
           DropdownButtonFormField<String>(
@@ -449,26 +460,28 @@ class _UploadDocumentScreenState extends State<UploadDocumentScreen> {
                     }),
             validator: (value) => value == null ? 'Select a criterion' : null,
           ),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<String>(
-            initialValue: _indicatorId,
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Select Indicator *'),
-            items: [
-              for (final indicator in _indicators)
-                DropdownMenuItem(
-                  value: indicator['id']?.toString(),
-                  child: Text(
-                    indicator['name']?.toString() ?? '',
-                    overflow: TextOverflow.ellipsis,
+          if (_criterionId != FacultyDocument.criterionAId) ...[
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              initialValue: _indicatorId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Select Indicator *'),
+              items: [
+                for (final indicator in _indicators)
+                  DropdownMenuItem(
+                    value: indicator['id']?.toString(),
+                    child: Text(
+                      indicator['name']?.toString() ?? '',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-            ],
-            onChanged: _criterionId == null
-                ? null
-                : (value) => setState(() => _indicatorId = value),
-            validator: (value) => value == null ? 'Select an indicator' : null,
-          ),
+              ],
+              onChanged: _criterionId == null
+                  ? null
+                  : (value) => setState(() => _indicatorId = value),
+              validator: (value) => value == null ? 'Select an indicator' : null,
+            ),
+          ],
           const SizedBox(height: 18),
           Text(
             _files.isEmpty ? 'Upload documents' : 'Selected files (${_files.length})',

@@ -124,16 +124,31 @@ FL.apiClient = {
       return fetch(FL.apiConfig.baseUrl + path, {
         method: method,
         headers: headers,
-        credentials: "omit"
+        credentials: "omit",
+        cache: "no-store"
       }).then(function (response) {
         if (!response.ok) {
           return response.text().then(function (text) {
-            const err = new Error(text || "Request failed.");
+            let msg = text || "Request failed.";
+            try {
+              const payload = JSON.parse(text);
+              msg = payload.message || payload.msg || msg;
+            } catch (parseErr) {
+              /* plain text body */
+            }
+            const err = new Error(msg);
             err.status = response.status;
             throw err;
           });
         }
         return response.blob();
+      }).catch(function (networkErr) {
+        if (networkErr && networkErr.status) return Promise.reject(networkErr);
+        const err = new Error(
+          "Could not reach the FacultyLink server. Check that the API is running and CORS allows this site."
+        );
+        err.status = 0;
+        throw err;
       });
     }
     return doRequest(access).catch(function (error) {
@@ -183,12 +198,21 @@ FL.apiClient = {
           }
         }
         if (!response.ok) {
-          const err = new Error((payload && payload.message) || "Request failed.");
+          const err = new Error(
+            (payload && (payload.message || payload.msg)) || "Request failed."
+          );
           err.status = response.status;
           throw err;
         }
         return payload;
       });
+    }).catch(function (networkErr) {
+      if (networkErr && networkErr.status) return Promise.reject(networkErr);
+      const err = new Error(
+        "Could not reach the FacultyLink server. Check that the API is running and CORS allows this site."
+      );
+      err.status = 0;
+      throw err;
     });
   },
 

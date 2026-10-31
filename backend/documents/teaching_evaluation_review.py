@@ -161,4 +161,22 @@ def apply_teaching_evaluation_review(
         )
     )
     db.session.commit()
+    profile = doc.faculty_profile
+    if profile:
+        try:
+            from faculty.estimated_score_service import recalculate_faculty_estimated_scores
+
+            recalculate_faculty_estimated_scores(
+                profile,
+                actor=reviewer,
+                reason="reviewer_teaching_evaluation_review",
+                document_id=doc.public_id,
+                criterion=tev.indicator_id,
+            )
+        except Exception:
+            from flask import current_app
+
+            current_app.logger.exception(
+                "Estimated score recalculation failed after teaching evaluation review (validation was saved)"
+            )
     return tev

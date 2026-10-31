@@ -36,11 +36,7 @@ class DocumentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final date = formatDisplayDate(document.submittedAt);
     final ft = _fileType(document);
-    final scoringMeta = document.countsInSimulation
-        ? 'Simulation: ${document.simulationScoreLabel}'
-        : document.creditsPoints
-            ? 'Credited: ${document.creditedLabel} pts'
-            : null;
+    final scoringMeta = document.documentCardMetricsLine;
 
     return Material(
       color: AppColors.surface,
@@ -123,7 +119,7 @@ class DocumentCard extends StatelessWidget {
                       runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        StatusBadge(status: document.status, compact: true),
+                        StatusBadge(status: document.displayStatus, compact: true),
                         if (showOcr && document.ocrStatus != null)
                           _OcrChip(label: document.ocrStatusLabel),
                       ],

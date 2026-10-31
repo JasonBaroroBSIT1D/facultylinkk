@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from models import Document, DocumentTeachingEvaluation
+from models import Document, DocumentTeachingEvaluation, FacultyProfile
+
+from documents.faculty_name_display import teaching_evaluation_faculty_fields
 
 from documents.status_map import DB_TO_WEB, document_status_to_web
 
@@ -14,14 +16,18 @@ def _web_validation_status(raw: str | None) -> str:
     return DB_TO_WEB.get(key, "pending-review")
 
 
-def teaching_evaluation_to_web(tev: DocumentTeachingEvaluation, doc: Document) -> dict:
+def teaching_evaluation_to_web(
+    tev: DocumentTeachingEvaluation,
+    doc: Document,
+    profile: FacultyProfile | None = None,
+) -> dict:
     meta = dict(tev.extracted_metadata or {})
     status_web = _web_validation_status(tev.reviewer_validation_status)
     incomplete = bool(meta.get("missingFields")) or meta.get("extractionStatus") in (
         "partial",
         "ambiguous",
     )
-    return {
+    row = {
         "id": tev.public_id,
         "teachingEvaluationId": tev.public_id,
         "documentId": doc.public_id,
@@ -49,11 +55,13 @@ def teaching_evaluation_to_web(tev: DocumentTeachingEvaluation, doc: Document) -
         "createdAt": tev.created_at.isoformat() if tev.created_at else None,
         "updatedAt": tev.updated_at.isoformat() if tev.updated_at else None,
     }
+    row.update(teaching_evaluation_faculty_fields(doc, profile, tev=tev))
+    return row
 
 
-def legacy_document_period_row(doc: Document) -> dict:
+def legacy_document_period_row(doc: Document, profile: FacultyProfile | None = None) -> dict:
     info = dict(doc.extracted_info or {})
-    return {
+    row = {
         "id": doc.public_id,
         "teachingEvaluationId": None,
         "documentId": doc.public_id,
@@ -80,9 +88,16 @@ def legacy_document_period_row(doc: Document) -> dict:
         "duplicatePeriodWarning": False,
         "legacyDocumentLevel": True,
     }
+    row.update(teaching_evaluation_faculty_fields(doc, profile, tev=None))
+    return row
 
 
-def folder_evaluation_records(profile_id: int, indicator_id: str, docs: list[Document]) -> list[dict]:
+def folder_evaluation_records(
+    profile_id: int,
+    indicator_id: str,
+    docs: list[Document],
+    profile: FacultyProfile | None = None,
+) -> list[dict]:
     rows: list[dict] = []
     for doc in docs:
         if doc.faculty_profile_id != profile_id:
@@ -101,9 +116,9 @@ def folder_evaluation_records(profile_id: int, indicator_id: str, docs: list[Doc
                     t.evaluation_type or "",
                 ),
             ):
-                rows.append(teaching_evaluation_to_web(tev, doc))
+                rows.append(teaching_evaluation_to_web(tev, doc, profile))
         elif doc.indicator_id == indicator_id:
-            rows.append(legacy_document_period_row(doc))
+            rows.append(legacy_document_period_row(doc, profile))
     return rows
 
 

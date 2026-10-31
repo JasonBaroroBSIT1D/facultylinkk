@@ -38,3 +38,26 @@ def reviewer_get_evaluation_periods():
     from evaluation_periods import service as eval_periods
 
     return jsonify({"evaluationPeriods": eval_periods.list_published_periods_api()}), 200
+
+
+@reviewer_bp.get("/faculty/<faculty_public_id>/estimated-assessment")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_faculty_estimated_assessment(faculty_public_id: str):
+    from auth import assignment_queries as aq
+    from faculty.estimated_score_service import estimated_assessment_payload
+    from models import FacultyProfile
+
+    reviewer_public = get_jwt_identity()
+    reviewer = aq.current_reviewer_user(reviewer_public)
+    if not reviewer:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = FacultyProfile.query.filter_by(public_id=faculty_public_id).first()
+    if not profile or not profile.user:
+        return jsonify({"message": "Faculty member was not found."}), 404
+    assigned = aq.list_assigned_faculty_for_reviewer(reviewer)
+    if not any(row.get("id") == faculty_public_id for row in assigned):
+        return jsonify({"message": "You do not have permission to view this faculty member."}), 403
+    payload = estimated_assessment_payload(profile)
+    resp = jsonify(payload)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200

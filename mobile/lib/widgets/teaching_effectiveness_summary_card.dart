@@ -13,9 +13,10 @@ class TeachingEffectivenessSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final set = data['set'] as Map<String, dynamic>? ?? {};
     final sef = data['sef'] as Map<String, dynamic>? ?? {};
-    final combinedProv = data['combinedProvisionalPoints'];
-    final combinedVal = data['combinedValidatedPoints'];
     final note = data['summaryNote'] as String?;
+    final criterionLine = TeachingEffectivenessMapper.criterionEstimatedLabel(data);
+    final disp = TeachingEffectivenessMapper.criterionDisplay(data);
+    final criterionExplanation = disp?['explanation'] as String?;
 
     return Card(
       child: Padding(
@@ -37,14 +38,19 @@ class TeachingEffectivenessSummaryCard extends StatelessWidget {
             _IndicatorBlock(title: 'SEF (Supervisor Evaluation)', block: sef),
             const Divider(height: 24),
             Text(
-              'Criterion A combined — provisional: ${TeachingEffectivenessMapper.formatPoints(combinedProv is num ? combinedProv : null) ?? '—'}'
-              ' · validated: ${TeachingEffectivenessMapper.formatPoints(combinedVal is num ? combinedVal : null) ?? '—'}',
+              criterionLine,
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
             ),
+            if (criterionExplanation != null && criterionExplanation.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                criterionExplanation,
+                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.35),
+              ),
+            ],
             const SizedBox(height: 6),
             const Text(
-              'Provisional points may include pending semesters when the backend allows. '
-              'Validated points require reviewer-approved evaluation records.',
+              'Combined Criterion A uses SET + SEF per published rules. Component lines may show estimates before reviewer validation.',
               style: TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.35),
             ),
           ],
@@ -63,8 +69,10 @@ class _IndicatorBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final counts = TeachingEffectivenessMapper.recordCounts(block);
-    final prov = TeachingEffectivenessMapper.formatPoints(block['provisionalPoints'] as num?);
-    final val = TeachingEffectivenessMapper.formatPoints(block['validatedPoints'] as num?);
+    final line = TeachingEffectivenessMapper.componentLine(block);
+    final comp = block['componentDisplay'];
+    final compExplanation =
+        comp is Map ? comp['explanation'] as String? : null;
     final scoringNote = block['scoringNote'] as String?;
 
     return Column(
@@ -72,10 +80,15 @@ class _IndicatorBlock extends StatelessWidget {
       children: [
         Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
         const SizedBox(height: 4),
-        Text(
-          'Provisional: ${prov ?? '—'} · Validated: ${val ?? '—'}',
-          style: const TextStyle(fontSize: 12),
-        ),
+        Text(line, style: const TextStyle(fontSize: 12)),
+        if (compExplanation != null && compExplanation.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              compExplanation,
+              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            ),
+          ),
         if (counts.isNotEmpty) ...[
           const SizedBox(height: 6),
           Wrap(

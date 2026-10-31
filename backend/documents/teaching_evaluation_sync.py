@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 from extensions import db
 from models import Document, DocumentTeachingEvaluation
 
+from documents.criterion_a_upload import should_run_set_sef_pipeline
 from documents.ocr.set_sef_metadata import (
     SetSefEvaluationRecord,
     is_set_sef_indicator,
@@ -164,16 +165,55 @@ def _draft_from_record(
 
 
 def dedupe_parsed_drafts(drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep first draft per sync key; later duplicates are dropped (DB unique constraint)."""
-    seen: set[tuple[str, ...]] = set()
-    unique: list[dict[str, Any]] = []
+    """Keep richest draft per sync key; merge complementary duplicates when possible."""
+    by_key: dict[tuple[str, ...], dict[str, Any]] = {}
     for draft in drafts:
         key = draft["key"]
-        if key in seen:
+        prev = by_key.get(key)
+        if not prev:
+            by_key[key] = draft
             continue
-        seen.add(key)
-        unique.append(draft)
-    return unique
+        for field in (
+            "academic_year",
+            "semester",
+            "rating_raw",
+            "rating_percent",
+            "rating_scale",
+            "source_section_ref",
+        ):
+            if not prev.get(field) and draft.get(field):
+                prev[field] = draft[field]
+    period_index: dict[tuple[str, str, str], dict[str, Any]] = {}
+    orphans: list[dict[str, Any]] = []
+    for draft in by_key.values():
+        et = draft.get("evaluation_type") or ""
+        year = (draft.get("academic_year") or "").strip()
+        sem = (draft.get("semester") or "").strip()
+        if et and year and sem:
+            period_index[(et, year, sem)] = draft
+        elif draft.get("rating_raw") and not year and not sem:
+            orphans.append(draft)
+        else:
+            orphans.append(draft)
+    for orphan in orphans:
+        et = orphan.get("evaluation_type") or ""
+        rating = orphan.get("rating_raw")
+        if not et or not rating:
+            continue
+        matched = False
+        for key, target in period_index.items():
+            if key[0] != et:
+                continue
+            if target.get("rating_raw"):
+                continue
+            target["rating_raw"] = orphan.get("rating_raw")
+            target["rating_percent"] = orphan.get("rating_percent")
+            target["rating_scale"] = orphan.get("rating_scale")
+            matched = True
+            break
+        if matched:
+            orphan["_drop"] = True
+    return [d for d in by_key.values() if not d.get("_drop")]
 
 
 def build_sync_plan(
@@ -320,16 +360,22 @@ def sync_teaching_evaluations_for_document(
     Idempotent OCR sync: link parsed SET/SEF rows to ``doc`` without duplicating periods.
     Uses a nested transaction so failures do not leave partial child rows.
     """
-    if not is_set_sef_indicator(doc.indicator_id):
+    if not should_run_set_sef_pipeline(
+        indicator_id=doc.indicator_id,
+        criterion_id=doc.criterion_id,
+    ):
         return TeachingEvaluationSyncResult(skipped=True)
 
     parsed = parse_set_sef_metadata_multi(text or "")
     existing = [_snapshot_from_model(row) for row in doc.teaching_evaluations.all()]
+    upload_indicator_id = (
+        doc.indicator_id if is_set_sef_indicator(doc.indicator_id) else None
+    )
     plan = build_sync_plan(
         parsed,
         existing,
         ocr_confidence=ocr_confidence,
-        upload_indicator_id=doc.indicator_id,
+        upload_indicator_id=upload_indicator_id,
     )
 
     try:

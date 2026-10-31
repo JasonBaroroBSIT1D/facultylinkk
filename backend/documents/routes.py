@@ -75,13 +75,15 @@ def faculty_upload_document():
             "empty_file": "The file is empty.",
             "file_too_large": "The file exceeds the 25 MB limit.",
             "unsupported_type": "Only PDF, Word (.docx), and image files are allowed.",
-            "duplicate_upload": "This exact file is already uploaded for the selected indicator.",
+            "duplicate_upload": "This exact file is already uploaded for the selected criterion or indicator.",
             "invalid_pdf": "The file is not a valid PDF (missing PDF signature).",
             "invalid_file_content": "The file content does not match a supported PDF or image format.",
             "mime_content_mismatch": "The uploaded content type does not match the file contents.",
             "no_profile": "Faculty profile was not found.",
-            "classification_required": "Select KRA, criterion, and indicator before uploading.",
+            "classification_required": "Select KRA and criterion before uploading.",
+            "invalid_indicator": "Invalid indicator for this criterion.",
             "invalid_replace_target": "The document to replace was not found.",
+            "not_replaceable": "This document cannot be replaced. Upload a new file only when revision is requested or OCR failed.",
         }
         return jsonify({"message": messages.get(code, "Upload failed.")}), 400
     payload = document_to_web(
@@ -179,16 +181,30 @@ def faculty_submit_document(public_id: str):
 @perm.roles_required(ROLE_FACULTY)
 def faculty_delete_document(public_id: str):
     user = aq.current_faculty_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    owned = doc_svc.get_owned_document(public_id, user)
+    if owned and owned.deleted_at is not None:
+        return jsonify({"ok": True, "message": "Document already removed."}), 200
     doc = doc_svc.get_document(public_id)
-    if not doc or not user:
+    if not doc or not doc_svc.faculty_owns(user, doc):
         return jsonify({"message": "Document was not found."}), 404
     try:
         doc_svc.soft_delete_faculty_document(user, doc)
     except ValueError as error:
         if str(error) == "not_deletable":
-            return jsonify({"message": "Only draft uploads can be deleted."}), 400
-        return jsonify({"message": "Delete failed."}), 403
-    return jsonify({"ok": True}), 200
+            return jsonify(
+                {
+                    "message": (
+                        "This document cannot be deleted. Approved records require withdrawal; "
+                        "other statuses may still be under review."
+                    )
+                }
+            ), 400
+        if str(error) == "forbidden":
+            return jsonify({"message": "You cannot delete this document."}), 403
+        return jsonify({"message": "Delete failed."}), 400
+    return jsonify({"ok": True, "message": "Document removed from your active list."}), 200
 
 
 def _directory_params():
@@ -366,7 +382,7 @@ def reviewer_review_teaching_evaluation(public_id: str, tev_public_id: str):
         return jsonify({"message": messages.get(code, "Review could not be saved.")}), 400
     return jsonify(
         {
-            "teachingEvaluation": teaching_evaluation_to_web(tev, doc),
+            "teachingEvaluation": teaching_evaluation_to_web(tev, doc, doc.faculty_profile),
             "document": document_to_web(
                 doc,
                 api_base=_file_api_base("reviewer", doc.public_id),

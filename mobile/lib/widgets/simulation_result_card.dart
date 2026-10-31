@@ -242,12 +242,12 @@ class _SimulationResultCardState extends State<SimulationResultCard>
               return Row(
                 children: [
                   _StatBlock(
-                    value: '${(readiness * t).round()}%',
-                    label: 'Readiness',
-                  ),
-                  _StatBlock(
                     value: (kraTotal * t).toStringAsFixed(1),
                     label: 'KRA Total',
+                  ),
+                  _StatBlock(
+                    value: '${(readiness * t).round()}%',
+                    label: 'Readiness',
                   ),
                   const _StatBlock(
                     value: 'Pending',

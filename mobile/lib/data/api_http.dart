@@ -27,6 +27,14 @@ Future<http.Response> apiPost(
   );
 }
 
+Future<http.Response> apiDelete(
+  http.Client client,
+  Uri uri, {
+  Map<String, String>? headers,
+}) {
+  return _guard(client.delete(uri, headers: headers));
+}
+
 Future<http.StreamedResponse> apiSend(
   http.Client client,
   http.BaseRequest request,

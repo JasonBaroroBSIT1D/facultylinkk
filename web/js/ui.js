@@ -98,6 +98,7 @@ FL.ui = {
       approved: ["valid", "Approved"],
       "approved-by-reviewer": ["valid", "Approved by reviewer"],
       "simulation-auto-accepted": ["valid", "Auto-accepted for simulation"],
+      "incomplete-extraction": ["pending", "Incomplete extraction"],
       "simulation-reviewer-validated": ["valid", "Reviewer-validated for simulation"],
       "auto-approved": ["valid", "Auto-accepted for simulation"],
       "system-approved": ["valid", "System approved"],

@@ -9,9 +9,15 @@ from flask import current_app
 from extensions import db
 from models import AuditLog, Document, FacultyProfile, User
 
+from documents.faculty_document_policy import faculty_can_delete, faculty_can_replace
 from documents.serializers import document_to_web, stats_from_documents
 from documents.status_map import QUEUE_DB, is_legacy_uploaded_draft, status_from_web
 from documents.storage import resolve_path, save_upload
+from documents.criterion_a_upload import (
+    CRITERION_A_AUTO_INDICATOR_ID,
+    CRITERION_A_ID,
+    normalize_upload_classification,
+)
 from documents.ocr.dispatch import maybe_dispatch_inline_worker
 from documents.ocr import queue as ocr_queue
 
@@ -30,6 +36,13 @@ def faculty_profile_for_user(user: User) -> FacultyProfile | None:
 
 def get_document(public_id: str) -> Document | None:
     return _active_docs_query().filter_by(public_id=public_id).first()
+
+
+def get_owned_document(public_id: str, faculty_user: User) -> Document | None:
+    profile = faculty_profile_for_user(faculty_user)
+    if not profile:
+        return None
+    return Document.query.filter_by(public_id=public_id, faculty_profile_id=profile.id).first()
 
 
 def append_review_history(doc: Document, *, actor: User, action: str, remarks: str, status_after: str) -> None:
@@ -132,26 +145,31 @@ def create_upload(
     title: str,
     kra_id: str,
     criterion_id: str,
-    indicator_id: str,
+    indicator_id: str = "",
     replaces_public_id: str | None = None,
 ) -> Document:
     profile = faculty_profile_for_user(faculty_user)
     if not profile:
         raise ValueError("no_profile")
-    if not kra_id or not criterion_id or not indicator_id:
-        raise ValueError("classification_required")
+    try:
+        kra_id, criterion_id, indicator_id = normalize_upload_classification(
+            kra_id=kra_id,
+            criterion_id=criterion_id,
+            indicator_id=indicator_id,
+        )
+    except ValueError:
+        raise
     title = (title or "").strip() or (file.filename if file else "Document")
     relative, digest, size, mime = save_upload(file, profile.id)
     if not replaces_public_id:
-        duplicate = (
-            _active_docs_query()
-            .filter_by(
-                faculty_profile_id=profile.id,
-                file_hash=digest,
-                indicator_id=indicator_id,
-            )
-            .first()
+        dup_q = _active_docs_query().filter_by(
+            faculty_profile_id=profile.id,
+            file_hash=digest,
         )
+        if criterion_id == CRITERION_A_ID and indicator_id == CRITERION_A_AUTO_INDICATOR_ID:
+            duplicate = dup_q.filter_by(criterion_id=CRITERION_A_ID).first()
+        else:
+            duplicate = dup_q.filter_by(indicator_id=indicator_id).first()
     else:
         duplicate = None
     if duplicate:
@@ -161,10 +179,13 @@ def create_upload(
         raise ValueError("duplicate_upload")
     replaces_id = None
     version = 1
+    prev: Document | None = None
     if replaces_public_id:
         prev = get_document(replaces_public_id)
         if not prev or prev.faculty_profile_id != profile.id:
             raise ValueError("invalid_replace_target")
+        if not faculty_can_replace(prev):
+            raise ValueError("not_replaceable")
         replaces_id = prev.id
         version = (getattr(prev, "version_number", None) or 1) + 1
     doc = Document(
@@ -189,6 +210,15 @@ def create_upload(
     if hasattr(doc, "replaces_document_id"):
         doc.replaces_document_id = replaces_id
     db.session.add(doc)
+    if prev is not None:
+        _soft_delete_document_internal(
+            prev,
+            actor_user=faculty_user,
+            reason="replaced_by_upload",
+            replacement_public_id=doc.public_id,
+            via_replacement=True,
+            recalculate=False,
+        )
     try:
         db.session.commit()
     except Exception:
@@ -197,6 +227,16 @@ def create_upload(
         if stored and stored.is_file():
             stored.unlink()
         raise
+    if prev is not None and profile:
+        from faculty.estimated_score_service import recalculate_faculty_estimated_scores
+
+        recalculate_faculty_estimated_scores(
+            profile,
+            actor=faculty_user,
+            reason="document_replaced",
+            document_id=doc.public_id,
+            criterion=doc.criterion_id,
+        )
     ocr_queue.enqueue_document_ocr(doc)
     try:
         maybe_dispatch_inline_worker(current_app._get_current_object())
@@ -251,15 +291,99 @@ def apply_review_decision(
     else:
         raise ValueError("invalid_decision")
     db.session.commit()
+    _recalculate_faculty_score_for_document(doc, actor=reviewer, reason="reviewer_document_decision")
     return doc
+
+
+def _cancel_active_ocr_jobs(doc: Document) -> None:
+    from models import DocumentOcrJob
+
+    jobs = (
+        DocumentOcrJob.query.filter_by(document_id=doc.id)
+        .filter(DocumentOcrJob.status.in_(("pending", "running")))
+        .all()
+    )
+    for job in jobs:
+        job.status = "cancelled"
+        job.locked_at = None
+        job.locked_by = None
+        job.last_error = "Cancelled — document removed by faculty."
+
+
+def _soft_delete_document_internal(
+    doc: Document,
+    *,
+    actor_user: User,
+    reason: str,
+    replacement_public_id: str | None = None,
+    via_replacement: bool = False,
+    recalculate: bool = True,
+) -> None:
+    if doc.deleted_at is not None:
+        return
+    if not via_replacement and not faculty_can_delete(doc):
+        raise ValueError("not_deletable")
+    _cancel_active_ocr_jobs(doc)
+    tev_count = 0
+    if hasattr(doc, "teaching_evaluations"):
+        try:
+            tev_count = doc.teaching_evaluations.count()
+        except Exception:
+            tev_count = len(list(doc.teaching_evaluations or []))
+    info = dict(doc.extracted_info or {})
+    info["Faculty soft deletion"] = utcnow().isoformat()
+    info["Deletion reason"] = reason
+    if replacement_public_id:
+        info["Replaced by document"] = replacement_public_id
+    doc.extracted_info = info
+    doc.deleted_at = utcnow()
+    import json
+
+    db.session.add(
+        AuditLog(
+            actor_user_id=actor_user.id,
+            action="Faculty document soft-deleted",
+            target_id=doc.public_id,
+            detail=json.dumps(
+                {
+                    "documentId": doc.public_id,
+                    "reason": reason,
+                    "status": doc.status,
+                    "ocrStatus": doc.ocr_status,
+                    "replacementDocumentId": replacement_public_id,
+                    "teachingEvaluationRecords": tev_count,
+                    "viaReplacement": via_replacement,
+                },
+                ensure_ascii=False,
+            )[:8000],
+        )
+    )
+    db.session.flush()
+    if not recalculate:
+        return
+    profile = doc.faculty_profile
+    if profile:
+        from faculty.estimated_score_service import recalculate_faculty_estimated_scores
+
+        recalculate_faculty_estimated_scores(
+            profile,
+            actor=actor_user,
+            reason=f"document_soft_delete:{reason}",
+            document_id=doc.public_id,
+            criterion=doc.criterion_id,
+        )
 
 
 def soft_delete_faculty_document(faculty_user: User, doc: Document) -> None:
     if not faculty_owns(faculty_user, doc):
         raise ValueError("forbidden")
-    if doc.status not in ("draft",):
-        raise ValueError("not_deletable")
-    doc.deleted_at = utcnow()
+    if doc.deleted_at is not None:
+        return
+    _soft_delete_document_internal(
+        doc,
+        actor_user=faculty_user,
+        reason="faculty_delete",
+    )
     db.session.commit()
 
 
@@ -286,8 +410,29 @@ def patch_from_web_payload(doc: Document, body: dict) -> Document:
     if isinstance(body.get("extractedInfo"), dict):
         extracted.update(body["extractedInfo"])
         doc.extracted_info = extracted
+    score_changed = isinstance(review, dict) and review.get("finalScore") is not None
     db.session.commit()
+    if score_changed or web_status or isinstance(review, dict):
+        _recalculate_faculty_score_for_document(doc, actor=None, reason="reviewer_document_update")
     return doc
+
+
+def _recalculate_faculty_score_for_document(doc: Document, *, actor, reason: str) -> None:
+    profile = doc.faculty_profile
+    if not profile:
+        return
+    try:
+        from faculty.estimated_score_service import recalculate_faculty_estimated_scores
+
+        recalculate_faculty_estimated_scores(
+            profile,
+            actor=actor,
+            reason=reason,
+            document_id=doc.public_id,
+            criterion=doc.criterion_id,
+        )
+    except Exception:
+        db.session.rollback()
 
 
 def queue_for_reviewer(reviewer: User) -> list[Document]:

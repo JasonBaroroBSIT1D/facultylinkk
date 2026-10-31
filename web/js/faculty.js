@@ -55,6 +55,51 @@ FL.faculty = {
     return "faculty-detail.html?id=" + encodeURIComponent(id);
   },
 
+  unifiedSimulation: function (facultyId) {
+    const cache = FL.store.estimatedAssessmentByFaculty || {};
+    const live = cache[facultyId];
+    if (live && live.kraScores) {
+      const kras = (live.kraScores || []).map(function (k) {
+        const pts = k.estimatedPoints != null ? k.estimatedPoints : k.currentPoints;
+        return {
+          id: k.kraId,
+          code: String(k.kraId || "").toUpperCase(),
+          name: k.label || k.kraId,
+          credited: pts,
+          earned: pts,
+          maxPoints: k.maxPoints || k.targetPoints || 100
+        };
+      });
+      return {
+        faculty: FL.store.facultyById(facultyId),
+        aggregate: {
+          kras: kras,
+          total: live.estimatedTotalKraPoints || 0,
+          weightedScore: live.weightedEstimatedScore
+        },
+        gaps: [{ tone: "info", text: "Estimated KRA scores from the unified PostgreSQL scoring engine." }],
+        live: true
+      };
+    }
+    return FL.scoring.simulation(facultyId);
+  },
+
+  loadUnifiedAssessment: function (session, facultyId) {
+    FL.store.estimatedAssessmentByFaculty = FL.store.estimatedAssessmentByFaculty || {};
+    if (session.role === "reviewer" && FL.store.usesLiveReviewerApi()) {
+      return FL.store.loadEstimatedAssessment(facultyId);
+    }
+    if (session.role === "administrator" && FL.store.usesRealAdminApi()) {
+      return FL.store.fetchAdminFacultyDetail(facultyId).then(function (data) {
+        if (data.estimatedAssessment) {
+          FL.store.estimatedAssessmentByFaculty[facultyId] = data.estimatedAssessment;
+        }
+        return data.estimatedAssessment || null;
+      });
+    }
+    return Promise.resolve(null);
+  },
+
   documentHref: function (id) {
     const page = document.body.dataset.role === "administrator" ? "document-view.html" : "document-review.html";
     return page + "?id=" + encodeURIComponent(id);
@@ -370,7 +415,14 @@ FL.faculty = {
       page.innerHTML = FL.ui.empty("Faculty record not assigned", "This faculty member is not assigned to your review work.");
       return;
     }
-    const sim = FL.scoring.simulation(person.id);
+    const paint = function () {
+      FL.faculty._paintDetail(session, person, page);
+    };
+    FL.faculty.loadUnifiedAssessment(session, person.id).then(paint).catch(paint);
+  },
+
+  _paintDetail: function (session, person, page) {
+    const sim = FL.faculty.unifiedSimulation(person.id);
     const compliance = FL.compliance(person.id);
     const reviewer = FL.store.userById(person.reviewerId);
     const docs = FL.store.documents.filter(function (doc) { return doc.facultyId === person.id; });

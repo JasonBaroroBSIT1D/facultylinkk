@@ -41,8 +41,108 @@ FL.documents = {
     return doc.indicatorId === "kra1-a-student" || doc.indicatorId === "kra1-a-supervisor";
   },
 
+  isCriterionATeachingDocument: function (doc) {
+    if (!doc) return false;
+    if (doc.criterionId === "kra1-a") return true;
+    if (doc.indicatorId === "kra1-a-teaching-evidence") return true;
+    if (doc.teachingEvaluations && doc.teachingEvaluations.length) return true;
+    const info = doc.extractedInfo || {};
+    return Boolean(
+      info["Document evaluation composition"]
+        || info["SET record count"]
+        || info["Multi-semester document"] === "yes"
+    );
+  },
+
+  invalidFacultyNameToken: function (name) {
+    const lower = String(name || "").trim().toLowerCase();
+    if (!lower || lower.length < 3) return true;
+    const blocked = {
+      rating: true, ratings: true, evaluation: true, evaluations: true,
+      summary: true, individual: true, student: true, supervisor: true,
+      teaching: true, faculty: true, name: true, semester: true, average: true
+    };
+    if (blocked[lower]) return true;
+    if (lower.indexOf("rating") >= 0 && lower.indexOf("faculty") < 0) return true;
+    return false;
+  },
+
+  facultyNameOnDocument: function (doc) {
+    const block = doc.documentInformation;
+    if (block && block.facultyName) {
+      const name = String(block.facultyName).trim();
+      if (name === "Needs Verification") return name;
+      if (block.facultyNameSource === "profile") return name;
+      if (name && name !== "—") return name;
+    }
+    const info = doc.extractedInfo || {};
+    const status = (info["Faculty name extraction status"] || "").toLowerCase();
+    const raw = (info["Faculty name on document"] || info["Faculty name"] || info["Extracted names"] || "").trim();
+    if (status === "not_detected" || !raw) return "Not detected";
+    if (FL.documents.invalidFacultyNameToken(raw)) return "Not detected";
+    return raw;
+  },
+
+  documentInformationHtml: function (doc, block) {
+    block = block || doc.documentInformation || {};
+    const uploaded = block.dateUploaded
+      ? FL.formatDocStamp(block.dateUploaded)
+      : FL.formatDocStamp(doc.submittedAt || doc.uploadedAt || "");
+    const verifyLabel = block.nameVerificationLabel || (block.needsVerification ? "Name Mismatch" : "Name Matched");
+    const verifyMsg = block.nameVerificationMessage || block.facultyNameNote || "";
+    let mismatch = "";
+    if (verifyLabel === "Name Mismatch" || block.needsVerification) {
+      mismatch = `<div class="alert alert-warning" role="status">${FL.esc(
+        verifyMsg
+          || "Faculty Name Mismatch — The document identifies a different faculty from the account owner."
+      )}</div>`;
+    } else if (verifyMsg) {
+      mismatch = `<p class="note">${FL.esc(verifyMsg)}</p>`;
+    }
+    const onDocName = block.facultyNameOnDocument || block.documentNameOnFile || block.facultyName || "Not detected";
+    const verifyBadge = verifyLabel === "Name Matched"
+      ? FL.ui.badge("valid", verifyLabel)
+      : verifyLabel === "Name Not Detected" || verifyLabel === "Needs Manual Review"
+        ? FL.ui.badge("pending", verifyLabel)
+        : FL.ui.badge("invalid", verifyLabel);
+    const docType = block.documentType && block.documentType !== "—"
+      ? FL.esc(String(block.documentType))
+      : "—";
+    return `
+      <div class="card-head"><h2>Document information</h2></div>
+      ${mismatch}
+      <div class="kv-grid">
+        ${FL.documents.kvRow("Account owner", FL.esc(block.uploadedBy || block.accountOwnerName || "—"), false)}
+        ${FL.documents.kvRow("Faculty name on document", FL.esc(onDocName), onDocName === "Not detected")}
+        ${FL.documents.kvRow("Name verification", verifyBadge, false)}
+        ${FL.documents.kvRow("Date uploaded", uploaded, uploaded === "—")}
+        ${FL.documents.kvRow("KRA", FL.esc(block.kraLabel || "—"), false)}
+        ${FL.documents.kvRow("Criterion", FL.esc(block.criterionLabel || "—"), false)}
+        ${FL.documents.kvRow("Document type", docType, docType === "—")}
+        ${FL.documents.kvRow("OCR status", FL.esc(block.ocrStatus || FL.documents.ocrStatusLabel(doc)), false)}
+        ${FL.documents.kvRow("Review status", FL.esc(block.reviewStatus || doc.status || "Pending Review"), false)}
+      </div>`;
+  },
+
+  tevReviewerProgressLabel: function (doc) {
+    const list = doc.teachingEvaluations || [];
+    if (!list.length || !FL.tevReviewUi) return "—";
+    const counts = FL.tevReviewUi.summaryCounts(list);
+    return counts.reviewed + " of " + counts.total + " semester records reviewed";
+  },
+
   setSefMetadataHtml: function (doc) {
     if (!FL.documents.isSetSefSemesterDocument(doc)) return "";
+    const ctx = doc.setSefParentContext;
+    const ctxBlock = ctx && typeof ctx === "object"
+      ? `<section class="card-inset" aria-label="Parent PDF vs semester validation">
+          <h3 class="review-subhead">Source PDF processing</h3>
+          <p class="note">${FL.esc(ctx.summaryLine || ctx.composition || "—")}</p>
+          ${ctx.processing ? `<p class="sub">OCR: ${FL.esc(ctx.processing.ocrStatus || "—")} · Workflow: ${FL.esc(ctx.processing.documentWorkflowStatus || doc.documentWorkflowStatus || doc.status || "—")}</p>` : ""}
+          ${ctx.estimatedPointsExplanation ? `<p class="note">${FL.esc(ctx.estimatedPointsExplanation)}</p>` : ""}
+          ${ctx.note ? `<p class="sub">${FL.esc(ctx.note)}</p>` : ""}
+        </section>`
+      : "";
     const info = doc.extractedInfo && typeof doc.extractedInfo === "object" ? doc.extractedInfo : {};
     const selected = doc.indicatorId && FL.rules.findIndicator(doc.indicatorId);
     const selectedLabel = selected ? selected.indicator.name : (doc.indicatorId || "—");
@@ -58,12 +158,15 @@ FL.documents = {
     const missing = info["Missing extraction fields"] || "";
     const rating = info["Extracted rating"] || "";
     const scale = info["Rating scale"] || "";
-    return `
+    return `${ctxBlock}
       <h3 class="review-subhead">SET / SEF extraction</h3>
       <div class="kv-grid kv-grid--two">
         ${FL.documents.kvRow("Faculty-selected indicator", FL.esc(selectedLabel), false)}
         ${FL.documents.kvRow("Detected evaluation type", info["Evaluation type"] ? FL.esc(String(info["Evaluation type"])) : "—", !info["Evaluation type"])}
-        ${FL.documents.kvRow("Faculty name", info["Faculty name"] ? FL.esc(String(info["Faculty name"])) : "—", !info["Faculty name"])}
+        ${FL.documents.kvRow("Faculty name on document", (function () {
+          const n = FL.documents.facultyNameOnDocument(doc);
+          return n === "Not detected" ? FL.ui.badge("invalid", "Not detected") : FL.esc(n);
+        })(), FL.documents.facultyNameOnDocument(doc) === "Not detected")}
         ${FL.documents.kvRow("Academic year", info["Academic year"] ? FL.esc(String(info["Academic year"])) : "—", !info["Academic year"])}
         ${FL.documents.kvRow("Semester", info["Semester"] ? FL.esc(String(info["Semester"])) : "—", !info["Semester"])}
         ${FL.documents.kvRow("Overall rating", rating ? FL.esc(String(rating)) : "—", !rating)}
@@ -255,33 +358,26 @@ FL.documents = {
       </div>`;
   },
 
-  reviewSummaryHtml: function (doc, scored) {
-    const info = doc.extractedInfo || {};
-    const found = doc.indicatorId ? FL.rules.findIndicator(doc.indicatorId) : null;
-    const evalType = info["Evaluation type"]
-      || (found ? found.indicator.name : "")
-      || "—";
-    const facultyName = info["Faculty name"] || info["Extracted names"] || info["Extracted author(s)"] || "—";
-    const year = info["Academic year"] || "—";
-    const semester = info["Semester"] || "—";
-    const rating = info["Extracted rating"] || "—";
-    const scale = info["Rating scale"] || "—";
-    const verification = info["Indicator verification status"] || "—";
-    const ocrLabel = FL.documents.ocrStatusLabel(doc);
-    return `
-      <div class="card-head"><h2>Document information</h2></div>
-      <div class="kv-grid">
-        ${FL.documents.kvRow("Faculty name", facultyName !== "—" ? FL.esc(facultyName) : FL.ui.badge("invalid", "Missing"), facultyName === "—")}
-        ${FL.documents.kvRow("Academic year", year !== "—" ? FL.esc(String(year)) : "—", year === "—")}
-        ${FL.documents.kvRow("Semester", semester !== "—" ? FL.esc(String(semester)) : "—", semester === "—")}
-        ${FL.documents.kvRow("Evaluation type", FL.esc(String(evalType)), false)}
-        ${FL.documents.kvRow("Overall rating", rating !== "—" ? FL.esc(String(rating)) : "—", rating === "—")}
-        ${FL.documents.kvRow("Rating scale", scale !== "—" ? FL.esc(String(scale)) : "—", scale === "—")}
-        ${FL.documents.kvRow("Indicator verification", verification !== "—" ? FL.esc(String(verification).replace(/_/g, " ")) : "—", verification === "—" || verification === "UNDETERMINED")}
-        ${FL.documents.kvRow("OCR processing", FL.ui.statusBadge(ocrLabel), ocrLabel !== "completed")}
-        ${FL.documents.kvRow("Review status", FL.ui.statusBadge(doc.status), false)}
-        ${found ? FL.documents.kvRow("Selected indicator", FL.esc(found.indicator.name), false) : ""}
-      </div>`;
+  reviewSummaryHtml: function (doc, scored, faculty) {
+    if (doc.documentInformation && typeof doc.documentInformation === "object") {
+      let html = FL.documents.documentInformationHtml(doc, doc.documentInformation);
+      if (FL.documents.isCriterionATeachingDocument(doc)) {
+        const progress = FL.documents.tevReviewerProgressLabel(doc);
+        if (progress && progress !== "—") {
+          html += `<div class="kv-grid kv-grid--compact"><div class="kv-row">${FL.documents.kvRow("Semester review progress", FL.esc(progress), false)}</div></div>`;
+        }
+      }
+      return html;
+    }
+    const block = {
+      facultyName: FL.documents.facultyNameOnDocument(doc),
+      kraLabel: doc.kraId || "—",
+      criterionLabel: doc.criterionId || "—",
+      documentType: "—",
+      ocrStatus: FL.documents.ocrStatusLabel(doc),
+      dateUploaded: doc.submittedAt || doc.uploadedAt
+    };
+    return FL.documents.documentInformationHtml(doc, block);
   },
 
   bindReviewTabs: function (preferredTab) {
@@ -568,7 +664,7 @@ FL.documents = {
           </section>
           <aside class="review-aside">
             <section class="card review-section review-summary-card">
-              ${FL.documents.reviewSummaryHtml(doc, scored)}
+              ${FL.documents.reviewSummaryHtml(doc, scored, faculty)}
             </section>
             <section class="card review-section review-decision" id="decision">
               ${FL.documents.decisionHtml(doc, canDecide)}
@@ -616,8 +712,14 @@ FL.documents = {
         event.preventDefault();
         event.stopPropagation();
       }
-      if (doc.fileUrl) {
-        window.open(FL.documents.inlineFileUrl(doc), "_blank", "noopener");
+      if (doc.fileApiPath || doc.fileUrl) {
+        FL.documents.hydrateAuthenticatedFile(doc).then(function (hydrated) {
+          const url = FL.documents.inlineFileUrl(hydrated);
+          if (url) window.open(url, "_blank", "noopener");
+          else FL.ui.toast("Could not open the document file.", "danger");
+        }).catch(function (err) {
+          FL.ui.toast(err.message || "Could not open the document file.", "danger");
+        });
         return;
       }
       FL.ui.modal({
@@ -696,30 +798,117 @@ FL.documents = {
       }
       FL.documents.bindDecision(session, doc);
       FL.documents.bindExtractionCorrection(session, doc, canDecide);
+      FL.documents.bindTeachingEvaluationPanel(session, doc, canDecide);
       FL.documents.bindTeachingEvaluationActions(session, doc, canDecide);
     }
     if (doc._highlightTev) {
-      const focusEl = document.getElementById("tev-" + doc._highlightTev);
-      if (focusEl && focusEl.tagName === "DETAILS") focusEl.open = true;
-      if (focusEl) focusEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      const tevId = doc._highlightTev;
+      delete doc._highlightTev;
+      FL.documents.openTeachingEvaluationDrawer(session, doc, canDecide, tevId);
+      const row = document.querySelector('[data-tev-row-id="' + tevId + '"]');
+      if (row) row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    } else if (doc._tevDrawerOpen) {
+      FL.documents.openTeachingEvaluationDrawer(session, doc, canDecide, doc._tevDrawerOpen);
     }
   },
 
   inlineFileUrl: function (doc) {
     if (doc._objectUrl) return doc._objectUrl;
+    if (FL.store.usesLiveDocuments() && doc.fileApiPath) {
+      return "";
+    }
     if (!doc.fileUrl) return "";
     const join = doc.fileUrl.indexOf("?") >= 0 ? "&" : "?";
     return doc.fileUrl + join + "disposition=inline";
   },
 
-  hydrateAuthenticatedFile: function (doc) {
-    if (!FL.store.usesLiveDocuments() || !doc.fileApiPath || doc._objectUrl) {
+  fileApiPathWithDisposition: function (doc, disposition) {
+    if (!doc || !doc.fileApiPath) return "";
+    const join = doc.fileApiPath.indexOf("?") >= 0 ? "&" : "?";
+    return doc.fileApiPath + join + "disposition=" + (disposition || "inline");
+  },
+
+  hydrateAuthenticatedFile: function (doc, options) {
+    options = options || {};
+    if (!FL.store.usesLiveDocuments() || !doc.fileApiPath) {
       return Promise.resolve(doc);
     }
-    const path = doc.fileApiPath + (doc.fileApiPath.indexOf("?") >= 0 ? "&" : "?") + "disposition=inline";
+    const livePreviewId = options.previewDocId || null;
+    if (doc._objectUrl) {
+      const stillActive = livePreviewId
+        && FL.evidence
+        && FL.evidence._caPreviewObjectUrl === doc._objectUrl
+        && FL.evidence._caPreviewDocId === livePreviewId;
+      if (stillActive) return Promise.resolve(doc);
+      try { URL.revokeObjectURL(doc._objectUrl); } catch (revokeErr) { /* ignore */ }
+      delete doc._objectUrl;
+    }
+    const path = FL.documents.fileApiPathWithDisposition(doc, "inline");
     return FL.apiClient.adminRequestBlob("GET", path).then(function (blob) {
-      doc._objectUrl = URL.createObjectURL(blob);
-      return doc;
+      if (!blob || blob.size < 16) {
+        throw Object.assign(new Error("The document file could not be loaded for preview."), { status: 502 });
+      }
+      const isPdfName = (doc.fileName || doc.name || "").toLowerCase().endsWith(".pdf");
+      const isPdfType = (blob.type || "").indexOf("pdf") >= 0;
+      function attachBlobUrl(pdfBlob) {
+        if (doc._objectUrl) {
+          try { URL.revokeObjectURL(doc._objectUrl); } catch (revokeErr) { /* ignore */ }
+        }
+        doc._objectUrl = URL.createObjectURL(pdfBlob);
+        return doc;
+      }
+      if (isPdfName || isPdfType) {
+        return blob.slice(0, 4).arrayBuffer().then(function (buf) {
+          const bytes = new Uint8Array(buf);
+          if (bytes.length < 4 || bytes[0] !== 0x25 || bytes[1] !== 0x50 || bytes[2] !== 0x44 || bytes[3] !== 0x46) {
+            throw Object.assign(new Error("The server did not return a valid PDF for preview."), { status: 502 });
+          }
+          const pdfBlob = blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
+          return attachBlobUrl(pdfBlob);
+        });
+      }
+      return attachBlobUrl(blob);
+    });
+  },
+
+  loadDocumentPdfPreview: function (doc, frameEl) {
+    if (!frameEl) return Promise.resolve();
+    frameEl.innerHTML = "<p class=\"ca-preview-loading\" role=\"status\">Loading document preview…</p>";
+    return FL.documents.hydrateAuthenticatedFile(doc).then(function (hydrated) {
+      const url = FL.documents.inlineFileUrl(hydrated);
+      const isPdf = (hydrated.fileName || "").toLowerCase().endsWith(".pdf")
+        || (hydrated.mimeType || "").indexOf("pdf") >= 0;
+      if (url && isPdf) {
+        frameEl.innerHTML = "<iframe title=\"PDF preview\" src=\"" + FL.esc(url)
+          + "\" class=\"tev-drawer-iframe\"></iframe>";
+        return;
+      }
+      if (url) {
+        frameEl.innerHTML = "<p class=\"note\">Preview is limited for this file type. Use the Document tab below.</p>";
+        return;
+      }
+      frameEl.innerHTML = "<p class=\"note\">No inline preview is available. Use the Document tab below for the original file.</p>";
+    }).catch(function (error) {
+      frameEl.innerHTML = "<p class=\"ca-preview-error\">" + FL.esc(error.message || "Preview failed.") + "</p>";
+    });
+  },
+
+  downloadAuthenticatedFile: function (doc, fileName) {
+    if (!FL.store.usesLiveDocuments() || !doc.fileApiPath) {
+      return Promise.reject(new Error("Download is not available for this document."));
+    }
+    const path = FL.documents.fileApiPathWithDisposition(doc, "attachment");
+    return FL.apiClient.adminRequestBlob("GET", path).then(function (blob) {
+      const name = fileName || doc.fileName || doc.name || "document.pdf";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
     });
   },
 
@@ -1383,138 +1572,337 @@ FL.documents = {
       </section>`;
   },
 
+  _tevRecordFilter: "all",
+
+  tevStatusPillClass: function (label) {
+    if (label === "Validated") return "tev-pill tev-pill--validated";
+    if (label === "Needs Revision") return "tev-pill tev-pill--revision";
+    if (label === "Rejected") return "tev-pill tev-pill--rejected";
+    if (label === "Incomplete Extraction") return "tev-pill tev-pill--incomplete";
+    return "tev-pill tev-pill--pending";
+  },
+
+  tevTechnicalDetailsHtml: function (tev) {
+    const flags = [];
+    if (tev.duplicatePeriodWarning) flags.push("Duplicate period warning");
+    if (tev.missingFields && tev.missingFields.length) {
+      flags.push("Missing fields: " + tev.missingFields.join(", "));
+    }
+    return `<details class="tev-tech-details">
+      <summary>Technical details</summary>
+      <dl class="set-sef-calc-grid tev-tech-grid">
+        <div><dt>Record ID</dt><dd>${FL.esc(tev.id || tev.teachingEvaluationId || "—")}</dd></div>
+        <div><dt>Extraction status</dt><dd>${FL.esc(tev.extractionStatus || "—")}</dd></div>
+        <div><dt>OCR verification</dt><dd>${FL.esc(tev.ocrVerificationStatus || "—")}</dd></div>
+        <div><dt>Source section</dt><dd>${FL.esc(tev.sourceSectionRef || "—")}</dd></div>
+        ${tev.extractionFlags && tev.extractionFlags.length
+          ? `<div class="field-span"><dt>Extraction flags</dt><dd>${FL.esc(tev.extractionFlags.join(", "))}</dd></div>` : ""}
+        ${flags.length ? `<div class="field-span"><dt>Warnings</dt><dd>${FL.esc(flags.join(" · "))}</dd></div>` : ""}
+      </dl>
+    </details>`;
+  },
+
+  teachingEvaluationDrawerShellHtml: function (canDecide) {
+    const actions = canDecide ? `
+      <p class="field-error" id="tev-drawer-error" role="alert"></p>
+      <div class="decision-row tev-drawer-actions">
+        <button class="btn btn-primary" type="button" data-tev-decision="approve">Validate</button>
+        <button class="btn btn-warning" type="button" data-tev-decision="revision">Request revision</button>
+        <button class="btn btn-danger" type="button" data-tev-decision="reject">Reject</button>
+        <button class="btn btn-ghost" type="button" data-tev-decision="save">Save corrections</button>
+      </div>` : `<p class="note">You do not have permission to change reviewer decisions on this document.</p>`;
+    return `<div id="tev-review-drawer" class="tev-drawer" aria-hidden="true" aria-labelledby="tev-drawer-title">
+      <button type="button" class="tev-drawer-backdrop" aria-label="Close review panel"></button>
+      <div class="tev-drawer-panel" role="dialog" aria-modal="true">
+        <header class="tev-drawer-head">
+          <div>
+            <p class="eyebrow">Semester evaluation</p>
+            <h2 id="tev-drawer-title">Review SET/SEF record</h2>
+            <p class="sub" id="tev-drawer-subtitle"></p>
+          </div>
+          <button type="button" class="btn btn-ghost btn-small tev-drawer-close" aria-label="Close">Close</button>
+        </header>
+        <div class="tev-drawer-body">
+          <div class="tev-drawer-split">
+            <form class="tev-drawer-form correction-grid" id="tev-drawer-form" onsubmit="return false;">
+              <label class="field"><span>Evaluation type</span>
+                <select id="tev-drawer-type" ${canDecide ? "" : "disabled"}>
+                  <option value="">— unchanged —</option>
+                  <option value="SET">SET</option>
+                  <option value="SEF">SEF</option>
+                </select></label>
+              <label class="field"><span>Academic year</span>
+                <input id="tev-drawer-year" type="text" placeholder="e.g. 2024-2025" ${canDecide ? "" : "readonly"}></label>
+              <label class="field"><span>Semester</span>
+                <input id="tev-drawer-sem" type="text" placeholder="e.g. 1st Semester" ${canDecide ? "" : "readonly"}></label>
+              <label class="field"><span>Overall rating</span>
+                <input id="tev-drawer-rating" type="text" inputmode="decimal" ${canDecide ? "" : "readonly"}></label>
+              <label class="field"><span>Rating scale</span>
+                <input id="tev-drawer-scale" type="text" inputmode="decimal" ${canDecide ? "" : "readonly"}></label>
+              <label class="field field-span"><span>Reviewer remarks</span>
+                <textarea id="tev-drawer-remarks" rows="4" placeholder="Explain your decision or corrections (required for revision, rejection, or field changes)" ${canDecide ? "" : "readonly"}></textarea></label>
+              <div class="field field-span"><span>Review decision</span>
+                <p id="tev-drawer-status-display" class="tev-drawer-status"></p></div>
+              <div id="tev-drawer-tech-slot" class="field-span"></div>
+              ${actions}
+            </form>
+            <aside class="tev-drawer-preview" aria-label="Original document preview">
+              <p class="eyebrow">Original document</p>
+              <p class="note">Compare the extracted fields with the PDF for this semester.</p>
+              <div class="tev-drawer-preview-frame" id="tev-drawer-preview-frame"></div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  },
+
   teachingEvaluationsPanelHtml: function (doc, canDecide) {
     const list = doc.teachingEvaluations;
     if (!list || !list.length) return "";
+    const ui = FL.tevReviewUi;
     const summary = doc.teachingEvaluationSummary || {};
-    const note = summary.note
-      || "Each extracted SET/SEF semester requires its own reviewer validation.";
-    const cards = list.map(function (tev, idx) {
+    const counts = ui.summaryCounts(list);
+    const filter = FL.documents._tevRecordFilter || "all";
+    const filtered = list.filter(function (tev) { return ui.passesFilter(tev, filter); });
+    const note = summary.summaryLine
+      ? summary.summaryLine + " — " + (summary.note || "Review each semester separately.")
+      : (summary.note || "Review each SET/SEF semester on its own. Decisions are saved per record.");
+    const filterBtn = function (key, label) {
+      const active = filter === key ? " is-active" : "";
+      return `<button type="button" class="tev-filter-chip${active}" data-tev-filter="${FL.esc(key)}">${FL.esc(label)}</button>`;
+    };
+    const needsRevisionLine = counts.needsRevision
+      ? `<div class="tev-stat"><span class="tev-stat-value">${counts.needsRevision}</span><span class="tev-stat-label">Needs revision</span></div>`
+      : "";
+    const incompleteLine = counts.incomplete
+      ? `<div class="tev-stat"><span class="tev-stat-value">${counts.incomplete}</span><span class="tev-stat-label">Incomplete extraction</span></div>`
+      : "";
+    const rows = filtered.map(function (tev) {
       const tevId = tev.id || tev.teachingEvaluationId;
-      const status = tev.reviewerValidationStatus || "pending-review";
-      const highlight = doc._highlightTev === tevId ? " teaching-eval-record--focus" : "";
-      const flags = [];
-      if (tev.incompleteExtraction) flags.push("Incomplete OCR");
-      if (tev.duplicatePeriodWarning) flags.push("Duplicate period");
-      if (tev.missingFields && tev.missingFields.length) {
-        flags.push("Missing: " + tev.missingFields.join(", "));
-      }
-      return `<details class="teaching-eval-record card-inset${highlight}" id="tev-${FL.esc(tevId)}" data-tev-id="${FL.esc(tevId)}">
-        <summary class="teaching-eval-summary">
-          <span>${FL.esc(tev.evaluationType || "—")} · ${FL.esc(tev.academicYear || "—")} · ${FL.esc(tev.semester || "—")}</span>
-          ${FL.evidence.statusBadge(status)}
-          ${flags.length ? `<span class="sub">${FL.esc(flags.join(" · "))}</span>` : ""}
-        </summary>
-        <div class="teaching-eval-body">
-          <dl class="set-sef-calc-grid">
-            <div><dt>Evaluation type</dt><dd>${FL.esc(tev.evaluationType || "—")}</dd></div>
-            <div><dt>Overall rating</dt><dd>${FL.esc(tev.ratingRaw || "—")}</dd></div>
-            <div><dt>Rating scale</dt><dd>${tev.ratingScale != null ? FL.esc(String(tev.ratingScale)) : "—"}</dd></div>
-            <div><dt>OCR extraction</dt><dd>${FL.esc(tev.extractionStatus || "—")}</dd></div>
-            <div><dt>OCR verification</dt><dd>${FL.esc(tev.ocrVerificationStatus || "—")}</dd></div>
-            <div><dt>Source section</dt><dd>${FL.esc(tev.sourceSectionRef || "—")}</dd></div>
-            <div><dt>Reviewer validation</dt><dd>${FL.evidence.statusBadge(status)}</dd></div>
-          </dl>
-          ${tev.reviewerRemarks ? `<p class="note"><strong>Remarks:</strong> ${FL.esc(tev.reviewerRemarks)}</p>` : ""}
-          ${canDecide ? FL.documents.teachingEvaluationFormHtml(tev, idx) : ""}
-        </div>
-      </details>`;
+      const label = ui.statusLabel(tev);
+      const pillClass = FL.documents.tevStatusPillClass(label);
+      const highlight = doc._highlightTev === tevId || doc._tevDrawerOpen === tevId ? " tev-row--focus" : "";
+      const rating = tev.ratingRaw != null && tev.ratingRaw !== "" ? tev.ratingRaw : "—";
+      return `<tr class="tev-row${highlight}" data-tev-row-id="${FL.esc(tevId)}" id="tev-${FL.esc(tevId)}">
+        <td data-label="Type"><strong>${FL.esc(tev.evaluationType || "—")}</strong></td>
+        <td data-label="Period">${FL.esc(tev.academicYear || "—")}<br><span class="sub">${FL.esc(tev.semester || "—")}</span></td>
+        <td data-label="Rating">${FL.esc(String(rating))}</td>
+        <td data-label="Status"><span class="${pillClass}">${FL.esc(label)}</span></td>
+        <td data-label="Action" class="tev-row-action">
+          <button type="button" class="btn btn-primary btn-small" data-tev-review="${FL.esc(tevId)}">Review</button>
+        </td>
+      </tr>`;
     }).join("");
-    return `<section class="card review-section" id="teaching-evaluations-panel" aria-label="Extracted teaching evaluations">
-      <div class="card-head"><h2>Extracted SET/SEF records (${list.length})</h2></div>
-      <p class="note">${FL.esc(note)} Open the original PDF above to verify the section for each record.</p>
-      <div class="teaching-eval-list">${cards}</div>
+    const emptyRow = filtered.length
+      ? ""
+      : `<tr><td colspan="5" class="tev-empty">${FL.esc("No records match this filter.")}</td></tr>`;
+    return `<section class="card review-section" id="teaching-evaluations-panel" aria-label="Teaching evaluations">
+      <div class="card-head"><h2>SET/SEF semester records</h2></div>
+      <p class="note">${FL.esc(note)}</p>
+      <div class="tev-summary" role="group" aria-label="Review progress">
+        <div class="tev-stat"><span class="tev-stat-value">${counts.total}</span><span class="tev-stat-label">Total evaluations</span></div>
+        <div class="tev-stat"><span class="tev-stat-value">${counts.reviewed}</span><span class="tev-stat-label">Reviewed</span></div>
+        <div class="tev-stat"><span class="tev-stat-value">${counts.pending}</span><span class="tev-stat-label">Pending review</span></div>
+        ${needsRevisionLine}${incompleteLine}
+      </div>
+      <div class="tev-filters" role="toolbar" aria-label="Filter evaluations">
+        ${filterBtn("all", "All")}
+        ${filterBtn("set", "SET")}
+        ${filterBtn("sef", "SEF")}
+        ${filterBtn("pending", "Pending review")}
+        ${filterBtn("reviewed", "Reviewed")}
+      </div>
+      <div class="table-wrap tev-table-wrap">
+        <table class="data tev-table">
+          <thead><tr>
+            <th scope="col">Type</th>
+            <th scope="col">Academic year &amp; semester</th>
+            <th scope="col">Extracted rating</th>
+            <th scope="col">Reviewer status</th>
+            <th scope="col"><span class="sr-only">Actions</span></th>
+          </tr></thead>
+          <tbody>${rows}${emptyRow}</tbody>
+        </table>
+      </div>
+      ${FL.documents.teachingEvaluationDrawerShellHtml(canDecide)}
     </section>`;
   },
 
-  teachingEvaluationFormHtml: function (tev, idx) {
-    const tevId = tev.id || tev.teachingEvaluationId;
-    const prefix = "tev-" + idx + "-";
-    return `<div class="correction-grid teaching-eval-form" data-tev-form="${FL.esc(tevId)}">
-      <label class="field"><span>Evaluation type</span>
-        <select id="${prefix}type">
-          <option value="">— unchanged —</option>
-          <option value="SET"${tev.evaluationType === "SET" ? " selected" : ""}>SET</option>
-          <option value="SEF"${tev.evaluationType === "SEF" ? " selected" : ""}>SEF</option>
-        </select></label>
-      <label class="field"><span>Academic year</span>
-        <input id="${prefix}year" type="text" value="${FL.esc(tev.academicYear || "")}" placeholder="e.g. 2024-2025"></label>
-      <label class="field"><span>Semester</span>
-        <input id="${prefix}sem" type="text" value="${FL.esc(tev.semester || "")}" placeholder="e.g. 1st Semester"></label>
-      <label class="field"><span>Overall rating</span>
-        <input id="${prefix}rating" type="text" inputmode="decimal" value="${FL.esc(tev.ratingRaw || "")}"></label>
-      <label class="field"><span>Rating scale</span>
-        <input id="${prefix}scale" type="text" inputmode="decimal" value="${tev.ratingScale != null ? FL.esc(String(tev.ratingScale)) : ""}"></label>
-      <label class="field field-span"><span>Remarks / reason</span>
-        <textarea id="${prefix}remarks" rows="3" placeholder="Required for reject or revision; required when correcting fields">${FL.esc(tev.reviewerRemarks || "")}</textarea></label>
-      <p class="field-error" id="${prefix}error"></p>
-      <div class="decision-row">
-        <button class="btn btn-primary btn-small" type="button" data-tev-id="${FL.esc(tevId)}" data-tev-decision="approve">Approve record</button>
-        <button class="btn btn-danger btn-small" type="button" data-tev-id="${FL.esc(tevId)}" data-tev-decision="reject">Reject record</button>
-        <button class="btn btn-warning btn-small" type="button" data-tev-id="${FL.esc(tevId)}" data-tev-decision="revision">Needs revision</button>
-        <button class="btn btn-ghost btn-small" type="button" data-tev-id="${FL.esc(tevId)}" data-tev-decision="save">Save corrections only</button>
-      </div>
-    </div>`;
+  closeTeachingEvaluationDrawer: function (doc) {
+    const drawer = document.getElementById("tev-review-drawer");
+    if (!drawer) return;
+    drawer.classList.remove("is-open");
+    drawer.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("tev-drawer-open");
+    const form = document.getElementById("tev-drawer-form");
+    if (form) form.dataset.activeTevId = "";
+    if (doc) delete doc._tevDrawerOpen;
+    FL.documents._tevDrawerDoc = null;
+  },
+
+  openTeachingEvaluationDrawer: function (session, doc, canDecide, tevId) {
+    const list = doc.teachingEvaluations || [];
+    const tev = list.find(function (row) {
+      return (row.id || row.teachingEvaluationId) === tevId;
+    });
+    if (!tev) return;
+    const drawer = document.getElementById("tev-review-drawer");
+    if (!drawer) return;
+    const ui = FL.tevReviewUi;
+    const label = ui.statusLabel(tev);
+    const typeEl = document.getElementById("tev-drawer-type");
+    const yearEl = document.getElementById("tev-drawer-year");
+    const semEl = document.getElementById("tev-drawer-sem");
+    const ratingEl = document.getElementById("tev-drawer-rating");
+    const scaleEl = document.getElementById("tev-drawer-scale");
+    const remarksEl = document.getElementById("tev-drawer-remarks");
+    const statusEl = document.getElementById("tev-drawer-status-display");
+    const subtitle = document.getElementById("tev-drawer-subtitle");
+    const errEl = document.getElementById("tev-drawer-error");
+    const techSlot = document.getElementById("tev-drawer-tech-slot");
+    const previewFrame = document.getElementById("tev-drawer-preview-frame");
+    if (errEl) errEl.textContent = "";
+    if (typeEl) typeEl.value = tev.evaluationType === "SET" || tev.evaluationType === "SEF" ? tev.evaluationType : "";
+    if (yearEl) yearEl.value = tev.academicYear || "";
+    if (semEl) semEl.value = tev.semester || "";
+    if (ratingEl) ratingEl.value = tev.ratingRaw || "";
+    if (scaleEl) scaleEl.value = tev.ratingScale != null ? String(tev.ratingScale) : "";
+    if (remarksEl) remarksEl.value = tev.reviewerRemarks || "";
+    if (statusEl) {
+      statusEl.textContent = label;
+      statusEl.className = "tev-drawer-status " + FL.documents.tevStatusPillClass(label);
+    }
+    if (subtitle) {
+      subtitle.textContent = (tev.evaluationType || "Evaluation") + " · "
+        + (tev.academicYear || "Year unknown") + " · " + (tev.semester || "Semester unknown");
+    }
+    if (techSlot) techSlot.innerHTML = FL.documents.tevTechnicalDetailsHtml(tev);
+    const form = document.getElementById("tev-drawer-form");
+    if (form) form.dataset.activeTevId = tevId;
+    doc._tevDrawerOpen = tevId;
+    FL.documents._tevDrawerDoc = doc;
+    if (previewFrame) {
+      FL.documents.loadDocumentPdfPreview(doc, previewFrame);
+    }
+    drawer.classList.add("is-open");
+    drawer.setAttribute("aria-hidden", "false");
+    document.body.classList.add("tev-drawer-open");
+    const closeBtn = drawer.querySelector(".tev-drawer-close");
+    if (closeBtn) closeBtn.focus();
+  },
+
+  repaintTeachingEvaluationsPanel: function (session, doc, canDecide) {
+    const existing = document.getElementById("teaching-evaluations-panel");
+    if (!existing) return;
+    const openId = doc._tevDrawerOpen || "";
+    existing.outerHTML = FL.documents.teachingEvaluationsPanelHtml(doc, canDecide);
+    FL.documents.bindTeachingEvaluationPanel(session, doc, canDecide);
+    FL.documents.bindTeachingEvaluationActions(session, doc, canDecide);
+    if (openId) FL.documents.openTeachingEvaluationDrawer(session, doc, canDecide, openId);
+  },
+
+  bindTeachingEvaluationPanel: function (session, doc, canDecide) {
+    if (!doc.teachingEvaluations || !doc.teachingEvaluations.length) return;
+    document.querySelectorAll("[data-tev-filter]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        FL.documents._tevRecordFilter = btn.getAttribute("data-tev-filter") || "all";
+        FL.documents.repaintTeachingEvaluationsPanel(session, doc, canDecide);
+      });
+    });
+    document.querySelectorAll("[data-tev-review]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const tevId = btn.getAttribute("data-tev-review");
+        FL.documents.openTeachingEvaluationDrawer(session, doc, canDecide, tevId);
+      });
+    });
+    const drawer = document.getElementById("tev-review-drawer");
+    if (!drawer) return;
+    const close = function () {
+      FL.documents.closeTeachingEvaluationDrawer(doc);
+    };
+    drawer.querySelectorAll(".tev-drawer-close, .tev-drawer-backdrop").forEach(function (el) {
+      el.addEventListener("click", close);
+    });
+    if (!FL.documents._tevEscapeBound) {
+      FL.documents._tevEscapeBound = true;
+      document.addEventListener("keydown", function (ev) {
+        if (ev.key !== "Escape") return;
+        const openDrawer = document.getElementById("tev-review-drawer");
+        if (openDrawer && openDrawer.classList.contains("is-open")) {
+          FL.documents.closeTeachingEvaluationDrawer(FL.documents._tevDrawerDoc);
+        }
+      });
+    }
+  },
+
+  buildTeachingEvaluationReviewPayload: function (baseline, decision) {
+    const remarks = (document.getElementById("tev-drawer-remarks").value || "").trim();
+    const payload = { remarks: remarks, reason: remarks };
+    const typeEl = document.getElementById("tev-drawer-type");
+    const typeVal = typeEl && typeEl.value ? typeEl.value.trim() : "";
+    const yearVal = (document.getElementById("tev-drawer-year").value || "").trim();
+    const semVal = (document.getElementById("tev-drawer-sem").value || "").trim();
+    const ratingVal = (document.getElementById("tev-drawer-rating").value || "").trim();
+    const scaleVal = (document.getElementById("tev-drawer-scale").value || "").trim();
+    if (typeVal && typeVal !== (baseline.evaluationType || "")) payload.evaluationType = typeVal;
+    if (yearVal && yearVal !== (baseline.academicYear || "")) payload.academicYear = yearVal;
+    if (semVal && semVal !== (baseline.semester || "")) payload.semester = semVal;
+    if (ratingVal && ratingVal !== (baseline.ratingRaw || "")) payload.ratingRaw = ratingVal;
+    if (scaleVal && String(baseline.ratingScale != null ? baseline.ratingScale : "") !== scaleVal) {
+      payload.ratingScale = scaleVal;
+    }
+    if (decision !== "save") payload.decision = decision;
+    return payload;
   },
 
   bindTeachingEvaluationActions: function (session, doc, canDecide) {
     if (!canDecide || !doc.teachingEvaluations || !doc.teachingEvaluations.length) return;
     const list = doc.teachingEvaluations;
-    document.querySelectorAll("[data-tev-decision]").forEach(function (btn) {
+    const form = document.getElementById("tev-drawer-form");
+    document.querySelectorAll("#tev-review-drawer [data-tev-decision]").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        const tevId = btn.getAttribute("data-tev-id");
         const decision = btn.getAttribute("data-tev-decision");
+        const tevId = form && form.dataset.activeTevId;
+        if (!tevId) return;
         const idx = list.findIndex(function (row) {
           return (row.id || row.teachingEvaluationId) === tevId;
         });
         if (idx < 0) return;
-        const prefix = "tev-" + idx + "-";
-        const errEl = document.getElementById(prefix + "error");
+        const errEl = document.getElementById("tev-drawer-error");
         if (errEl) errEl.textContent = "";
-        const remarks = (document.getElementById(prefix + "remarks").value || "").trim();
-        const payload = { remarks: remarks, reason: remarks };
-        const typeEl = document.getElementById(prefix + "type");
-        const yearEl = document.getElementById(prefix + "year");
-        const semEl = document.getElementById(prefix + "sem");
-        const ratingEl = document.getElementById(prefix + "rating");
-        const scaleEl = document.getElementById(prefix + "scale");
-        const typeVal = typeEl && typeEl.value ? typeEl.value.trim() : "";
-        const yearVal = (yearEl.value || "").trim();
-        const semVal = (semEl.value || "").trim();
-        const ratingVal = (ratingEl.value || "").trim();
-        const scaleVal = (scaleEl.value || "").trim();
         const baseline = list[idx];
-        if (typeVal && typeVal !== (baseline.evaluationType || "")) payload.evaluationType = typeVal;
-        if (yearVal && yearVal !== (baseline.academicYear || "")) payload.academicYear = yearVal;
-        if (semVal && semVal !== (baseline.semester || "")) payload.semester = semVal;
-        if (ratingVal && ratingVal !== (baseline.ratingRaw || "")) payload.ratingRaw = ratingVal;
-        if (scaleVal && String(baseline.ratingScale != null ? baseline.ratingScale : "") !== scaleVal) {
-          payload.ratingScale = scaleVal;
-        }
-        if (decision !== "save") payload.decision = decision;
+        const payload = FL.documents.buildTeachingEvaluationReviewPayload(baseline, decision);
+        const remarks = payload.remarks || "";
         if ((decision === "reject" || decision === "revision") && remarks.length < 8) {
-          if (errEl) errEl.textContent = "Enter remarks (at least 8 characters) for rejection or revision.";
+          if (errEl) errEl.textContent = "Add reviewer remarks (at least 8 characters) for revision or rejection.";
           return;
         }
         const hasFieldChange = payload.evaluationType || payload.academicYear || payload.semester
           || payload.ratingRaw || payload.ratingScale;
         if ((decision === "save" || hasFieldChange) && remarks.length < 8) {
-          if (errEl) errEl.textContent = "Enter a reason in remarks when correcting fields (at least 8 characters).";
+          if (errEl) errEl.textContent = "Add remarks explaining your corrections (at least 8 characters).";
           return;
         }
         if (decision === "save" && !hasFieldChange) {
-          if (errEl) errEl.textContent = "Change at least one field or use Approve / Reject / Revision.";
+          if (errEl) errEl.textContent = "Change at least one field, or choose Validate, Request revision, or Reject.";
           return;
         }
+        const toastOk = {
+          approve: "Evaluation validated.",
+          reject: "Evaluation rejected.",
+          revision: "Revision requested for this evaluation.",
+          save: "Corrections saved."
+        };
         FL.store.submitTeachingEvaluationReview(session, doc.id, tevId, payload).then(function (data) {
           if (data.document) Object.assign(doc, data.document);
-          if (data.teachingEvaluation && idx >= 0) {
-            list[idx] = data.teachingEvaluation;
-          }
-          FL.ui.toast("Teaching evaluation record saved.", "ok");
+          if (data.teachingEvaluation && idx >= 0) list[idx] = data.teachingEvaluation;
+          delete doc._tevDrawerOpen;
+          FL.ui.toast(toastOk[decision] || "Review saved.", "ok");
           FL.documents.paintReview(session, doc, canDecide);
         }).catch(function (error) {
-          if (errEl) errEl.textContent = error.message || "Could not save record review.";
+          if (errEl) errEl.textContent = error.message || "Could not save this review. Try again.";
+          FL.ui.toast(error.message || "Could not save review.", "danger");
         });
       });
     });

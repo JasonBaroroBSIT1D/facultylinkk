@@ -8,6 +8,7 @@ from extensions import db
 from models import Document, User
 
 from documents.service import append_review_history
+from documents.criterion_a_upload import should_run_set_sef_pipeline
 from documents.ocr.set_sef_metadata import apply_set_sef_to_extracted_info
 
 _ORIGINAL_PREFIX = "OCR original "
@@ -77,11 +78,18 @@ def apply_metadata_correction(reviewer: User, doc: Document, body: dict) -> Docu
 
     text = (doc.extracted_text or "").strip()
     method = info.get("OCR method") or info.get("Extraction method")
-    if doc.indicator_id in ("kra1-a-student", "kra1-a-supervisor") and text:
+    if (
+        should_run_set_sef_pipeline(
+            indicator_id=doc.indicator_id,
+            criterion_id=doc.criterion_id,
+        )
+        and text
+    ):
         info = apply_set_sef_to_extracted_info(
             info,
             text=text,
             indicator_id=doc.indicator_id,
+            criterion_id=doc.criterion_id,
             extraction_method=method,
         )
         for change in changes:

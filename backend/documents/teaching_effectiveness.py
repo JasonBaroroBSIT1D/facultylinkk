@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from models import Document, FacultyProfile
 
+from documents.scoring.criterion_a_display import enrich_indicator_aggregate_block
 from documents.scoring.set_sef_aggregate import build_criterion_a_summary
 from documents.status_map import document_status_to_web
+from documents.set_sef_parent_context import source_document_summaries
+from documents.criterion_a_workspace import build_criterion_a_workspace
 from documents.teaching_evaluation_serializers import (
     apply_duplicate_period_flags,
     folder_evaluation_records,
@@ -38,6 +41,7 @@ def teaching_effectiveness_payload(profile: FacultyProfile) -> dict:
         faculty_eligibility=faculty_eligibility_from_profile(profile),
     )
     summary["facultyId"] = profile.public_id
+    summary["criterionAWorkspace"] = build_criterion_a_workspace(profile, docs, teaching_summary=summary)
     return summary
 
 
@@ -50,9 +54,21 @@ def indicator_folder_payload(profile: FacultyProfile, indicator_id: str) -> dict
         indicator_id,
         faculty_eligibility=faculty_eligibility_from_profile(profile),
     )
+    if indicator_id == "kra1-a-student":
+        block = enrich_indicator_aggregate_block(block, full_name="SET", short_name="SET")
+    elif indicator_id == "kra1-a-supervisor":
+        block = enrich_indicator_aggregate_block(block, full_name="SEF", short_name="SEF")
+    te_summary = build_criterion_a_summary(
+        all_docs,
+        faculty_eligibility=faculty_eligibility_from_profile(profile),
+    )
+    block["criterionADisplay"] = te_summary.get("criterionADisplay")
+    block["criterionAEstimatedPoints"] = te_summary.get("estimatedPoints")
     block["facultyId"] = profile.public_id
 
-    evaluation_records = folder_evaluation_records(profile.id, indicator_id, all_docs)
+    evaluation_records = folder_evaluation_records(
+        profile.id, indicator_id, all_docs, profile=profile
+    )
     apply_duplicate_period_flags(evaluation_records)
     block["evaluationRecords"] = evaluation_records
     block["documents"] = evaluation_records
@@ -71,4 +87,5 @@ def indicator_folder_payload(profile: FacultyProfile, indicator_id: str) -> dict
         }
         for row in evaluation_records
     ]
+    block["sourceDocuments"] = source_document_summaries(all_docs, indicator_id)
     return block

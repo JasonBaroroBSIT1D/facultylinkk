@@ -87,24 +87,45 @@ abstract final class FacultyApiMapper {
     }
     num? teScore = json['teachingEffectivenessScore'] as num?;
     if (teScore == null) {
+      final kraScores = json['kraScores'];
+      if (kraScores is List) {
+        for (final row in kraScores.whereType<Map>()) {
+          if (row['kraId'] == 'kra1' && row['estimatedPoints'] != null) {
+            teScore = row['estimatedPoints'] as num?;
+            break;
+          }
+        }
+      }
+    }
+    if (teScore == null) {
       final te = json['teachingEffectiveness'];
       if (te is Map) {
-        teScore = te['combinedValidatedPoints'] ?? te['combinedProvisionalPoints'];
+        teScore = te['estimatedPoints'] ?? te['combinedProvisionalPoints'] ?? te['combinedValidatedPoints'];
       }
     }
     final targetRaw = ((json['targetRank'] as String?) ?? '').trim();
     final nextRaw = ((json['nextPossibleRank'] as String?) ?? '').trim();
+    final estimatedTotal = (json['estimatedTotalKraPoints'] as num?)?.toDouble() ??
+        (json['estimatedKraPoints'] as num?)?.toDouble() ??
+        (json['validatedKraPoints'] as num?)?.toDouble() ??
+        0;
+    final weightedEstimated = (json['weightedEstimatedScore'] as num?)?.toDouble() ??
+        (json['weightedValidatedScore'] as num?)?.toDouble() ??
+        (json['weightedProvisionalScore'] as num?)?.toDouble();
     return RankSimulation(
       currentRank: (json['currentRank'] as String?) ?? '',
       targetRank: targetRaw.isNotEmpty ? targetRaw : nextRaw,
-      currentPoints: (json['currentPoints'] as num?)?.toInt() ?? 0,
+      currentPoints: (json['currentPoints'] as num?)?.toInt() ??
+          estimatedTotal.round(),
       requiredPoints: (json['requiredPoints'] as num?)?.toInt() ?? 0,
       eligibilityLabel: (json['eligibilityLabel'] as String?) ?? 'Simulation snapshot',
       eligibilityStatus: (json['eligibilityStatus'] as String?) ?? 'under_assessment',
-      validatedKraPoints: (json['validatedKraPoints'] as num?)?.toDouble() ?? 0,
-      provisionalKraPoints: (json['provisionalKraPoints'] as num?)?.toDouble(),
-      weightedValidatedScore: (json['weightedValidatedScore'] as num?)?.toDouble(),
-      weightedProvisionalScore: (json['weightedProvisionalScore'] as num?)?.toDouble(),
+      estimatedKraPoints: estimatedTotal,
+      validatedKraPoints: estimatedTotal,
+      provisionalKraPoints: estimatedTotal,
+      weightedEstimatedScore: weightedEstimated,
+      weightedValidatedScore: weightedEstimated,
+      weightedProvisionalScore: weightedEstimated,
       teachingEffectivenessScore: teScore?.toDouble(),
       progressPercent: (json['progressPercent'] as num?)?.toDouble(),
       progressLabel: (json['progressLabel'] as String?) ?? '',
@@ -116,6 +137,7 @@ abstract final class FacultyApiMapper {
       scoringFormula: (json['scoringFormula'] as String?) ??
           'Weighted Final Score = Σ (KRA points × Table 2.2 rank weight %)',
       isPlaceholder: json['isPlaceholder'] == true,
+      disclaimer: (json['disclaimer'] as String?) ?? '',
     );
   }
 

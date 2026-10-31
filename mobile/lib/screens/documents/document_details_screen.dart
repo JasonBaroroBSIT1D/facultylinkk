@@ -54,6 +54,7 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
   String? _localError;
   bool _working = false;
   bool _detailLoading = false;
+  String _evaluationFilter = 'ALL';
 
   @override
   void initState() {
@@ -72,19 +73,11 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
     }
   }
 
-  static const _scoringKeys = [
-    'Assigned KRA',
-    'Author count',
-    'Base points',
-    'Contribution percent',
-    'Contribution score',
-    'Document type',
-    'Scoring formula',
-  ];
-
-  bool get _isSetSefIndicator {
-    if (FacultyDocument.isSetSefIndicatorId(document.indicatorId)) return true;
-    return document.hasLinkedTeachingEvaluations;
+  Iterable<TeachingEvaluationRecord> get _filteredEvaluations {
+    final all = _linkedEvaluations;
+    if (_evaluationFilter == 'SET') return _evalsOfType('SET');
+    if (_evaluationFilter == 'SEF') return _evalsOfType('SEF');
+    return all;
   }
 
   List<TeachingEvaluationRecord> get _linkedEvaluations =>
@@ -93,15 +86,13 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
   Iterable<TeachingEvaluationRecord> _evalsOfType(String type) =>
       _linkedEvaluations.where((e) => e.evaluationType.toUpperCase() == type);
 
-  Map<String, String> get _scoringInfo {
-    final out = <String, String>{};
-    for (final key in _scoringKeys) {
-      final value = document.extractedInfo[key];
-      if (value != null && value.trim().isNotEmpty) {
-        out[key] = value;
-      }
+  String _validationProgressLabel(Map<dynamic, dynamic> summary) {
+    final total = summary['total'];
+    final validated = summary['validated'];
+    if (total is num && total > 0) {
+      return '${validated ?? 0} of $total evaluations validated';
     }
-    return out;
+    return '—';
   }
 
   Future<void> _confirmDelete() async {
@@ -202,10 +193,6 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
 
   @override
   Widget build(BuildContext context) {
-    final scoring = _scoringInfo;
-    final author = (document.author ?? '').trim().isEmpty
-        ? '—'
-        : document.author!.trim();
     final color = AppColors.kra(document.kra);
 
     final actionsEnabled = !_working && !AppState.instance.refreshInProgress;
@@ -282,7 +269,7 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
               child: Text(
                 document.creditsPoints
                     ? 'Approved documents stay on record. Use Request withdrawal if points must be reversed.'
-                    : 'This document cannot be deleted or replaced while a reviewer decision or credited score applies.',
+                    : 'Delete is available while review or OCR is in progress, or when revision was requested. Replace is available when revision was requested or OCR failed.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -334,16 +321,24 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          StatusBadge(status: document.status, compact: true),
-                          _Pill(
-                            icon: Icons.stars_outlined,
-                            label: 'Credited: ${document.creditedLabel}',
-                            color: AppColors.navy,
-                            soft: AppColors.infoSoft,
-                          ),
+                          StatusBadge(status: document.displayStatus, compact: true),
+                          if (document.needsDocumentClassification)
+                            const _Pill(
+                              icon: Icons.help_outline_rounded,
+                              label: 'Needs Classification',
+                              color: AppColors.warning,
+                              soft: AppColors.warningSoft,
+                            ),
+                          if (document.setSefSummaryLine != null)
+                            _Pill(
+                              icon: Icons.fact_check_outlined,
+                              label: document.setSefSummaryLine!,
+                              color: AppColors.navy,
+                              soft: AppColors.infoSoft,
+                            ),
                           _Pill(
                             icon: document.kra.icon,
-                            label: document.kra.shortLabel,
+                            label: document.kraDisplayLabel,
                             color: color,
                             soft: AppColors.kraSoft(document.kra),
                           ),
@@ -360,10 +355,71 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
               padding: EdgeInsets.only(bottom: 12),
               child: LinearProgressIndicator(minHeight: 2),
             ),
+          const SizedBox(height: 12),
+          _SectionCard(
+            title: 'Document information',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (document.nameVerificationMessage != null &&
+                    document.nameVerificationMessage!.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      document.nameVerificationMessage!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: document.facultyNameNeedsVerification
+                            ? AppColors.warning
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                _FactRow(
+                  label: 'Uploaded by',
+                  value: document.uploadedByLabel,
+                ),
+                _FactRow(
+                  label: 'Faculty name on document',
+                  value: document.displayFacultyName,
+                ),
+                _FactRow(
+                  label: 'Name verification',
+                  value: document.nameVerificationLabel,
+                ),
+                _FactRow(
+                  label: 'Date uploaded',
+                  value: formatDisplayDate(document.submittedAt),
+                ),
+                _FactRow(label: 'KRA', value: document.kraDisplayLabel),
+                _FactRow(label: 'Criterion', value: document.criterionDisplayLabel),
+                _FactRow(
+                  label: 'Document type',
+                  value: document.documentTypeLabel,
+                ),
+                _FactRow(label: 'OCR status', value: document.ocrStatusLabel),
+                _FactRow(
+                  label: 'Review status',
+                  value: document.reviewStatusLabel,
+                  last: _linkedEvaluations.isEmpty &&
+                      !(document.setSefParentContext?['childValidationSummary'] is Map),
+                ),
+                if (document.setSefParentContext?['childValidationSummary'] is Map)
+                  _FactRow(
+                    label: 'Semester review progress',
+                    value: _validationProgressLabel(
+                      document.setSefParentContext!['childValidationSummary'] as Map,
+                    ),
+                    last: _linkedEvaluations.isEmpty,
+                  ),
+              ],
+            ),
+          ),
           if (_linkedEvaluations.isNotEmpty) ...[
             const SizedBox(height: 12),
             _SectionCard(
-              title: 'Linked evaluation records (${_linkedEvaluations.length})',
+              title: 'Extracted semester evaluations (${_linkedEvaluations.length})',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -375,188 +431,25 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
                         style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.35),
                       ),
                     ),
-                  if (_evalsOfType('SET').isNotEmpty) ...[
-                    const Text('SET', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy)),
-                    const SizedBox(height: 6),
-                    for (final record in _evalsOfType('SET'))
-                      TeachingEvaluationRecordTile(record: record, compact: true),
-                    const SizedBox(height: 10),
-                  ],
-                  if (_evalsOfType('SEF').isNotEmpty) ...[
-                    const Text('SEF', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy)),
-                    const SizedBox(height: 6),
-                    for (final record in _evalsOfType('SEF'))
-                      TeachingEvaluationRecordTile(record: record, compact: true),
-                  ],
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final label in ['ALL', 'SET', 'SEF'])
+                        ChoiceChip(
+                          label: Text(label),
+                          selected: _evaluationFilter == label,
+                          onSelected: (_) => setState(() => _evaluationFilter = label),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  for (final record in _filteredEvaluations)
+                    TeachingEvaluationRecordTile(record: record, compact: true),
                   const SizedBox(height: 4),
                   const Text(
                     'Reviewer decisions are read-only. Verification is performed by your assigned reviewer.',
                     style: TextStyle(fontSize: 11, color: AppColors.textTertiary, height: 1.35),
                   ),
-                ],
-              ),
-            ),
-          ] else if (_isSetSefIndicator) ...[
-            const SizedBox(height: 12),
-            _SectionCard(
-              title: 'SET / SEF extraction',
-              child: Column(
-                children: [
-                  _FactRow(
-                    label: 'Indicator verification',
-                    value: document.extractedInfo['Indicator verification status'] ?? '—',
-                  ),
-                  _FactRow(
-                    label: 'Evaluation type',
-                    value: document.extractedInfo['Evaluation type'] ?? '—',
-                  ),
-                  _FactRow(
-                    label: 'Faculty name',
-                    value: document.extractedInfo['Faculty name'] ??
-                        document.extractedInfo['Extracted names'] ??
-                        '—',
-                  ),
-                  _FactRow(
-                    label: 'Academic year',
-                    value: document.extractedInfo['Academic year'] ?? '—',
-                  ),
-                  _FactRow(
-                    label: 'Semester',
-                    value: document.extractedInfo['Semester'] ?? '—',
-                  ),
-                  _FactRow(
-                    label: 'Overall rating',
-                    value: document.extractedInfo['Extracted rating'] ?? '—',
-                  ),
-                  _FactRow(
-                    label: 'Rating scale',
-                    value: document.extractedInfo['Rating scale'] ?? '—',
-                  ),
-                  if (document.extractedInfo['Missing extraction fields']?.isNotEmpty == true)
-                    _FactRow(
-                      label: 'Unresolved fields',
-                      value: document.extractedInfo['Missing extraction fields']!,
-                      last: true,
-                    ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: 'Overview',
-            child: Column(
-              children: [
-                _FactRow(label: 'Author(s)', value: author),
-                _FactRow(
-                  label: 'Submitted',
-                  value: formatDisplayDate(document.submittedAt),
-                ),
-                _FactRow(label: 'KRA', value: document.kra.label),
-                if (document.criterionId != null)
-                  _FactRow(label: 'Criterion', value: document.criterionId!),
-                if (document.extractedInfo['Automatically identified indicator']?.isNotEmpty == true)
-                  _FactRow(
-                    label: 'Identified indicator',
-                    value: document.extractedInfo['Automatically identified indicator']!,
-                  )
-                else if (document.indicatorId != null)
-                  _FactRow(label: 'Indicator', value: document.indicatorId!),
-                if (document.extractedInfo['Verification tier']?.isNotEmpty == true)
-                  _FactRow(
-                    label: 'Verification',
-                    value: document.extractedInfo['Verification tier']!,
-                  ),
-                _FactRow(
-                  label: 'Simulation score',
-                  value: document.simulationScoreLabel,
-                ),
-                _FactRow(
-                  label: 'Score source',
-                  value: document.simulationSourceLabel,
-                ),
-                if (document.reviewerOversightStatus?.isNotEmpty == true)
-                  _FactRow(
-                    label: 'Reviewer oversight',
-                    value: document.reviewerOversightStatus!,
-                  ),
-                _FactRow(
-                  label: 'Provisional Score',
-                  value: document.provisionalLabel,
-                ),
-                _FactRow(
-                  label: 'Credited Points',
-                  value: document.creditedLabel,
-                ),
-                _FactRow(
-                  label: 'Text extraction (OCR)',
-                  value: document.ocrStatusLabel,
-                ),
-                if (document.ocrConfidence != null)
-                  _FactRow(
-                    label: 'OCR confidence',
-                    value: '${document.ocrConfidence!.toStringAsFixed(1)}%',
-                  ),
-                if (document.ocrError != null && document.ocrError!.trim().isNotEmpty)
-                  _FactRow(
-                    label: 'OCR note',
-                    value: document.ocrError!,
-                  ),
-                if (document.extractedInfo['OCR excerpt']?.trim().isNotEmpty == true) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Extracted text (preview)',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.navy,
-                          ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceMuted,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Text(
-                      document.extractedInfo['OCR excerpt']!.length > 1200
-                          ? '${document.extractedInfo['OCR excerpt']!.substring(0, 1200)}…'
-                          : document.extractedInfo['OCR excerpt']!,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        height: 1.4,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                ],
-                _FactRow(
-                  label: 'File',
-                  value: document.hasFile ? 'On file' : 'Unavailable',
-                  last: true,
-                ),
-              ],
-            ),
-          ),
-          if (scoring.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _SectionCard(
-              title: 'Scoring snapshot',
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final entry in scoring.entries)
-                    if (entry.key != 'Scoring formula' &&
-                        entry.key != 'Document type' &&
-                        entry.key != 'Contribution score' &&
-                        entry.key != 'Provisional score')
-                      _ScoreChip(label: entry.key, value: entry.value),
                 ],
               ),
             ),
@@ -722,51 +615,6 @@ class _FactRow extends StatelessWidget {
                 color: AppColors.textPrimary,
                 height: 1.3,
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ScoreChip extends StatelessWidget {
-  const _ScoreChip({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 140,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceMuted,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textTertiary,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: AppColors.navy,
             ),
           ),
         ],

@@ -5,7 +5,7 @@ from __future__ import annotations
 from auth.admin_directory import faculty_row, reviewer_row
 from auth.permissions import ROLE_FACULTY, ROLE_REVIEWER
 from extensions import db
-from models import Document, FacultyProfile, KraScore, User
+from models import Document, FacultyProfile, User
 
 _PENDING_DOC_STATUSES = ("pending_review", "needs_revision", "reviewer_required")
 _COMPLETED_DOC_STATUSES = ("approved", "rejected", "valid")
@@ -30,8 +30,6 @@ def faculty_detail(public_id: str) -> dict:
 
     user = profile.user
     docs = Document.query.filter_by(faculty_profile_id=profile.id).filter(Document.deleted_at.is_(None)).all()
-    kra_rows = KraScore.query.filter_by(faculty_profile_id=profile.id).all()
-
     pending = [d for d in docs if d.status in _PENDING_DOC_STATUSES]
     completed = [d for d in docs if d.status in _COMPLETED_DOC_STATUSES]
 
@@ -45,18 +43,11 @@ def faculty_detail(public_id: str) -> dict:
         "pendingReview": len(pending),
         "completed": len(completed),
     }
-    if kra_rows:
-        detail["kraScores"] = [
-            {
-                "kraKey": row.kra_key,
-                "estimatedPoints": row.estimated_points,
-                "verifiedPoints": row.verified_points,
-                "statusLabel": row.status_label or "",
-            }
-            for row in kra_rows
-        ]
-    else:
-        detail["kraScores"] = []
+    from faculty.estimated_score_service import estimated_assessment_payload
+
+    assessment = estimated_assessment_payload(profile)
+    detail["estimatedAssessment"] = assessment["estimatedAssessment"]
+    detail["kraScores"] = assessment["estimatedAssessment"]["kraScores"]
 
     detail["documents"] = [
         {

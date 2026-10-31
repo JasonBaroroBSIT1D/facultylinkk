@@ -5,11 +5,18 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from models import Document, FacultyProfile, KraScore
+from models import Document, FacultyProfile
 
 from documents.scoring.config_loader import criterion_a_max_points
 from documents.teaching_effectiveness import teaching_effectiveness_payload
+from faculty.kra_document_aggregate import aggregate_documents_for_kra
 from kra_configuration.service import get_published_row, kra_settings_from_json
+
+SIMULATION_DISCLAIMER = (
+    "Estimated KRA scores and potential rank eligibility are provided for faculty self-assessment "
+    "and preparation only. They do not constitute official DBM–CHED rank upgrade, reclassification "
+    "approval, or certification."
+)
 
 MOBILE_KRA_KEYS = ("kra1", "kra2", "kra3", "kra4")
 KRA_LABELS = {
@@ -90,6 +97,45 @@ def _round2(value: float | None) -> float | None:
     return round(float(value), 2)
 
 
+def unified_teaching_estimated_points(te: dict[str, Any]) -> float | None:
+    """Single KRA I estimate: eligible pending + accepted SET/SEF evidence."""
+    prov = te.get("combinedProvisionalPoints")
+    val = te.get("combinedValidatedPoints")
+    if prov is not None:
+        return _round2(float(prov))
+    if val is not None:
+        return _round2(float(val))
+    return None
+
+
+def _weighted_estimated_total(kra_points: dict[str, dict[str, Any]], weights: dict[str, float]) -> float | None:
+    any_assessed = False
+    total = 0.0
+    for kra_id in MOBILE_KRA_KEYS:
+        block = kra_points.get(kra_id) or {}
+        if not block.get("assessed"):
+            continue
+        pts = block.get("estimatedPoints")
+        if pts is None:
+            continue
+        any_assessed = True
+        cap = block.get("maxPoints")
+        if cap is not None:
+            pts = min(float(pts), float(cap))
+        total += float(pts) * (weights.get(kra_id, 0) / 100.0)
+    if not any_assessed:
+        return None
+    return _round2(total)
+
+
+def _attach_unified_aliases(block: dict[str, Any]) -> dict[str, Any]:
+    est = block.get("estimatedPoints")
+    block["validatedPoints"] = est
+    block["provisionalPoints"] = est
+    block["currentPoints"] = int(round(float(est or 0)))
+    return block
+
+
 def _weighted_total(kra_points: dict[str, dict[str, Any]], weights: dict[str, float], *, use_validated: bool) -> float | None:
     key = "validatedPoints" if use_validated else "provisionalPoints"
     any_assessed = False
@@ -129,38 +175,12 @@ def _doc_counts(profile: FacultyProfile) -> dict[str, int]:
     return counts
 
 
-def _kra_from_stored(profile: FacultyProfile, key: str, doc_count: int) -> dict[str, Any]:
-    row: KraScore | None = next((r for r in profile.kra_scores if r.kra_key == key), None)
-    if not row:
-        return {
-            "kraId": key,
-            "label": KRA_LABELS[key],
-            "assessed": doc_count > 0,
-            "validatedPoints": 0.0 if doc_count > 0 else None,
-            "provisionalPoints": 0.0 if doc_count > 0 else None,
-            "currentPoints": 0,
-            "targetPoints": 100,
-            "maxPoints": 100.0,
-            "documentCount": doc_count,
-            "statusLabel": "Not yet assessed" if doc_count == 0 else "Awaiting scoring update",
-            "breakdown": [],
-        }
-    validated = float(row.verified_points or 0)
-    provisional = float(row.estimated_points or validated)
-    target = float(row.target_points or 100)
-    return {
-        "kraId": key,
-        "label": KRA_LABELS[key],
-        "assessed": True,
-        "validatedPoints": _round2(validated),
-        "provisionalPoints": _round2(provisional),
-        "currentPoints": int(round(validated if validated > 0 else provisional)),
-        "targetPoints": int(round(target)),
-        "maxPoints": target,
-        "documentCount": row.document_count or doc_count,
-        "statusLabel": row.status_label or "In progress",
-        "breakdown": row.breakdown_json if isinstance(row.breakdown_json, list) else [],
-    }
+def _kra_from_documents(profile: FacultyProfile, key: str, doc_count: int) -> dict[str, Any]:
+    block = aggregate_documents_for_kra(profile, key)
+    if doc_count and not block.get("documentCount"):
+        block["documentCount"] = doc_count
+    block["targetPoints"] = int(round(block.get("maxPoints") or 100))
+    return block
 
 
 def _kra1_from_teaching(te: dict[str, Any], doc_count: int) -> dict[str, Any]:
@@ -174,59 +194,75 @@ def _kra1_from_teaching(te: dict[str, Any], doc_count: int) -> dict[str, Any]:
     set_uploads = ((set_b.get("coverageSummary") or {}).get("totalUploads") or 0)
     sef_uploads = ((sef_b.get("coverageSummary") or {}).get("totalUploads") or 0)
     has_any = set_uploads > 0 or sef_uploads > 0
-    val = te.get("combinedValidatedPoints")
-    prov = te.get("combinedProvisionalPoints")
+    estimated = unified_teaching_estimated_points(te)
     breakdown = []
     if set_uploads:
+        set_est = (
+            set_b.get("provisionalPoints")
+            if set_b.get("provisionalPoints") is not None
+            else set_b.get("validatedPoints")
+        )
         breakdown.append(
             {
                 "title": "SET (student evaluation)",
-                "points": int(round(set_b.get("validatedPoints") or set_b.get("provisionalPoints") or 0)),
+                "points": int(round(float(set_est or 0))),
                 "note": _set_sef_note(set_b, validated_key="validatedPoints"),
             }
         )
     if sef_uploads:
+        sef_est = (
+            sef_b.get("provisionalPoints")
+            if sef_b.get("provisionalPoints") is not None
+            else sef_b.get("validatedPoints")
+        )
         breakdown.append(
             {
                 "title": "SEF (supervisor evaluation)",
-                "points": int(round(sef_b.get("validatedPoints") or sef_b.get("provisionalPoints") or 0)),
+                "points": int(round(float(sef_est or 0))),
                 "note": _set_sef_note(sef_b, validated_key="validatedPoints"),
             }
         )
     if not has_any:
-        return {
+        return _attach_unified_aliases(
+            {
+                "kraId": "kra1",
+                "label": KRA_LABELS["kra1"],
+                "assessed": False,
+                "estimatedPoints": None,
+                "currentPoints": 0,
+                "targetPoints": int(round(max_pts)),
+                "maxPoints": max_pts,
+                "documentCount": doc_count,
+                "statusLabel": "Not yet assessed",
+                "breakdown": [],
+                "teachingEffectiveness": te,
+            }
+        )
+    crit_disp = te.get("criterionADisplay") if isinstance(te.get("criterionADisplay"), dict) else {}
+    status = (
+        crit_disp.get("displayLabel")
+        if crit_disp.get("displayLabel")
+        else (
+            "Estimated from eligible SET/SEF evidence"
+            if estimated is not None
+            else "Teaching evidence uploaded — scoring incomplete"
+        )
+    )
+    return _attach_unified_aliases(
+        {
             "kraId": "kra1",
             "label": KRA_LABELS["kra1"],
-            "assessed": False,
-            "validatedPoints": None,
-            "provisionalPoints": None,
-            "currentPoints": 0,
+            "assessed": estimated is not None,
+            "estimatedPoints": estimated,
             "targetPoints": int(round(max_pts)),
             "maxPoints": max_pts,
             "documentCount": doc_count,
-            "statusLabel": "Not yet assessed",
-            "breakdown": [],
+            "statusLabel": status,
+            "breakdown": breakdown,
             "teachingEffectiveness": te,
+            "criterionADisplay": crit_disp or None,
         }
-    val_f = _round2(float(val)) if val is not None else None
-    prov_f = _round2(float(prov)) if prov is not None else None
-    status = "Validated points available" if val_f is not None else "Provisional projection only"
-    if val_f is None and prov_f is None:
-        status = "Teaching evidence uploaded — scoring incomplete"
-    return {
-        "kraId": "kra1",
-        "label": KRA_LABELS["kra1"],
-        "assessed": True,
-        "validatedPoints": val_f,
-        "provisionalPoints": prov_f,
-        "currentPoints": int(round(val_f if val_f is not None else (prov_f or 0))),
-        "targetPoints": int(round(max_pts)),
-        "maxPoints": max_pts,
-        "documentCount": doc_count,
-        "statusLabel": status,
-        "breakdown": breakdown,
-        "teachingEffectiveness": te,
-    }
+    )
 
 
 def _set_sef_note(block: dict, *, validated_key: str) -> str:
@@ -310,8 +346,7 @@ def _eligibility_state(
     *,
     config_complete: bool,
     checklist: list[dict],
-    weighted_validated: float | None,
-    weighted_provisional: float | None,
+    weighted_estimated: float | None,
     required_score: float | None,
 ) -> tuple[str, str]:
     if not config_complete:
@@ -319,16 +354,16 @@ def _eligibility_state(
             ELIGIBILITY_CANNOT_DETERMINE,
             "Eligibility cannot be determined — published official scoring rules are incomplete.",
         )
-    if weighted_validated is not None and required_score is not None and weighted_validated >= required_score:
+    if weighted_estimated is not None and required_score is not None and weighted_estimated >= required_score:
         if not any(c["category"] == "review" for c in checklist):
             return (
                 ELIGIBILITY_ELIGIBLE,
-                "Validated evidence meets configured weighted score threshold (simulation only — not official certification).",
+                "Estimated evidence meets configured weighted score threshold (simulation only — not official certification).",
             )
-    if weighted_provisional is not None and weighted_provisional > 0:
+    if weighted_estimated is not None and weighted_estimated > 0:
         return (
             ELIGIBILITY_PROVISIONAL,
-            "Provisionally on track based on available projections — not confirmed eligibility.",
+            "Estimated score suggests progress toward configured thresholds — not confirmed eligibility.",
         )
     if any(c["category"] == "profile" for c in checklist):
         return ELIGIBILITY_UNDER_ASSESSMENT, "Eligibility under assessment — complete your faculty profile (target rank)."
@@ -349,7 +384,8 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
     kra_points: dict[str, dict[str, Any]] = {}
     kra_points["kra1"] = _kra1_from_teaching(te, doc_counts.get("kra1", 0))
     for key in ("kra2", "kra3", "kra4"):
-        kra_points[key] = _kra_from_stored(profile, key, doc_counts.get(key, 0))
+        block = _kra_from_documents(profile, key, doc_counts.get(key, 0))
+        kra_points[key] = _attach_unified_aliases(block)
 
     current_rank = profile.current_rank or ""
     target_rank = (profile.target_rank or "").strip()
@@ -364,8 +400,7 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
         if isinstance(set_sef, dict) and not set_sef.get("officialFormulaVerified"):
             config_complete = False
 
-    weighted_validated = _weighted_total(kra_points, weights, use_validated=True)
-    weighted_provisional = _weighted_total(kra_points, weights, use_validated=False)
+    weighted_estimated = _weighted_estimated_total(kra_points, weights)
 
     thresholds = _rank_thresholds(_published_settings())
     target_key = target_rank or band
@@ -383,33 +418,26 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
     eligibility_code, eligibility_label = _eligibility_state(
         config_complete=config_complete,
         checklist=checklist,
-        weighted_validated=weighted_validated,
-        weighted_provisional=weighted_provisional,
+        weighted_estimated=weighted_estimated,
         required_score=required_score,
     )
 
     progress_percent = None
     progress_label = "Assessment incomplete"
     if required_score is not None and required_score > 0:
-        basis = weighted_validated if weighted_validated is not None else weighted_provisional
-        if basis is not None:
-            progress_percent = round(min(100.0, max(0.0, (basis / required_score) * 100.0)), 1)
+        if weighted_estimated is not None:
+            progress_percent = round(min(100.0, max(0.0, (weighted_estimated / required_score) * 100.0)), 1)
             progress_label = "Progress toward configured weighted score threshold (simulation)"
         else:
             progress_label = "Assessment incomplete — no scored KRA evidence yet"
-    elif weighted_provisional is not None:
-        progress_label = "Provisional weighted score available — rank threshold not configured"
+    elif weighted_estimated is not None:
+        progress_label = "Estimated weighted score available — rank threshold not configured"
 
     kra_list = [kra_points[k] for k in MOBILE_KRA_KEYS]
-    validated_sum = sum(
-        (kra_points[k].get("validatedPoints") or 0)
+    estimated_sum = sum(
+        float(kra_points[k].get("estimatedPoints") or 0)
         for k in MOBILE_KRA_KEYS
-        if kra_points[k].get("assessed") and kra_points[k].get("validatedPoints") is not None
-    )
-    provisional_sum = sum(
-        (kra_points[k].get("provisionalPoints") or 0)
-        for k in MOBILE_KRA_KEYS
-        if kra_points[k].get("assessed") and kra_points[k].get("provisionalPoints") is not None
+        if kra_points[k].get("assessed") and kra_points[k].get("estimatedPoints") is not None
     )
 
     return {
@@ -427,10 +455,13 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
             "set": te.get("set"),
             "sef": te.get("sef"),
         },
-        "validatedKraPoints": _round2(validated_sum) if validated_sum else 0,
-        "provisionalKraPoints": _round2(provisional_sum) if provisional_sum else None,
-        "weightedValidatedScore": weighted_validated,
-        "weightedProvisionalScore": weighted_provisional,
+        "estimatedTotalKraPoints": _round2(estimated_sum) if estimated_sum else 0,
+        "estimatedKraPoints": _round2(estimated_sum) if estimated_sum else 0,
+        "validatedKraPoints": _round2(estimated_sum) if estimated_sum else 0,
+        "provisionalKraPoints": _round2(estimated_sum) if estimated_sum else None,
+        "weightedEstimatedScore": weighted_estimated,
+        "weightedValidatedScore": weighted_estimated,
+        "weightedProvisionalScore": weighted_estimated,
         "requiredWeightedScore": required_score,
         "progressPercent": progress_percent,
         "progressLabel": progress_label,
@@ -439,9 +470,10 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
         "missingRequirements": checklist,
         "kraScores": kra_list,
         "configurationComplete": config_complete,
-        "currentPoints": int(round(validated_sum)) if validated_sum else int(round(provisional_sum or 0)),
+        "currentPoints": int(round(estimated_sum)) if estimated_sum else 0,
         "requiredPoints": int(round(required_score)) if required_score is not None else 0,
         "areasToImprove": _areas_to_improve(kra_points, checklist),
+        "disclaimer": SIMULATION_DISCLAIMER,
         "isDynamic": True,
     }
 
@@ -451,7 +483,9 @@ def _areas_to_improve(kra_points: dict[str, dict], checklist: list[dict]) -> lis
     for key in MOBILE_KRA_KEYS:
         block = kra_points.get(key) or {}
         max_pts = block.get("maxPoints") or 100
-        current = block.get("validatedPoints")
+        current = block.get("estimatedPoints")
+        if current is None:
+            current = block.get("validatedPoints")
         if current is None:
             current = block.get("provisionalPoints") or 0
         try:
@@ -489,12 +523,16 @@ def simulation_for_mobile(profile: FacultyProfile) -> dict[str, Any]:
         "requiredPoints": sim["requiredPoints"],
         "eligibilityLabel": sim["eligibilityLabel"],
         "eligibilityStatus": sim["eligibilityStatus"],
+        "estimatedKraPoints": sim.get("estimatedKraPoints"),
+        "estimatedTotalKraPoints": sim.get("estimatedTotalKraPoints"),
         "validatedKraPoints": sim["validatedKraPoints"],
         "provisionalKraPoints": sim["provisionalKraPoints"],
+        "weightedEstimatedScore": sim.get("weightedEstimatedScore"),
         "weightedValidatedScore": sim["weightedValidatedScore"],
         "weightedProvisionalScore": sim["weightedProvisionalScore"],
-        "teachingEffectivenessScore": sim["teachingEffectiveness"].get("combinedValidatedPoints")
-        or sim["teachingEffectiveness"].get("combinedProvisionalPoints"),
+        "teachingEffectivenessScore": sim["teachingEffectiveness"].get("combinedProvisionalPoints")
+        or sim["teachingEffectiveness"].get("combinedValidatedPoints"),
+        "disclaimer": sim.get("disclaimer") or SIMULATION_DISCLAIMER,
         "progressPercent": sim["progressPercent"],
         "progressLabel": sim["progressLabel"],
         "missingRequirements": sim["missingRequirements"],

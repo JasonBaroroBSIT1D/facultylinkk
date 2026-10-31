@@ -555,9 +555,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deleteDocument(String documentId) async {
-    documents = documents.where((d) => d.id != documentId).toList();
-    localDocumentBytes.remove(documentId);
-    notifyListeners();
+    await _runExclusive('Deleting document...', () async {
+      if (!_useMockAuthForTests && isSignedIn) {
+        await _api.deleteFacultyDocument(documentId);
+        documents = documents.where((d) => d.id != documentId).toList();
+        localDocumentBytes.remove(documentId);
+        await _syncFacultyWorkspace(quiet: true);
+        return;
+      }
+      documents = documents.where((d) => d.id != documentId).toList();
+      localDocumentBytes.remove(documentId);
+    });
   }
 
   Future<FacultyDocument> replaceDocument({
@@ -567,13 +575,40 @@ class AppState extends ChangeNotifier {
     String? title,
   }) async {
     return _runExclusive('Replacing document...', () async {
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      localDocumentBytes[documentId] = Uint8List.fromList(fileBytes);
       final index = documents.indexWhere((d) => d.id == documentId);
       if (index < 0) {
         throw StateError('Document not found.');
       }
       final existing = documents[index];
+      if (!_useMockAuthForTests && isSignedIn) {
+        final kraWebId = _kraWebId(existing.kra);
+        final criterionId = existing.criterionId;
+        final indicatorId = existing.indicatorId;
+        if (kraWebId == null || criterionId == null || indicatorId == null) {
+          throw StateError('Document classification is missing; cannot replace.');
+        }
+        final saved = await _api.uploadFacultyDocument(
+          title: title ?? existing.title,
+          kraId: kraWebId,
+          criterionId: criterionId,
+          indicatorId: indicatorId,
+          fileName: fileName,
+          fileBytes: fileBytes,
+          replacesDocumentId: documentId,
+        );
+        final newDoc = FacultyDocument.fromApi(saved);
+        localDocumentBytes.remove(documentId);
+        localDocumentBytes[newDoc.id] = Uint8List.fromList(fileBytes);
+        documents = [
+          ...documents.where((d) => d.id != documentId),
+          newDoc,
+        ];
+        await _syncFacultyWorkspace(quiet: true);
+        unawaited(pollDocumentAfterUpload(newDoc.id));
+        return newDoc;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      localDocumentBytes[documentId] = Uint8List.fromList(fileBytes);
       final updated = FacultyDocument(
         id: existing.id,
         title: title ?? existing.title,
@@ -594,8 +629,8 @@ class AppState extends ChangeNotifier {
         fileSize: fileBytes.length,
         hasFile: true,
         fileUrl: existing.fileUrl,
-        canDelete: existing.canDelete,
-        canReplace: existing.canReplace,
+        canDelete: true,
+        canReplace: false,
         canRequestWithdrawal: existing.canRequestWithdrawal,
         effectiveSimulationScore: existing.effectiveSimulationScore,
         simulationScoreSource: existing.simulationScoreSource,
@@ -607,9 +642,21 @@ class AppState extends ChangeNotifier {
         updated,
         ...documents.sublist(index + 1),
       ];
-      notifyListeners();
       return updated;
     });
+  }
+
+  String? _kraWebId(KraType kra) {
+    switch (kra) {
+      case KraType.instruction:
+        return 'kra1';
+      case KraType.research:
+        return 'kra2';
+      case KraType.extension:
+        return 'kra3';
+      case KraType.professionalDevelopment:
+        return 'kra4';
+    }
   }
 
   Future<void> requestDocumentWithdrawal(String documentId, {String? reason}) async {
@@ -645,17 +692,19 @@ class AppState extends ChangeNotifier {
     List<int>? fileBytes,
   }) async {
     return _runExclusive('Uploading document...', () async {
+      final isCriterionAAuto =
+          criterionId == FacultyDocument.criterionAId;
       if (!_useMockAuthForTests &&
           isSignedIn &&
           fileBytes != null &&
           kraWebId != null &&
           criterionId != null &&
-          indicatorId != null) {
+          (indicatorId != null || isCriterionAAuto)) {
         final saved = await _api.uploadFacultyDocument(
           title: title,
           kraId: kraWebId,
           criterionId: criterionId,
-          indicatorId: indicatorId,
+          indicatorId: indicatorId ?? '',
           fileName: fileName,
           fileBytes: fileBytes,
         );

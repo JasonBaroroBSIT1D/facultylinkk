@@ -9,7 +9,14 @@ from documents.teaching_evaluation_serializers import (
     apply_duplicate_period_flags,
     teaching_evaluation_to_web,
 )
+from documents.faculty_document_policy import (
+    faculty_can_delete,
+    faculty_can_replace,
+    faculty_can_request_withdrawal,
+)
+from documents.document_info_display import build_document_information
 from documents.review_display import review_display_status
+from documents.set_sef_parent_context import set_sef_parent_context
 from documents.status_map import document_status_to_web, is_legacy_uploaded_draft
 
 _OCR_LIST_PREVIEW = 480
@@ -33,6 +40,16 @@ def document_to_web(
     reviewer_user = reviewer or doc.reviewer
     extracted = dict(doc.extracted_info or {})
     history = extracted.get("reviewHistory") or []
+    set_sef_ctx = set_sef_parent_context(doc)
+    workflow_status = document_status_to_web(doc)
+    review_display = review_display_status(doc)
+    if set_sef_ctx and set_sef_ctx.get("listDisplayStatus"):
+        review_display = set_sef_ctx["listDisplayStatus"]
+
+    document_information = build_document_information(
+        doc, profile, review_display=review_display
+    )
+
     payload = {
         "id": doc.public_id,
         "name": doc.title,
@@ -44,8 +61,10 @@ def document_to_web(
         "kraId": doc.kra_id or "",
         "criterionId": doc.criterion_id or "",
         "indicatorId": doc.indicator_id or "",
-        "status": document_status_to_web(doc),
-        "reviewDisplayStatus": review_display_status(doc),
+        "status": workflow_status,
+        "documentWorkflowStatus": workflow_status,
+        "reviewDisplayStatus": review_display,
+        "setSefParentContext": set_sef_ctx,
         "approvalDecisionSource": (extracted.get("Approval decision source") or None),
         "autoValidation": extracted.get("autoValidation"),
         "submittedAt": _iso(doc.submitted_at),
@@ -55,6 +74,7 @@ def document_to_web(
         "mimeType": doc.mime_type or "",
         "hasFile": bool(doc.file_path),
         "extractedInfo": extracted,
+        "documentInformation": document_information,
         "feedback": doc.reviewer_remarks or "",
         "remarks": doc.reviewer_remarks or "",
         "reviewerScore": doc.reviewer_score,
@@ -68,6 +88,9 @@ def document_to_web(
         ),
         "reviewHistory": history,
         "ocr": _ocr_payload(doc, extracted, ocr_detail=ocr_detail),
+        "canDelete": faculty_can_delete(doc),
+        "canReplace": faculty_can_replace(doc),
+        "canRequestWithdrawal": faculty_can_request_withdrawal(doc),
     }
     if doc.status == "approved" and doc.verified_points is not None:
         payload["review"] = {
@@ -80,22 +103,35 @@ def document_to_web(
     if doc.file_path and api_base:
         payload["fileApiPath"] = f"{api_base}/file"
         payload["fileUrl"] = f"{api_base}/file"
-    if ocr_detail:
-        evaluations = doc.teaching_evaluations.all() if hasattr(doc, "teaching_evaluations") else []
-        payload["teachingEvaluations"] = [
-            teaching_evaluation_to_web(row, doc) for row in evaluations
-        ]
-        apply_duplicate_period_flags(payload["teachingEvaluations"])
-        child_count = len(payload["teachingEvaluations"])
-        if child_count:
-            payload["teachingEvaluationSummary"] = {
-                "count": child_count,
-                "independentValidationRequired": True,
-                "note": (
-                    "Each linked SET/SEF semester record requires its own reviewer "
-                    "validation. Document-level approval does not verify every record."
-                ),
-            }
+    evaluations = []
+    if hasattr(doc, "teaching_evaluations"):
+        try:
+            evaluations = list(doc.teaching_evaluations.all())
+        except Exception:
+            evaluations = list(doc.teaching_evaluations or [])
+    if evaluations:
+        tev_web = [teaching_evaluation_to_web(row, doc, profile) for row in evaluations]
+        apply_duplicate_period_flags(tev_web)
+        child_count = len(tev_web)
+        summary = {
+            "count": child_count,
+            "independentValidationRequired": True,
+            "note": (
+                "Each linked SET/SEF semester record requires its own reviewer "
+                "validation. Document-level approval does not verify every record."
+            ),
+        }
+        if set_sef_ctx:
+            summary["childValidationSummary"] = set_sef_ctx.get("allChildValidationSummary")
+            summary["summaryLine"] = set_sef_ctx.get("summaryLine")
+            summary["composition"] = set_sef_ctx.get("composition")
+            if set_sef_ctx.get("estimatedPointsExplanation"):
+                summary["estimatedPointsExplanation"] = set_sef_ctx["estimatedPointsExplanation"]
+        if ocr_detail:
+            payload["teachingEvaluations"] = tev_web
+        payload["teachingEvaluationSummary"] = summary
+    elif ocr_detail:
+        payload["teachingEvaluations"] = []
     return payload
 
 

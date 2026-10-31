@@ -162,6 +162,7 @@ def test_duplicate_approved_records_excluded_with_conflict(monkeypatch):
         _doc("d2", children=[_tev("t2", "2024-2025", "1st Semester", "95/100")]),
     ]
     block = aggregate_indicator(docs, "kra1-a-student")
-    assert block["coverageSummary"]["excludedDuplicateRecords"] == 2
-    assert block["validatedPoints"] is None
-    assert any("Conflict:" in (e.get("exclusionReason") or "") for e in block["excludedPeriods"])
+    assert block["coverageSummary"]["excludedDuplicateRecords"] == 1
+    assert block["coverageSummary"]["uniqueEligibleSemesters"] == 1
+    assert block["validatedPoints"] == 32.4
+    assert any("already recorded" in (e.get("exclusionReason") or "").lower() for e in block["excludedPeriods"])

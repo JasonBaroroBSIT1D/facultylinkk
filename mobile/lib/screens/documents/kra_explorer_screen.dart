@@ -12,6 +12,8 @@ import '../../widgets/common.dart';
 import '../../widgets/compact_folder_card.dart';
 import '../../widgets/document_card.dart';
 import '../../widgets/teaching_evaluation_record_tile.dart';
+import '../../widgets/teaching_effectiveness_summary_card.dart';
+import '../../widgets/criterion_a_source_document_card.dart';
 import 'document_flow_args.dart';
 
 /// Faculty KRA → criterion → indicator document explorer.
@@ -52,9 +54,14 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
   void initState() {
     super.initState();
     _criterionId = widget.initialCriterionId;
-    _indicatorId = widget.initialIndicatorId;
+    _indicatorId = widget.initialCriterionId == FacultyDocument.criterionAId &&
+            FacultyDocument.isSetSefIndicatorId(widget.initialIndicatorId)
+        ? null
+        : widget.initialIndicatorId;
     _load().then((_) {
-      if (FacultyDocument.isSetSefIndicatorId(_indicatorId)) {
+      if (_criterionId == FacultyDocument.criterionAId) {
+        _loadCriterionATeachingData();
+      } else if (FacultyDocument.isSetSefIndicatorId(_indicatorId)) {
         _loadSetSefRecords(_indicatorId!);
       }
     });
@@ -95,12 +102,28 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
   }
 
   List<FacultyDocument> _docsForIndicator(String indicatorId) {
-    return AppState.instance.documents
-        .where((d) => d.kra == widget.kra && d.indicatorId == indicatorId)
-        .toList();
+    final all = AppState.instance.documents.where((d) => d.kra == widget.kra).toList();
+    if (FacultyDocument.isSetSefIndicatorId(indicatorId)) {
+      final fromRecords = _evaluationRecords.map((r) => r.documentId).toSet();
+      return all
+          .where(
+            (d) =>
+                d.indicatorId == indicatorId ||
+                fromRecords.contains(d.id) ||
+                (d.indicatorId == FacultyDocument.criterionAAutoUploadIndicatorId &&
+                    fromRecords.contains(d.id)),
+          )
+          .toList();
+    }
+    return all.where((d) => d.indicatorId == indicatorId).toList();
   }
 
   int _docCountForCriterion(String criterionId) {
+    if (criterionId == FacultyDocument.criterionAId) {
+      return AppState.instance.documents
+          .where((d) => d.kra == widget.kra && d.criterionId == criterionId)
+          .length;
+    }
     final indicators = _indicatorsForCriterion(criterionId);
     final ids = indicators.map((i) => i['id']?.toString()).whereType<String>().toSet();
     return AppState.instance.documents
@@ -137,6 +160,17 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
       _criterionId = id;
       _indicatorId = null;
     });
+    if (id == FacultyDocument.criterionAId) {
+      _loadCriterionATeachingData();
+    }
+  }
+
+  Future<void> _loadCriterionATeachingData() async {
+    if (AppState.instance.usesMockAuth) return;
+    try {
+      await AppState.instance.fetchTeachingEffectivenessFromApi(quiet: true);
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   void _openIndicator(String? id) {
@@ -198,7 +232,9 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
               onPressed: _handleBack,
             ),
           ),
-          floatingActionButton: _indicatorId != null ? _uploadFab() : null,
+          floatingActionButton: (_indicatorId != null || _criterionId == FacultyDocument.criterionAId)
+              ? _uploadFab()
+              : null,
           body: _loading
               ? const LoadingState(message: 'Loading KRA structure…')
               : _kraNode == null
@@ -230,6 +266,7 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
   }
 
   String get _appBarTitle {
+    if (_criterionId == FacultyDocument.criterionAId) return 'Supporting Documents';
     if (_indicatorId != null) return 'Evidence';
     if (_criterionId != null) return 'Indicators';
     return widget.kra.code;
@@ -246,7 +283,7 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
           arguments: UploadDocumentLaunch(
             kra: widget.kra,
             criterionId: _criterionId,
-            indicatorId: _indicatorId,
+            indicatorId: _criterionId == FacultyDocument.criterionAId ? null : _indicatorId,
           ),
         );
       },
@@ -256,9 +293,108 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
   }
 
   Widget _buildBody() {
+    if (_criterionId == FacultyDocument.criterionAId) {
+      return _buildCriterionAWorkspace();
+    }
     if (_indicatorId != null) return _buildIndicatorDocs();
     if (_criterionId != null) return _buildIndicators();
     return _buildCriteria();
+  }
+
+  List<FacultyDocument> _criterionASourceDocuments() {
+    final docs = AppState.instance.documents
+        .where(
+          (d) =>
+              d.kra == widget.kra &&
+              (d.criterionId == FacultyDocument.criterionAId ||
+                  FacultyDocument.isSetSefIndicatorId(d.indicatorId) ||
+                  d.indicatorId == FacultyDocument.criterionAAutoUploadIndicatorId),
+        )
+        .toList();
+    final seen = <String>{};
+    final unique = <FacultyDocument>[];
+    for (final d in docs) {
+      if (seen.add(d.id)) unique.add(d);
+    }
+    return unique;
+  }
+
+  Widget _buildCriterionAWorkspace() {
+    final criterion = _findCriterion(_criterionId);
+    final te = AppState.instance.criterionA;
+    final sourceMeta = TeachingEffectivenessMapper.sourceDocumentsFromTeachingPayload(te);
+    final metaById = {
+      for (final row in sourceMeta)
+        if (row['documentId'] != null) row['documentId'].toString(): row,
+    };
+    final docs = _criterionASourceDocuments();
+    final orderedIds = sourceMeta
+        .map((r) => r['documentId']?.toString())
+        .whereType<String>()
+        .toList();
+    final ordered = <FacultyDocument>[
+      for (final id in orderedIds)
+        if (docs.any((d) => d.id == id)) docs.firstWhere((d) => d.id == id),
+      for (final d in docs)
+        if (!orderedIds.contains(d.id)) d,
+    ];
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        await AppState.instance.refreshData(label: 'Refreshing…', soft: true);
+        await _loadCriterionATeachingData();
+      },
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          if (criterion != null)
+            Text(
+              criterion['name']?.toString() ?? 'Criterion A',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+                color: AppColors.navy,
+                height: 1.35,
+              ),
+            ),
+          const SizedBox(height: 12),
+          if (te != null) ...[
+            TeachingEffectivenessSummaryCard(data: te),
+            const SizedBox(height: 16),
+          ],
+          const Text(
+            'Supporting Documents',
+            style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'All Criterion A source PDFs in one place. SET and SEF semester records are extracted from document text (OCR), not separate folders.',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
+          ),
+          const SizedBox(height: 12),
+          if (ordered.isEmpty)
+            const EmptyState(
+              icon: Icons.upload_file_outlined,
+              title: 'No uploads yet',
+              message: 'Tap Upload to attach a teaching effectiveness PDF.',
+            )
+          else
+            for (final doc in ordered)
+              CriterionASourceDocumentCard(
+                document: doc,
+                workspaceMeta: metaById[doc.id],
+                onTap: () {
+                  Navigator.pushNamed(
+                    context,
+                    AppRoutes.documentDetails,
+                    arguments: doc.id,
+                  );
+                },
+              ),
+        ],
+      ),
+    );
   }
 
   Widget _buildCriteria() {
@@ -275,9 +411,10 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
               icon: Icons.folder_outlined,
               iconColor: AppColors.kra(widget.kra),
               title: criterion['name']?.toString() ?? 'Criterion',
-              subtitle:
-                  '${(criterion['indicators'] as List? ?? []).length} indicators · '
-                  '${_docCountForCriterion(criterion['id']?.toString() ?? '')} uploads',
+              subtitle: criterion['id']?.toString() == FacultyDocument.criterionAId
+                  ? '${_docCountForCriterion(FacultyDocument.criterionAId)} supporting document${_docCountForCriterion(FacultyDocument.criterionAId) == 1 ? '' : 's'}'
+                  : '${(criterion['indicators'] as List? ?? []).length} indicators · '
+                      '${_docCountForCriterion(criterion['id']?.toString() ?? '')} uploads',
               onTap: () => _openCriterion(criterion['id']?.toString()),
             ),
           ),
@@ -476,9 +613,13 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Each row is one semester extracted from your uploads. Several rows may share the same PDF when one file contains multiple evaluations.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+            Text(
+              indicatorId == 'kra1-a-student'
+                  ? 'SET only — ${_evaluationRecords.length} evaluation${_evaluationRecords.length == 1 ? '' : 's'} from your uploads. Each row is one genuine semester section detected in the PDF text (not filename).'
+                  : indicatorId == 'kra1-a-supervisor'
+                      ? 'SEF only — ${_evaluationRecords.length} evaluation${_evaluationRecords.length == 1 ? '' : 's'} from your uploads. Each row is one genuine semester section detected in the PDF text.'
+                      : 'Each row is one semester extracted from your uploads. Several rows may share the same PDF when one file contains multiple evaluations.',
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.4),
             ),
             const SizedBox(height: 16),
           ],
@@ -500,10 +641,14 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
           else ...[
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Semester records',
-                    style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
+                    indicatorId == 'kra1-a-student'
+                        ? 'SET semester records'
+                        : indicatorId == 'kra1-a-supervisor'
+                            ? 'SEF semester records'
+                            : 'Semester records',
+                    style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
                   ),
                 ),
                 Text(

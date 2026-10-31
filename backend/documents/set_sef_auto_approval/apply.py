@@ -102,6 +102,21 @@ def maybe_auto_approve_after_ocr(doc: Document, job: DocumentOcrJob | None = Non
         if prior_av.get("decisionSource") == "withheld" and not is_auto_approval_active():
             return
 
+    from documents.document_ownership_verification import ownership_blocks_auto_validation
+
+    if ownership_blocks_auto_validation(doc, doc.faculty_profile):
+        assessment_dict = {
+            "decisionSource": "withheld",
+            "policyActive": is_auto_approval_active(),
+            "withheldReasons": ["Document ownership is not verified for automatic validation."],
+            "assessedAt": _utcnow_iso(),
+        }
+        if job_id is not None:
+            assessment_dict["ocrJobId"] = job_id
+        info["autoValidation"] = assessment_dict
+        doc.extracted_info = info
+        return
+
     assessment = assess_document(doc)
     assessment_dict = assessment.to_dict()
     assessment_dict["assessedAt"] = _utcnow_iso()

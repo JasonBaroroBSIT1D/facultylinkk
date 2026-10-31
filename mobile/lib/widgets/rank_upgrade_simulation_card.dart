@@ -91,30 +91,29 @@ class RankUpgradeSimulationCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _Metric(
+                    label: 'Estimated KRA pts',
+                    value: _fmt(simulation.estimatedKraPoints),
+                  ),
+                ),
+                Expanded(
+                  child: _Metric(
                     label: 'Teaching effectiveness',
                     value: _fmt(simulation.teachingEffectivenessScore),
                   ),
                 ),
                 Expanded(
                   child: _Metric(
-                    label: 'Validated KRA pts',
-                    value: _fmt(simulation.validatedKraPoints),
-                  ),
-                ),
-                Expanded(
-                  child: _Metric(
-                    label: 'Projected KRA pts',
-                    value: _fmt(simulation.provisionalKraPoints),
+                    label: 'Weighted estimate',
+                    value: _fmt(simulation.weightedEstimatedScore),
                   ),
                 ),
               ],
             ),
-            if (simulation.weightedProvisionalScore != null ||
-                simulation.weightedValidatedScore != null) ...[
+            if (simulation.weightedEstimatedScore != null) ...[
               const SizedBox(height: 12),
               Text(
                 'Weighted score (Table 2.2${simulation.weightBand.isNotEmpty ? ': ${simulation.weightBand}' : ''}): '
-                '${_fmt(simulation.weightedValidatedScore ?? simulation.weightedProvisionalScore)} / 100',
+                '${_fmt(simulation.weightedEstimatedScore)} / 100',
                 style: TextStyle(
                   color: AppColors.mint.withValues(alpha: 0.9),
                   fontSize: 11,
@@ -180,6 +179,17 @@ class RankUpgradeSimulationCard extends StatelessWidget {
                 height: 1.4,
               ),
             ),
+            if (simulation.disclaimer.trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                simulation.disclaimer,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.65),
+                  fontSize: 10,
+                  height: 1.35,
+                ),
+              ),
+            ],
           ],
         ),
       ),

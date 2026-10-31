@@ -5,8 +5,10 @@ from __future__ import annotations
 from documents.ocr.set_sef_metadata import (
     apply_set_sef_to_extracted_info,
     parse_set_sef_metadata,
+    parse_set_sef_metadata_multi,
     verify_selected_indicator,
 )
+from tests.ocr.test_set_sef_combined_table import build_combined_table_text
 
 SEF_SAMPLE = """
 Supervisor Evaluation of Teaching
@@ -72,3 +74,57 @@ def test_unreadable_text_undetermined():
     parsed = parse_set_sef_metadata("   ")
     assert parsed.verification_status == "UNDETERMINED"
     assert parsed.missing_fields
+
+
+def test_faculty_rating_heading_is_not_a_faculty_name():
+    text = """
+Summary of Individual Faculty Rating
+Faculty: Jason Baroro
+Department of Example
+"""
+    parsed = parse_set_sef_metadata(text)
+    assert parsed.faculty_name == "Jason Baroro"
+
+
+def test_combined_table_apply_uses_labeled_faculty_not_rating_word():
+    text = build_combined_table_text(
+        faculty="Jason Baroro",
+        rows=[
+            ("1st Sem., SY 2020-2021", 88.0, 86.0),
+            ("2nd Sem., SY 2020-2021", 90.0, 89.0),
+        ],
+    )
+    assert parse_set_sef_metadata(text).faculty_name == "Jason Baroro"
+    info = apply_set_sef_to_extracted_info(
+        {},
+        text=text,
+        indicator_id="kra1-a-teaching-evidence",
+        extraction_method="pdf_text",
+        criterion_id="kra1-a",
+    )
+    assert info["Faculty name on document"] == "Jason Baroro"
+    assert info.get("Faculty name") == "Jason Baroro"
+    assert info.get("Multi-semester document") == "yes"
+    assert "2020-2021" in info.get("Academic years covered", "")
+    assert info.get("Extracted rating") is None
+    assert info.get("Document type") == "Mixed SET and SEF"
+    assert len(parse_set_sef_metadata_multi(text)) == 4
+
+
+def test_missing_faculty_label_not_invented():
+    text = """
+Summary of Individual Faculty Rating
+Department of Example
+Academic Year 2024-2025
+1st Semester
+Overall Rating: 90 / 100
+"""
+    info = apply_set_sef_to_extracted_info(
+        {},
+        text=text,
+        indicator_id="kra1-a-student",
+        extraction_method="pdf_text",
+        criterion_id="kra1-a",
+    )
+    assert info.get("Faculty name extraction status") == "not_detected"
+    assert info.get("Faculty name") is None

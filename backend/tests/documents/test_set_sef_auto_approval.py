@@ -264,6 +264,28 @@ def test_apply_skips_when_policy_off(mock_db, _active):
 
 @patch("documents.set_sef_auto_approval.apply.is_auto_approval_active", return_value=True)
 @patch("documents.set_sef_auto_approval.apply.db")
+def test_withheld_when_ownership_not_matched(mock_db, _active):
+    from documents.set_sef_auto_approval.apply import maybe_auto_approve_after_ocr
+
+    info = _complete_sef_info(
+        **{
+            "Faculty name on document": "Other Faculty",
+            "Faculty name extraction status": "detected",
+        }
+    )
+    doc = _doc(extracted_info=info)
+    mock_db.session.get.return_value = doc
+    job = SimpleNamespace(id=7)
+    with patch("documents.set_sef_auto_approval.apply.assess_document") as mock_assess:
+        maybe_auto_approve_after_ocr(doc, job)
+        mock_assess.assert_not_called()
+    av = doc.extracted_info.get("autoValidation") or {}
+    assert av.get("decisionSource") == "withheld"
+    assert doc.status == "pending_review"
+
+
+@patch("documents.set_sef_auto_approval.apply.is_auto_approval_active", return_value=True)
+@patch("documents.set_sef_auto_approval.apply.db")
 def test_withheld_reassessed_when_policy_active(mock_db, _active):
     from documents.set_sef_auto_approval.apply import maybe_auto_approve_after_ocr
 
