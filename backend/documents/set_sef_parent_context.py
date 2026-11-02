@@ -187,6 +187,9 @@ def set_sef_parent_context(
     all_counts = child_validation_summary_for_document(doc)
     pending_children = all_counts["pending"] + all_counts["incomplete"]
     parent_workflow_approved = doc.status in ("approved", "valid")
+    from documents.set_sef_parent_review_sync import assess_parent_document_review_completion
+
+    completion = assess_parent_document_review_completion(doc)
 
     info = dict(doc.extracted_info or {})
     list_display_status = "pending-review"
@@ -194,8 +197,12 @@ def set_sef_parent_context(
         list_display_status = "reviewer-required"
     elif counts["total"] == 0:
         list_display_status = processing["documentWorkflowStatus"]
-    elif counts["validated"] == counts["total"] and counts["total"] > 0:
+    elif counts["validated"] == counts["total"] and counts["total"] > 0 and (
+        completion.ready or parent_workflow_approved
+    ):
         list_display_status = "approved"
+    elif counts["validated"] == counts["total"] and counts["total"] > 0 and completion.blockers:
+        list_display_status = "reviewer-required"
     elif counts["needsRevision"] > 0:
         list_display_status = "revision"
     elif counts["rejected"] == counts["total"]:
@@ -215,6 +222,8 @@ def set_sef_parent_context(
             doc, indicator_id=indicator_id
         ),
         "parentWorkflowApproved": parent_workflow_approved,
+        "parentReviewCompletion": completion.to_dict(),
+        "parentDocumentReviewBlockers": completion.blockers,
         "note": (
             "Document-level approval or simulation auto-accept applies to the uploaded PDF only. "
             "Each SET/SEF semester record requires its own reviewer validation for scoring."
@@ -270,7 +279,8 @@ def workspace_teaching_evaluation_stats(
         "evaluationRecordsIncomplete": 0,
     }
     for doc in docs:
-        if doc.criterion_id != "kra1-a":
+        has_tev = bool(_iter_tev(doc))
+        if doc.criterion_id != "kra1-a" and not is_set_sef_indicator(doc.indicator_id or "") and not has_tev:
             continue
         for tev in _iter_tev(doc):
             meta = dict(tev.extracted_metadata or {})

@@ -60,6 +60,7 @@ def document_to_web(
         "reviewerId": reviewer_user.public_id if reviewer_user else None,
         "kraId": doc.kra_id or "",
         "criterionId": doc.criterion_id or "",
+        "criterionLabel": document_information.get("criterionLabel") or "",
         "indicatorId": doc.indicator_id or "",
         "status": workflow_status,
         "documentWorkflowStatus": workflow_status,

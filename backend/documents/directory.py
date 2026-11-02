@@ -16,6 +16,28 @@ _REVISION = ("needs_revision",)
 _REJECTED = ("rejected",)
 
 
+def profile_evidence_metrics(docs: list[Document]) -> dict[str, int]:
+    """Source PDF workflow counts vs child SET/SEF semester validation (never double-count)."""
+    tev = workspace_teaching_evaluation_stats(docs)
+    pdf_pending = sum(1 for d in docs if is_awaiting_review(d))
+    pdf_total = len(docs)
+    return {
+        "sourcePdfTotal": pdf_total,
+        "sourcePdfPendingWorkflow": pdf_pending,
+        "documentTotal": pdf_total,
+        "documentPending": pdf_pending,
+        "evaluationRecordsTotal": tev["evaluationRecordsTotal"],
+        "evaluationRecordsPending": tev["evaluationRecordsPending"],
+        "evaluationRecordsValidated": tev["evaluationRecordsValidated"],
+        "evaluationRecordsNeedsRevision": tev["evaluationRecordsNeedsRevision"],
+        "evaluationRecordsRejected": tev["evaluationRecordsRejected"],
+        "evaluationRecordsIncomplete": tev["evaluationRecordsIncomplete"],
+        "semesterEvaluationsPending": tev["evaluationRecordsPending"]
+        + tev["evaluationRecordsIncomplete"]
+        + tev["evaluationRecordsNeedsRevision"],
+    }
+
+
 def _doc_stats_subquery():
     return (
         db.session.query(
@@ -61,6 +83,10 @@ def workspace_stats(*, reviewer_user_id: int | None = None) -> dict:
         doc_q = doc_q.filter(Document.faculty_profile_id.in_(assigned_ids))
 
     docs = doc_q.all()
+    if docs:
+        from documents.set_sef_parent_review_sync import sync_set_sef_parent_reviews
+
+        sync_set_sef_parent_reviews(docs, None, trigger="workspace_stats")
     faculty_with_docs = len({d.faculty_profile_id for d in docs})
     pending = sum(1 for d in docs if is_awaiting_review(d))
     approved = sum(1 for d in docs if d.status in _APPROVED)
@@ -149,6 +175,25 @@ def paginated_faculty_directory(
 
     rows = base.offset((page - 1) * page_size).limit(page_size).all()
 
+    profile_ids = [p.id for p in rows]
+    docs_by_profile: dict[int, list[Document]] = {pid: [] for pid in profile_ids}
+    if profile_ids:
+        for doc in (
+            Document.query.filter(
+                Document.faculty_profile_id.in_(profile_ids),
+                Document.deleted_at.is_(None),
+            ).all()
+        ):
+            docs_by_profile.setdefault(doc.faculty_profile_id, []).append(doc)
+
+    page_docs: list[Document] = []
+    for doc_list in docs_by_profile.values():
+        page_docs.extend(doc_list)
+    if page_docs:
+        from documents.set_sef_parent_review_sync import sync_set_sef_parent_reviews
+
+        sync_set_sef_parent_reviews(page_docs, None, trigger="faculty_directory")
+
     def row_dict(profile: FacultyProfile) -> dict:
         user = profile.user
         reviewer = profile.reviewer
@@ -157,8 +202,8 @@ def paginated_faculty_directory(
             .filter(stats.c.profile_id == profile.id)
             .first()
         )
-        doc_total = int(stat_row.doc_total or 0) if stat_row else 0
-        doc_pending = int(stat_row.doc_pending or 0) if stat_row else 0
+        profile_docs = docs_by_profile.get(profile.id) or []
+        metrics = profile_evidence_metrics(profile_docs)
         last_at = None
         if stat_row:
             last_at = stat_row.last_activity or stat_row.last_upload
@@ -171,11 +216,12 @@ def paginated_faculty_directory(
             "college": profile.college,
             "reviewerId": reviewer.public_id if reviewer else None,
             "reviewerName": reviewer.full_name if reviewer else None,
-            "documentTotal": doc_total,
-            "documentPending": doc_pending,
+            "documentTotal": metrics["documentTotal"],
+            "documentPending": metrics["sourcePdfPendingWorkflow"],
             "documentApproved": int(stat_row.doc_approved or 0) if stat_row else 0,
             "documentRevision": int(stat_row.doc_revision or 0) if stat_row else 0,
             "lastActivity": last_at.isoformat() if last_at else None,
+            **metrics,
         }
 
     return {

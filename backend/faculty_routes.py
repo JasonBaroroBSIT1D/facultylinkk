@@ -49,8 +49,14 @@ def faculty_rank_simulation():
     user = aq.current_faculty_user(public_id)
     if not user or not user.faculty_profile:
         return jsonify({"message": "Faculty profile was not found."}), 404
-    payload = compute_rank_simulation(user.faculty_profile)
-    resp = jsonify({"simulation": payload})
+    from documents.teaching_effectiveness import teaching_effectiveness_payload
+    from faculty.evidence_compliance import evidence_compliance_snapshot
+
+    profile = user.faculty_profile
+    te = teaching_effectiveness_payload(profile)
+    payload = compute_rank_simulation(profile)
+    payload["evidenceCompliance"] = evidence_compliance_snapshot(profile, te)
+    resp = jsonify({"simulation": payload, "evidenceCompliance": payload["evidenceCompliance"]})
     resp.headers["Cache-Control"] = "no-store"
     return resp, 200
 

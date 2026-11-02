@@ -634,6 +634,12 @@ FL.evidence = {
       return `<button type="button" class="tev-filter-chip${active}" data-ca-filter="${FL.esc(key)}">${FL.esc(label)}</button>`;
     };
     let discrepancyNote = "";
+    if (rows.length === 0 && (parseInt(childVal.total, 10) || 0) > 0) {
+      discrepancyNote = `<div class="alert alert-warning ca-sync-note" role="status">
+        Source PDFs report ${FL.esc(String(childVal.total))} semester evaluation record(s), but none were loaded in this view.
+        Reload the page or check the network response for teaching effectiveness.
+      </div>`;
+    }
     sources.forEach(function (s) {
       const c = s.childValidationSummary || {};
       const pending = (c.pending || 0) + (c.incomplete || 0);
@@ -1433,10 +1439,8 @@ FL.evidence = {
   },
 
   _criterionLabel: function (kraId, criterionId) {
-    const kra = FL.rules.findKra(kraId);
-    if (!kra) return criterionId;
-    const c = kra.criteria.find(function (row) { return row.id === criterionId; });
-    return c ? c.name : criterionId;
+    const hit = FL.rules.findCriterionById(criterionId);
+    return FL.rules.criterionUserLabel(criterionId, hit ? hit.criterion.name : null);
   },
 
   initials: function (name) {
@@ -1516,18 +1520,63 @@ FL.evidence = {
     });
   },
 
+  /** Reload workspace stat tiles and faculty directory after semester validation (no full page reload). */
+  refreshCountsAfterReview: function (session, facultyId) {
+    if (!session || !FL.store.usesLiveDocuments()) return Promise.resolve();
+    const isAdmin = session.role === "administrator";
+    const jobs = [FL.evidence._loadStats(session, isAdmin)];
+    if (facultyId) {
+      jobs.push(FL.store.loadFacultyDocuments(session, facultyId).catch(function () { return null; }));
+    }
+    return Promise.all(jobs).then(function () {
+      if (document.getElementById("evidence-stats")) {
+        FL.evidence._paintStats(FL.store.evidenceStats || {}, isAdmin);
+      }
+      if (!document.querySelector(".evidence-directory") || !FL.store.evidenceDirectory) return;
+      const state = FL.evidence.parseLocation();
+      if (state.facultyId || state.docFilter !== "all") return;
+      return FL.evidence._loadDirectory(session, state, isAdmin).then(function () {
+        FL.evidence._paintDirectory(session, state, isAdmin);
+      });
+    });
+  },
+
   _mockStats: function (session, isAdmin) {
     const docs = FL.documents.scoped(session);
     const facultyIds = {};
     docs.forEach(function (d) { if (d.facultyId) facultyIds[d.facultyId] = true; });
+    let semPending = 0;
+    let semValidated = 0;
+    Object.keys(facultyIds).forEach(function (fid) {
+      const rows = docs.filter(function (d) { return d.facultyId === fid; });
+      const m = FL.store.facultyEvidenceMetricsFromDocs(rows);
+      semPending += m.semesterEvaluationsPending || 0;
+      semValidated += m.evaluationRecordsValidated || 0;
+    });
+    const pdfPending = docs.filter(function (d) {
+      const st = d.documentWorkflowStatus || d.status || "";
+      return st === "pending-review" || st === "reviewer-required" || st === "pending_review";
+    }).length;
     FL.store.evidenceStats = {
       totalFaculty: isAdmin ? FL.store.faculty.length : FL.store.assignedFacultyForReviewer(session).length,
       facultyWithDocuments: Object.keys(facultyIds).length,
       totalDocuments: docs.length,
-      pendingReview: docs.filter(function (d) { return d.status === "pending-review" || d.status === "reviewer-required"; }).length,
+      pendingReview: pdfPending,
       approvedEvidence: docs.filter(function (d) { return d.status === "approved"; }).length,
-      needsRevision: docs.filter(function (d) { return d.status === "revision"; }).length
+      needsRevision: docs.filter(function (d) { return d.status === "revision"; }).length,
+      evaluationRecordsPending: semPending,
+      evaluationRecordsValidated: semValidated
     };
+  },
+
+  _directoryPendingSortKey: function (row) {
+    const sem = row.semesterEvaluationsPending != null
+      ? row.semesterEvaluationsPending
+      : (row.evaluationRecordsPending || 0);
+    const pdf = row.sourcePdfPendingWorkflow != null
+      ? row.sourcePdfPendingWorkflow
+      : (row.documentPending || 0);
+    return sem + pdf;
   },
 
   _loadDirectory: function (session, state, isAdmin) {
@@ -1561,11 +1610,9 @@ FL.evidence = {
     }
     rows = rows.map(function (p) {
       const docs = FL.store.documents.filter(function (d) { return d.facultyId === p.id; });
-      const pending = docs.filter(function (d) {
-        return d.status === "pending-review" || d.status === "reviewer-required" || d.status === "invalid";
-      }).length;
+      const metrics = FL.store.facultyEvidenceMetricsFromDocs(docs);
       const reviewer = FL.store.reviewerById(p.reviewerId);
-      return {
+      return Object.assign({
         id: p.id,
         name: p.name,
         email: p.email,
@@ -1573,14 +1620,16 @@ FL.evidence = {
         department: p.department || "",
         reviewerId: p.reviewerId,
         reviewerName: reviewer ? reviewer.name : "",
-        documentTotal: docs.length,
-        documentPending: pending,
         documentApproved: docs.filter(function (d) { return d.status === "approved"; }).length,
         documentRevision: docs.filter(function (d) { return d.status === "revision"; }).length,
         lastActivity: docs[0] && (docs[0].submittedAt || docs[0].uploadedAt) || null
-      };
+      }, metrics);
     });
-    if (state.sort === "pending") rows.sort(function (a, b) { return b.documentPending - a.documentPending; });
+    if (state.sort === "pending") {
+      rows.sort(function (a, b) {
+        return FL.evidence._directoryPendingSortKey(b) - FL.evidence._directoryPendingSortKey(a);
+      });
+    }
     else if (state.sort === "documents") rows.sort(function (a, b) { return b.documentTotal - a.documentTotal; });
     else rows.sort(function (a, b) { return a.name.localeCompare(b.name); });
     const total = rows.length;
@@ -1728,15 +1777,17 @@ FL.evidence = {
       ? [
           { label: "Faculty with documents", value: stats.facultyWithDocuments, iconKey: "faculty", accent: "teal" },
           { label: "Source PDFs (total)", value: stats.totalDocuments, iconKey: "documents", accent: "" },
-          { label: "Source PDFs pending", value: stats.pendingReview, iconKey: "pending", accent: "warn" },
+          { label: "Source PDFs pending document review", value: stats.pendingReview, iconKey: "pending", accent: "warn" },
           { label: "Source PDFs approved", value: stats.approvedEvidence, iconKey: "approved", accent: "ok" },
-          { label: "SET/SEF records pending", value: stats.evaluationRecordsPending, iconKey: "pending", accent: "warn" },
-          { label: "SET/SEF records validated", value: stats.evaluationRecordsValidated, iconKey: "approved", accent: "ok" }
+          { label: "SET/SEF semester records pending", value: stats.evaluationRecordsPending, iconKey: "pending", accent: "warn" },
+          { label: "SET/SEF semester records validated", value: stats.evaluationRecordsValidated, iconKey: "approved", accent: "ok" }
         ]
       : [
           { label: "Assigned faculty", value: stats.assignedFaculty ?? stats.facultyWithDocuments, iconKey: "faculty", accent: "teal" },
-          { label: "Source PDFs pending", value: stats.pendingReview, iconKey: "pending", accent: "warn" },
+          { label: "Source PDFs pending document review", value: stats.pendingReview, iconKey: "pending", accent: "warn" },
           { label: "Source PDFs approved", value: stats.approvedEvidence, iconKey: "approved", accent: "ok" },
+          { label: "SET/SEF semester records pending", value: stats.evaluationRecordsPending, iconKey: "pending", accent: "warn" },
+          { label: "SET/SEF semester records validated", value: stats.evaluationRecordsValidated, iconKey: "approved", accent: "ok" },
           { label: "Needs revision (PDFs)", value: stats.needsRevision, iconKey: "revision", accent: "warn" }
         ];
     host.innerHTML = cards.map(function (c) {
@@ -1837,17 +1888,33 @@ FL.evidence = {
       <div class="table-wrap">
         <table class="data evidence-directory">
           <thead><tr>
-            <th>Faculty</th><th>Department</th><th>Assigned reviewer</th><th>Documents</th><th>Pending review</th><th>Last activity</th><th>Actions</th>
+            <th>Faculty</th><th>Department</th><th>Assigned reviewer</th><th>Source PDFs</th><th>Semester evaluations</th><th>PDF document review</th><th>Last activity</th><th>Actions</th>
           </tr></thead>
           <tbody>
             ${rows.map(function (row) {
+              const semTotal = row.evaluationRecordsTotal != null ? row.evaluationRecordsTotal : 0;
+              const semVal = row.evaluationRecordsValidated != null ? row.evaluationRecordsValidated : 0;
+              const semPending = row.semesterEvaluationsPending != null
+                ? row.semesterEvaluationsPending
+                : (row.evaluationRecordsPending || 0);
+              const pdfPending = row.sourcePdfPendingWorkflow != null
+                ? row.sourcePdfPendingWorkflow
+                : (row.documentPending || 0);
+              const semCell = semTotal
+                ? `<div>${FL.esc(String(semVal))}/${FL.esc(String(semTotal))} validated</div>
+                   <div class="sub">${semPending ? FL.esc(String(semPending)) + " pending" : "0 pending"}</div>`
+                : `<span class="sub">—</span>`;
+              const pdfCell = pdfPending
+                ? FL.ui.badge("pending", String(pdfPending) + " pending")
+                : FL.ui.badge("valid", "None pending");
               return `<tr>
                 <td><div class="evidence-person"><span class="evidence-avatar">${FL.esc(FL.evidence.initials(row.name))}</span>
                   <div class="evidence-person-text"><strong>${FL.esc(row.name)}</strong><small>${FL.esc(row.employeeNo || row.email || "—")}</small></div></div></td>
                 <td>${FL.esc(row.department || "—")}</td>
                 <td>${FL.esc(row.reviewerName || "Unassigned")}</td>
-                <td>${FL.esc(String(row.documentTotal || 0))}</td>
-                <td>${row.documentPending ? FL.ui.badge("pending", String(row.documentPending)) : "0"}</td>
+                <td>${FL.esc(String(row.sourcePdfTotal != null ? row.sourcePdfTotal : row.documentTotal || 0))}</td>
+                <td>${semCell}</td>
+                <td>${pdfCell}</td>
                 <td>${FL.esc(row.lastActivity ? FL.formatWhen(row.lastActivity) : "—")}</td>
                 <td class="action-cell"><button type="button" class="btn btn-ghost btn-small" data-open-faculty="${FL.esc(row.id)}">Open</button></td>
               </tr>`;
@@ -1970,7 +2037,7 @@ FL.evidence = {
         return `<article class="evidence-criterion-card">
           <button type="button" class="evidence-criterion-open" data-criterion="${FL.esc(criterion.id)}">
             <div>
-              <h3>${FL.esc(criterion.name)}</h3>
+              <h3>${FL.esc(FL.rules.criterionUserLabel(criterion.id, criterion.name))}</h3>
               <p class="sub">${count} document${count === 1 ? "" : "s"}</p>
             </div>
             <span class="evidence-kra-arrow">${FL.evidence.chevronIcon()}</span>
@@ -2011,32 +2078,6 @@ FL.evidence = {
           return payload;
         });
       };
-      paintCriterionWorkspace = function (tePayload, repaintOnly) {
-        const wsSlot = document.getElementById("criterion-a-workspace-slot");
-        if (!wsSlot) return;
-        const scrollY = window.scrollY || 0;
-        const canReviewWs = !isAdmin && session && session.role === "reviewer";
-        const skipDrawer = !!document.getElementById("ca-tev-review-drawer");
-        wsSlot.innerHTML = FL.evidence.criterionAUnifiedWorkspaceHtml(
-          session, state, isAdmin, tePayload, docs, { skipDrawer: skipDrawer }
-        );
-        if (!skipDrawer) FL.evidence.ensureCriterionADrawerOnBody(canReviewWs);
-        FL.evidence.pruneDuplicateCriterionADrawers();
-        FL.evidence.bindCriterionAWorkspace(session, state, isAdmin, tePayload, docs, function (localRepaint) {
-          if (localRepaint && tePayload) {
-            paintCriterionWorkspace(tePayload, true);
-            return;
-          }
-          refreshTeachingEffectiveness().catch(function (refreshErr) {
-            if (typeof console !== "undefined" && console.warn) {
-              console.warn("Teaching effectiveness workspace refresh failed:", refreshErr);
-            }
-            FL.ui.toast("Your decision was saved, but the list could not be refreshed. Reload if counts look stale.", "warning");
-          });
-        });
-        if (repaintOnly) window.scrollTo(0, scrollY);
-      };
-      FL.evidence._refreshCriterionATeaching = refreshTeachingEffectiveness;
       const paintS10 = function (elig) {
         const el = s10Slot();
         if (!el || fetchSeq !== FL.evidence._teFetchSeq) return;
@@ -2049,17 +2090,77 @@ FL.evidence = {
           refreshTeachingEffectiveness();
         });
       };
-      Promise.all([
-        FL.store.loadFacultyDocuments(session, loadFaculty),
-        refreshTeachingEffectiveness(),
-        FL.store.fetchEvaluationEligibility(session, loadFaculty).then(paintS10)
-      ]).catch(function () {
+      const facultyCriterionDocs = function () {
+        return FL.evidence._facultyDocs(session, state.facultyId).filter(function (d) {
+          return d.kraId === state.kraId && d.criterionId === state.criterionId;
+        });
+      };
+      paintCriterionWorkspace = function (tePayload, repaintOnly) {
+        const wsSlot = document.getElementById("criterion-a-workspace-slot");
+        if (!wsSlot) return;
+        const scrollY = window.scrollY || 0;
+        const canReviewWs = !isAdmin && session && session.role === "reviewer";
+        const skipDrawer = !!document.getElementById("ca-tev-review-drawer");
+        const docsForWorkspace = facultyCriterionDocs();
+        wsSlot.innerHTML = FL.evidence.criterionAUnifiedWorkspaceHtml(
+          session, state, isAdmin, tePayload, docsForWorkspace, { skipDrawer: skipDrawer }
+        );
+        if (!skipDrawer) FL.evidence.ensureCriterionADrawerOnBody(canReviewWs);
+        FL.evidence.pruneDuplicateCriterionADrawers();
+        FL.evidence.bindCriterionAWorkspace(session, state, isAdmin, tePayload, docsForWorkspace, function (localRepaint) {
+          if (localRepaint && tePayload) {
+            paintCriterionWorkspace(tePayload, true);
+            return;
+          }
+          const refreshAfterReview = function () {
+            return FL.store.loadFacultyDocuments(session, loadFaculty).catch(function (docErr) {
+              if (typeof console !== "undefined" && console.warn) {
+                console.warn("Document list refresh after review failed:", docErr);
+              }
+            }).then(function () {
+              return refreshTeachingEffectiveness();
+            });
+          };
+          refreshAfterReview().catch(function (refreshErr) {
+            if (typeof console !== "undefined" && console.warn) {
+              console.warn("Teaching effectiveness workspace refresh failed:", refreshErr);
+            }
+            FL.ui.toast(
+              "Your decision was saved, but the list could not be refreshed. Reload if counts look stale.",
+              "warning"
+            );
+          });
+        });
+        if (repaintOnly) window.scrollTo(0, scrollY);
+      };
+      FL.evidence._refreshCriterionATeaching = refreshTeachingEffectiveness;
+      FL.store.loadFacultyDocuments(session, loadFaculty).catch(function (docErr) {
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn("Faculty documents could not be loaded for Criterion A workspace:", docErr);
+        }
+      });
+      refreshTeachingEffectiveness().catch(function (teErr) {
         if (fetchSeq !== FL.evidence._teFetchSeq) return;
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn("Teaching effectiveness payload failed:", teErr);
+        }
+        const wsSlot = document.getElementById("criterion-a-workspace-slot");
+        if (wsSlot) {
+          const msg = (teErr && teErr.message) ? teErr.message : "Could not load teaching evaluations.";
+          wsSlot.innerHTML = FL.ui.empty("Teaching evaluations unavailable", msg);
+        }
         const s = slot();
-        if (s) s.innerHTML = "";
-        const s10 = s10Slot();
-        if (s10) s10.innerHTML = "";
-        paintCriterionWorkspace(null);
+        if (s) {
+          s.innerHTML = `<p class="note alert alert-danger">Teaching Effectiveness summary could not be loaded.</p>`;
+        }
+      });
+      FL.store.fetchEvaluationEligibility(session, loadFaculty).then(paintS10).catch(function (s10Err) {
+        if (fetchSeq !== FL.evidence._teFetchSeq) return;
+        const el = s10Slot();
+        if (el) {
+          const msg = (s10Err && s10Err.message) ? s10Err.message : "Could not load eligibility.";
+          el.innerHTML = `<p class="note">Section 10 eligibility could not be loaded: ${FL.esc(msg)}</p>`;
+        }
       });
       return;
     }

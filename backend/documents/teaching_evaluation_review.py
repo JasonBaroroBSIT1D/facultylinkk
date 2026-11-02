@@ -161,6 +161,18 @@ def apply_teaching_evaluation_review(
         )
     )
     db.session.commit()
+    db.session.refresh(doc)
+    try:
+        from documents.set_sef_parent_review_sync import try_sync_parent_document_review
+
+        try_sync_parent_document_review(doc, reviewer, trigger="teaching_evaluation_review")
+        db.session.refresh(doc)
+    except Exception:
+        from flask import current_app
+
+        current_app.logger.exception(
+            "Parent PDF review sync failed after teaching evaluation review (validation was saved)"
+        )
     profile = doc.faculty_profile
     if profile:
         try:

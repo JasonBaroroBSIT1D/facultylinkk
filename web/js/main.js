@@ -280,6 +280,16 @@ FL.boot = function () {
           chain.push(FL.store.loadLiveDocuments(session).catch(function (error) {
             FL.ui.toast(error.message || "Could not load documents from PostgreSQL.", "danger");
             return null;
+          }).then(function () {
+            if (!FL.store.usesLiveReviewerApi() || session.role !== "reviewer") return null;
+            const facultyIds = {};
+            FL.store.documents.forEach(function (doc) {
+              if (doc.facultyId) facultyIds[doc.facultyId] = true;
+            });
+            const loads = Object.keys(facultyIds).map(function (fid) {
+              return FL.store.loadEstimatedAssessment(fid).catch(function () { return null; });
+            });
+            return loads.length ? Promise.all(loads) : null;
           }));
         }
         const schedulePages = ["admin-schedule", "reviewer-schedule", "reviewer-dashboard"];

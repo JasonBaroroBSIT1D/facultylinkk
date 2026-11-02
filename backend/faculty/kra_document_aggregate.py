@@ -7,7 +7,7 @@ from typing import Any
 from models import Document, FacultyProfile
 
 from documents.scoring.document_evidence_points import effective_document_points
-from kra_configuration.service import get_published_row, kra_settings_from_json
+from kra_configuration.published_limits import published_kra_max_points
 
 _KRA_LABELS = {
     "kra1": "Instruction",
@@ -15,21 +15,6 @@ _KRA_LABELS = {
     "kra3": "Extension",
     "kra4": "Professional Development",
 }
-
-
-def _kra_max_points(kra_key: str) -> float:
-    row = get_published_row()
-    if not row:
-        return 100.0
-    settings = kra_settings_from_json(row.settings_json if isinstance(row.settings_json, dict) else {})
-    kras = settings.get("kras") if isinstance(settings.get("kras"), list) else []
-    for kra in kras:
-        if isinstance(kra, dict) and kra.get("id") == kra_key:
-            try:
-                return float(kra.get("maxPoints") or 100)
-            except (TypeError, ValueError):
-                break
-    return 100.0
 
 
 def aggregate_documents_for_kra(profile: FacultyProfile, kra_key: str) -> dict[str, Any]:
@@ -48,7 +33,7 @@ def aggregate_documents_for_kra(profile: FacultyProfile, kra_key: str) -> dict[s
         if prev is None or pts > prev[1]:
             best_by_indicator[key] = (doc, pts)
 
-    max_pts = _kra_max_points(kra_key)
+    max_pts = published_kra_max_points(kra_key)
     total = 0.0
     breakdown: list[dict] = []
     for _key, (doc, pts) in sorted(best_by_indicator.items(), key=lambda item: -item[1][1]):
@@ -76,4 +61,52 @@ def aggregate_documents_for_kra(profile: FacultyProfile, kra_key: str) -> dict[s
         else ("Not yet assessed" if doc_count == 0 else "Awaiting eligible evidence"),
         "breakdown": breakdown[:20],
         "maxPoints": max_pts,
+    }
+
+
+def aggregate_criterion_documents(
+    profile: FacultyProfile,
+    kra_key: str,
+    criterion_id: str,
+) -> dict[str, Any]:
+    """Best eligible document points for one criterion (excludes other criteria)."""
+    from kra_configuration.published_limits import published_criterion_max_points
+
+    docs = (
+        Document.query.filter_by(
+            faculty_profile_id=profile.id,
+            kra_id=kra_key,
+            criterion_id=criterion_id,
+        )
+        .filter(Document.deleted_at.is_(None))
+        .all()
+    )
+    max_pts = published_criterion_max_points(criterion_id)
+    if max_pts is None:
+        max_pts = 0.0
+
+    best_by_indicator: dict[str, tuple[Document, float]] = {}
+    for doc in docs:
+        pts = effective_document_points(doc)
+        if pts is None:
+            continue
+        key = (doc.indicator_id or doc.public_id).strip()
+        prev = best_by_indicator.get(key)
+        if prev is None or pts > prev[1]:
+            best_by_indicator[key] = (doc, pts)
+
+    total = 0.0
+    for _key, (_doc, pts) in best_by_indicator.items():
+        total += min(pts, max_pts) if max_pts > 0 else pts
+    if max_pts > 0:
+        total = min(total, max_pts)
+    total = round(total, 2)
+    has_evidence = any(effective_document_points(d) is not None for d in docs)
+    assessed = has_evidence and total > 0
+    return {
+        "criterionId": criterion_id,
+        "estimatedPoints": total if assessed else None,
+        "maxPoints": max_pts,
+        "assessed": assessed,
+        "documentCount": len(docs),
     }

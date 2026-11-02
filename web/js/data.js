@@ -135,6 +135,76 @@ FL.store = {
     });
   },
 
+  facultyEvidenceMetricsFromDocs: function (docs) {
+    const rows = docs || [];
+    let pdfPending = 0;
+    rows.forEach(function (doc) {
+      const st = doc.documentWorkflowStatus || doc.status || "";
+      if (st === "pending-review" || st === "reviewer-required" || st === "pending_review"
+        || st === "reviewer_required" || st === "draft") {
+        pdfPending += 1;
+      }
+    });
+    let semTotal = 0;
+    let semValidated = 0;
+    let semPending = 0;
+    let semRevision = 0;
+    let semRejected = 0;
+    let semIncomplete = 0;
+    rows.forEach(function (doc) {
+      const child = (doc.setSefParentContext && doc.setSefParentContext.allChildValidationSummary)
+        || (doc.teachingEvaluationSummary && doc.teachingEvaluationSummary.childValidationSummary);
+      if (!child || !child.total) return;
+      semTotal += child.total || 0;
+      semValidated += child.validated || 0;
+      semPending += child.pending || 0;
+      semIncomplete += child.incomplete || 0;
+      semRevision += child.needsRevision || 0;
+      semRejected += child.rejected || 0;
+    });
+    if (semTotal === 0 && rows.length && FL.validation && FL.validation.isSetSefParentDocument) {
+      rows.forEach(function (doc) {
+        if (!FL.validation.isSetSefParentDocument(doc)) return;
+        const child = FL.validation.childValidationSummary(doc);
+        if (!child || !child.total) return;
+        semTotal += child.total || 0;
+        semValidated += child.validated || 0;
+        semPending += child.pending || 0;
+        semIncomplete += child.incomplete || 0;
+        semRevision += child.needsRevision || 0;
+        semRejected += child.rejected || 0;
+      });
+    }
+    return {
+      sourcePdfTotal: rows.length,
+      sourcePdfPendingWorkflow: pdfPending,
+      documentTotal: rows.length,
+      documentPending: pdfPending,
+      evaluationRecordsTotal: semTotal,
+      evaluationRecordsPending: semPending,
+      evaluationRecordsValidated: semValidated,
+      semesterEvaluationsPending: semPending + semIncomplete + semRevision
+    };
+  },
+
+  loadReviewerFacultyDirectory: function (params) {
+    const store = this;
+    if (!store.usesLiveReviewerApi()) {
+      return Promise.reject(new Error("Sign in required."));
+    }
+    const qs = new URLSearchParams(params || {});
+    return FL.apiClient.adminRequest(
+      "GET",
+      "/api/reviewer/me/documents/faculty-directory?" + qs.toString()
+    ).then(function (data) {
+      store.reviewerFacultyDirectory = data;
+      (data.faculty || []).forEach(function (row) {
+        if (row && row.id) store.upsertServerFaculty(row);
+      });
+      return data;
+    });
+  },
+
   loadReviewerAssignedFaculty: function () {
     const store = this;
     if (!store.usesLiveReviewerApi()) {
@@ -455,7 +525,12 @@ FL.store = {
             }
             return data;
           }
-        );
+        ).then(function (result) {
+          if (FL.evidence && FL.evidence.refreshCountsAfterReview) {
+            return FL.evidence.refreshCountsAfterReview(session, facultyId).then(function () { return result; });
+          }
+          return result;
+        });
       }
       return data;
     });
@@ -519,7 +594,7 @@ FL.store = {
     if (session.role === "administrator") {
       return FL.apiClient.adminRequest(
         "GET",
-        "/api/admin/documents/faculty/" + encodeURIComponent(facultyId) + "/teaching-effectiveness" + bust
+        "/api/admin/documents/faculty/" + encodeURIComponent(facultyId) + "/teaching-effectiveness?_=" + Date.now()
       );
     }
     return Promise.resolve(null);
@@ -811,8 +886,14 @@ FL.store = {
       "/api/reviewer/faculty/" + encodeURIComponent(facultyId) + "/estimated-assessment"
     ).then(function (data) {
       FL.store.estimatedAssessmentByFaculty = FL.store.estimatedAssessmentByFaculty || {};
-      FL.store.estimatedAssessmentByFaculty[facultyId] = data.estimatedAssessment || null;
-      return data.estimatedAssessment || null;
+      FL.store.evidenceComplianceByFaculty = FL.store.evidenceComplianceByFaculty || {};
+      const assessment = data.estimatedAssessment || null;
+      FL.store.estimatedAssessmentByFaculty[facultyId] = assessment;
+      const compliance = (assessment && assessment.evidenceCompliance)
+        || data.evidenceCompliance
+        || null;
+      if (compliance) FL.store.evidenceComplianceByFaculty[facultyId] = compliance;
+      return assessment;
     });
   },
 

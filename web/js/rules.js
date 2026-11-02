@@ -2513,6 +2513,58 @@ FL.rules.findKra = function (id) {
   return FL.rules.kras.find(function (k) { return k.id === id; }) || null;
 };
 
+FL.rules._criterionLetter = function (criterionId) {
+  const m = /^kra\d+-([a-d])$/i.exec(String(criterionId || "").trim());
+  return m ? m[1].toUpperCase() : null;
+};
+
+FL.rules._looksLikeCriterionId = function (value) {
+  return /^kra\d+-[a-d]$/i.test(String(value || "").trim());
+};
+
+/** User-facing: ``Criterion A — Official name`` (never ``kra1-a``). */
+FL.rules.formatCriterionLabel = function (criterionId, descriptiveName) {
+  const letter = FL.rules._criterionLetter(criterionId);
+  const prefix = letter ? "Criterion " + letter : "Criterion";
+  let desc = (descriptiveName || "").trim();
+  if (FL.rules._looksLikeCriterionId(desc)) desc = "";
+  if (!desc) return prefix;
+  if (/^Criterion\s+[A-D]\s*—/i.test(desc)) return desc;
+  if (letter && new RegExp("^Criterion\\s+" + letter + "\\b", "i").test(desc)) {
+    if (desc.indexOf("—") !== -1) return desc;
+    desc = desc.replace(new RegExp("^Criterion\\s+" + letter + "\\s*[-–:]?\\s*", "i"), "").trim();
+    return desc ? prefix + " — " + desc : prefix;
+  }
+  return prefix + " — " + desc;
+};
+
+FL.rules.criterionUserLabel = function (criterionId, optionalName) {
+  const id = String(criterionId || "").trim();
+  if (!id) return "—";
+  let desc = optionalName;
+  if (desc && FL.rules._looksLikeCriterionId(desc)) desc = "";
+  if (!desc) {
+    FL.rules.kras.forEach(function (kra) {
+      if (desc) return;
+      (kra.criteria || []).forEach(function (c) {
+        if (c.id === id && c.name) desc = c.name;
+      });
+    });
+  }
+  return FL.rules.formatCriterionLabel(id, desc);
+};
+
+FL.rules.findCriterionById = function (criterionId) {
+  let found = null;
+  FL.rules.kras.forEach(function (kra) {
+    if (found) return;
+    (kra.criteria || []).forEach(function (c) {
+      if (c.id === criterionId) found = { kra: kra, criterion: c };
+    });
+  });
+  return found;
+};
+
 FL.rules.captureDefaults = function () {
   if (this._defaults) return;
   this._defaults = JSON.parse(JSON.stringify(this.kras));

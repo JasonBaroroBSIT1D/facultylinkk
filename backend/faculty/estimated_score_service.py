@@ -9,22 +9,11 @@ from extensions import db
 from models import AuditLog, FacultyProfile, KraScore, User
 
 from faculty.rank_simulation_engine import MOBILE_KRA_KEYS, SIMULATION_DISCLAIMER, compute_rank_simulation
-from kra_configuration.service import get_published_row, kra_settings_from_json
+from kra_configuration.published_limits import published_kra_max_points
 
 
 def _kra_max_points(kra_key: str) -> float:
-    row = get_published_row()
-    if not row:
-        return 100.0
-    settings = kra_settings_from_json(row.settings_json if isinstance(row.settings_json, dict) else {})
-    kras = settings.get("kras") if isinstance(settings.get("kras"), list) else []
-    for kra in kras:
-        if isinstance(kra, dict) and kra.get("id") == kra_key:
-            try:
-                return float(kra.get("maxPoints") or 100)
-            except (TypeError, ValueError):
-                break
-    return 100.0
+    return published_kra_max_points(kra_key)
 
 
 def _previous_totals(profile: FacultyProfile) -> dict[str, float | None]:
@@ -131,12 +120,18 @@ def recalculate_faculty_estimated_scores(
 
 
 def estimated_assessment_payload(profile: FacultyProfile) -> dict[str, Any]:
+    from documents.teaching_effectiveness import teaching_effectiveness_payload
+    from faculty.evidence_compliance import evidence_compliance_snapshot
+
     sim = compute_rank_simulation(profile)
+    te = teaching_effectiveness_payload(profile)
+    compliance = evidence_compliance_snapshot(profile, te)
     return {
         "estimatedAssessment": {
             "kraScores": sim.get("kraScores"),
             "estimatedTotalKraPoints": sim.get("estimatedTotalKraPoints"),
             "weightedEstimatedScore": sim.get("weightedEstimatedScore"),
+            "evidenceCompliance": compliance,
             "simulation": {
                 "currentRank": sim.get("currentRank"),
                 "targetRank": sim.get("targetRank"),
@@ -146,5 +141,6 @@ def estimated_assessment_payload(profile: FacultyProfile) -> dict[str, Any]:
                 "areasToImprove": sim.get("areasToImprove"),
                 "disclaimer": SIMULATION_DISCLAIMER,
             },
-        }
+        },
+        "evidenceCompliance": compliance,
     }

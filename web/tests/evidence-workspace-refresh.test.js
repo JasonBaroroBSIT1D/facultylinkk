@@ -28,5 +28,9 @@ assert(
   src.indexOf("if (state.criterionId === \"kra1-a\"") < src.indexOf("paintCriterionWorkspace"),
   "paintCriterionWorkspace must live inside kra1-a live branch"
 );
+assert(
+  src.indexOf("paintCriterionWorkspace(null)") === -1,
+  "failed parallel loads must not wipe teaching evaluations with null payload"
+);
 
 console.log("evidence-workspace-refresh.test.js: all passed");

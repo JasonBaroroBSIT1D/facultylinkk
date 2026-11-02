@@ -9,7 +9,15 @@ from models import Document, FacultyProfile
 
 from documents.scoring.config_loader import criterion_a_max_points
 from documents.teaching_effectiveness import teaching_effectiveness_payload
-from faculty.kra_document_aggregate import aggregate_documents_for_kra
+from faculty.kra_document_aggregate import aggregate_criterion_documents, aggregate_documents_for_kra
+from kra_configuration.published_limits import (
+    criterion_display_name,
+    criterion_is_bonus,
+    criteria_entries_for_kra,
+    published_criterion_max_points,
+    published_kra_max_points,
+    published_settings_blob,
+)
 from kra_configuration.service import get_published_row, kra_settings_from_json
 
 SIMULATION_DISCLAIMER = (
@@ -179,22 +187,99 @@ def _kra_from_documents(profile: FacultyProfile, key: str, doc_count: int) -> di
     block = aggregate_documents_for_kra(profile, key)
     if doc_count and not block.get("documentCount"):
         block["documentCount"] = doc_count
-    block["targetPoints"] = int(round(block.get("maxPoints") or 100))
+    settings = published_settings_blob()
+    block["targetPoints"] = int(round(block.get("maxPoints") or published_kra_max_points(key, settings)))
+    criteria_scores: list[dict[str, Any]] = []
+    for entry in criteria_entries_for_kra(settings, key):
+        cid = entry["criterionId"]
+        crit = aggregate_criterion_documents(profile, key, cid)
+        criteria_scores.append(
+            {
+                "criterionId": cid,
+                "name": criterion_display_name(cid, entry),
+                "maxPoints": float(entry.get("maxPoints") or crit.get("maxPoints") or 0),
+                "estimatedPoints": crit.get("estimatedPoints"),
+                "bonus": criterion_is_bonus(entry),
+            }
+        )
+    if criteria_scores:
+        block["criteriaScores"] = criteria_scores
     return block
 
 
-def _kra1_from_teaching(te: dict[str, Any], doc_count: int) -> dict[str, Any]:
-    crit_max = te.get("criterionMaxPoints")
-    try:
-        max_pts = float(crit_max) if crit_max is not None else float(criterion_a_max_points() or 100)
-    except (TypeError, ValueError):
-        max_pts = 100.0
+def _build_kra1_criteria_scores(
+    profile: FacultyProfile,
+    te: dict[str, Any],
+    settings: dict[str, Any],
+) -> list[dict[str, Any]]:
+    crit_a_max = published_criterion_max_points("kra1-a", settings)
+    if crit_a_max is None:
+        try:
+            crit_a_max = float(te.get("criterionMaxPoints") or criterion_a_max_points() or 60)
+        except (TypeError, ValueError):
+            crit_a_max = 60.0
+    est_a = unified_teaching_estimated_points(te)
+    b_block = aggregate_criterion_documents(profile, "kra1", "kra1-b")
+    c_block = aggregate_criterion_documents(profile, "kra1", "kra1-c")
+
+    by_id = {e["criterionId"]: e for e in criteria_entries_for_kra(settings, "kra1")}
+    if not by_id:
+        by_id = {
+            "kra1-a": {"criterionId": "kra1-a", "maxPoints": crit_a_max},
+            "kra1-b": {"criterionId": "kra1-b", "maxPoints": b_block.get("maxPoints") or 30},
+            "kra1-c": {"criterionId": "kra1-c", "maxPoints": c_block.get("maxPoints") or 10},
+        }
+
+    scores: list[dict[str, Any]] = []
+    for cid in sorted(by_id.keys()):
+        entry = by_id[cid]
+        if cid == "kra1-a":
+            cmax = float(crit_a_max)
+            est = est_a
+        elif cid == "kra1-b":
+            cmax = float(entry.get("maxPoints") or b_block.get("maxPoints") or 0)
+            est = b_block.get("estimatedPoints")
+        elif cid == "kra1-c":
+            cmax = float(entry.get("maxPoints") or c_block.get("maxPoints") or 0)
+            est = c_block.get("estimatedPoints")
+        else:
+            cmax = float(entry.get("maxPoints") or 0)
+            extra = aggregate_criterion_documents(profile, "kra1", cid)
+            est = extra.get("estimatedPoints")
+        scores.append(
+            {
+                "criterionId": cid,
+                "name": criterion_display_name(cid, entry),
+                "maxPoints": cmax,
+                "estimatedPoints": _round2(float(est)) if est is not None else None,
+                "bonus": criterion_is_bonus(entry),
+            }
+        )
+    return scores
+
+
+def _kra1_from_teaching(profile: FacultyProfile, te: dict[str, Any], doc_count: int) -> dict[str, Any]:
+    settings = published_settings_blob()
+    max_pts = published_kra_max_points("kra1", settings)
+    criteria_scores = _build_kra1_criteria_scores(profile, te, settings)
     set_b = te.get("set") if isinstance(te.get("set"), dict) else {}
     sef_b = te.get("sef") if isinstance(te.get("sef"), dict) else {}
     set_uploads = ((set_b.get("coverageSummary") or {}).get("totalUploads") or 0)
     sef_uploads = ((sef_b.get("coverageSummary") or {}).get("totalUploads") or 0)
     has_any = set_uploads > 0 or sef_uploads > 0
     estimated = unified_teaching_estimated_points(te)
+    extra_points = 0.0
+    extra_assessed = False
+    for row in criteria_scores:
+        if row["criterionId"] == "kra1-a":
+            continue
+        if row.get("estimatedPoints") is not None:
+            extra_assessed = True
+            extra_points += float(row["estimatedPoints"])
+    if estimated is not None or extra_assessed:
+        estimated = _round2((float(estimated or 0) + extra_points))
+    elif not has_any and not extra_assessed:
+        estimated = None
     breakdown = []
     if set_uploads:
         set_est = (
@@ -222,7 +307,7 @@ def _kra1_from_teaching(te: dict[str, Any], doc_count: int) -> dict[str, Any]:
                 "note": _set_sef_note(sef_b, validated_key="validatedPoints"),
             }
         )
-    if not has_any:
+    if not has_any and not extra_assessed and estimated is None:
         return _attach_unified_aliases(
             {
                 "kraId": "kra1",
@@ -236,6 +321,7 @@ def _kra1_from_teaching(te: dict[str, Any], doc_count: int) -> dict[str, Any]:
                 "statusLabel": "Not yet assessed",
                 "breakdown": [],
                 "teachingEffectiveness": te,
+                "criteriaScores": criteria_scores,
             }
         )
     crit_disp = te.get("criterionADisplay") if isinstance(te.get("criterionADisplay"), dict) else {}
@@ -261,6 +347,7 @@ def _kra1_from_teaching(te: dict[str, Any], doc_count: int) -> dict[str, Any]:
             "breakdown": breakdown,
             "teachingEffectiveness": te,
             "criterionADisplay": crit_disp or None,
+            "criteriaScores": criteria_scores,
         }
     )
 
@@ -382,7 +469,7 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
     te = teaching_effectiveness_payload(profile)
     doc_counts = _doc_counts(profile)
     kra_points: dict[str, dict[str, Any]] = {}
-    kra_points["kra1"] = _kra1_from_teaching(te, doc_counts.get("kra1", 0))
+    kra_points["kra1"] = _kra1_from_teaching(profile, te, doc_counts.get("kra1", 0))
     for key in ("kra2", "kra3", "kra4"):
         block = _kra_from_documents(profile, key, doc_counts.get(key, 0))
         kra_points[key] = _attach_unified_aliases(block)

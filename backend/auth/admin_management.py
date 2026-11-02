@@ -48,6 +48,7 @@ def faculty_detail(public_id: str) -> dict:
     assessment = estimated_assessment_payload(profile)
     detail["estimatedAssessment"] = assessment["estimatedAssessment"]
     detail["kraScores"] = assessment["estimatedAssessment"]["kraScores"]
+    detail["evidenceCompliance"] = assessment.get("evidenceCompliance")
 
     detail["documents"] = [
         {

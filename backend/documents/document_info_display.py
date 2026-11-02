@@ -14,14 +14,7 @@ from documents.ocr.queue import normalize_ocr_status
 from documents.review_display import review_display_status
 from documents.status_map import document_status_to_web
 from faculty.rank_simulation_engine import KRA_LABELS
-
-_CRITERION_LABELS: dict[str, str] = {
-    "kra1-a": "Teaching Effectiveness",
-    "kra2-a": "Research",
-    "kra2-b": "Research",
-    "kra3-a": "Extension",
-    "kra4-a": "Professional Development",
-}
+from kra_configuration.published_limits import published_criterion_user_label
 
 _OCR_STATUS_LABELS = {
     "completed": "OCR completed",
@@ -38,11 +31,11 @@ def _kra_label(kra_id: str | None) -> str:
 
 def _criterion_label(criterion_id: str | None, indicator_id: str | None) -> str:
     cid = (criterion_id or "").strip()
-    if cid in _CRITERION_LABELS:
-        return _CRITERION_LABELS[cid]
+    if cid:
+        return published_criterion_user_label(cid)
     if (indicator_id or "").startswith("kra1-a"):
-        return "Teaching Effectiveness"
-    return cid.replace("-", " ").title() if cid else "—"
+        return published_criterion_user_label("kra1-a")
+    return "—"
 
 
 def _document_type_label(info: dict) -> str:

@@ -17,6 +17,20 @@ FL.documents = {
     });
   },
 
+  displayReviewStatus: function (doc) {
+    const source = doc.approvalDecisionSource
+      || (doc.extractedInfo && doc.extractedInfo["Approval decision source"]);
+    if (doc.status === "approved" && source === "reviewer_semester_validation_completion") {
+      return FL.ui.statusBadge("review-complete");
+    }
+    const ctx = doc.setSefParentContext || {};
+    const blockers = ctx.parentDocumentReviewBlockers || [];
+    if (blockers.length && (doc.status === "pending-review" || doc.status === "reviewer-required")) {
+      return FL.ui.badge("pending", "Pending review") + `<div class="sub">${FL.esc(blockers[0])}</div>`;
+    }
+    return FL.ui.statusBadge(doc.reviewDisplayStatus || doc.status || "pending-review");
+  },
+
   needsAction: function (doc) {
     if (doc.status === "draft") return doc.hasFile !== false;
     if (doc.status === "invalid" || doc.status === "revision" || doc.status === "reviewer-required") return true;
@@ -242,6 +256,19 @@ FL.documents = {
 
   effectiveSimulationScore: function (doc) {
     if (typeof doc.effectiveSimulationScore === "number") return doc.effectiveSimulationScore;
+    if (FL.documents.isCriterionATeachingDocument(doc)) {
+      const facultyId = doc.facultyId;
+      const cache = FL.store.estimatedAssessmentByFaculty && facultyId
+        ? FL.store.estimatedAssessmentByFaculty[facultyId]
+        : null;
+      if (cache && cache.kraScores) {
+        const kra1 = cache.kraScores.find(function (k) { return k.kraId === "kra1"; });
+        if (kra1 && kra1.estimatedPoints != null) return kra1.estimatedPoints;
+      }
+      if (typeof doc.estimatedPoints === "number" && doc.estimatedPoints > 0) {
+        return doc.estimatedPoints;
+      }
+    }
     const info = doc.extractedInfo || {};
     if (info["Scoring status"] === "Score unavailable") return null;
     if (doc.status === "rejected" || doc.status === "invalid" || doc.status === "revision") return null;
@@ -249,11 +276,59 @@ FL.documents = {
       return doc.review.finalScore;
     }
     if (typeof doc.reviewerScore === "number") return doc.reviewerScore;
+    if (typeof doc.estimatedPoints === "number" && doc.estimatedPoints > 0) return doc.estimatedPoints;
     if (info["Simulation eligible"] === "yes") {
       const system = Number(info["System-calculated score"] || info["Provisional score"]);
       return Number.isFinite(system) ? system : null;
     }
     return null;
+  },
+
+  listValidationCell: function (doc) {
+    const validation = FL.validation.evaluate(doc);
+    const child = validation.childValidation
+      || (doc.setSefParentContext && doc.setSefParentContext.allChildValidationSummary)
+      || (doc.teachingEvaluationSummary && doc.teachingEvaluationSummary.childValidationSummary);
+    if (validation.setSefParent && child && child.total > 0) {
+      const line = (child.validated || 0) + "/" + child.total + " semester evaluations validated";
+      const tone = validation.overall === "valid" ? "valid" : validation.overall === "invalid" ? "invalid" : "pending";
+      const wfNote = validation.pdfWorkflowPending
+        ? " · PDF document review pending"
+        : "";
+      return `${FL.ui.statusBadge(tone)}
+        <div class="sub">${FL.esc(line)}${FL.esc(wfNote)}</div>`;
+    }
+    return FL.ui.statusBadge(
+      validation.overall === "valid" ? "valid" : validation.overall === "invalid" ? "invalid" : "reviewer-required"
+    );
+  },
+
+  listScoreCell: function (doc) {
+    if (doc.status === "ignored-duplicate") return "—";
+    const effective = FL.documents.effectiveSimulationScore(doc);
+    const period = FL.documents.periodSimulationDisplay(doc);
+    if (FL.documents.isCriterionATeachingDocument(doc)) {
+      const child = (doc.setSefParentContext && doc.setSefParentContext.allChildValidationSummary)
+        || (doc.teachingEvaluationSummary && doc.teachingEvaluationSummary.childValidationSummary);
+      if (effective != null) {
+        return `<div>Estimated Score ${FL.esc(String(effective))}</div>
+          <div class="sub">Criterion A (faculty total)</div>`;
+      }
+      if (child && child.total) {
+        return `<span class="sub">${FL.esc(String(child.validated || 0))}/${FL.esc(String(child.total))} semesters validated · see faculty Estimated Score</span>`;
+      }
+    }
+    if (period && period.score != null) {
+      return `<div>SET period ${FL.esc(String(period.score))}</div><div class="sub">${FL.esc(period.filled || "6/6")} semesters · rank simulation</div>`;
+    }
+    if (period && period.filled) {
+      return `<div class="sub">Period ${FL.esc(period.filled)}</div><div class="sub">Complete all semesters for SET simulation</div>`;
+    }
+    if (effective == null) {
+      return `<span class="sub">Score unavailable</span>`;
+    }
+    const source = FL.documents.simulationScoreSource(doc);
+    return `<div>Estimated Score ${FL.esc(String(effective))}</div><div class="sub">${FL.esc(source)}</div>`;
   },
 
   simulationScoreSource: function (doc) {
@@ -372,7 +447,9 @@ FL.documents = {
     const block = {
       facultyName: FL.documents.facultyNameOnDocument(doc),
       kraLabel: doc.kraId || "—",
-      criterionLabel: doc.criterionId || "—",
+      criterionLabel: (doc.documentInformation && doc.documentInformation.criterionLabel)
+        || doc.criterionLabel
+        || FL.rules.criterionUserLabel(doc.criterionId),
       documentType: "—",
       ocrStatus: FL.documents.ocrStatusLabel(doc),
       dateUploaded: doc.submittedAt || doc.uploadedAt
@@ -534,28 +611,17 @@ FL.documents = {
             ${rows.map(function (doc) {
               const faculty = FL.store.facultyById(doc.facultyId);
               const reviewer = FL.store.userById(doc.reviewerId);
-              const scored = FL.scoring.scoreDocument(doc);
               const ocrSt = FL.documents.ocrStatusLabel(doc);
               const ocr = ocrSt === "completed" ? "Completed" : ocrSt === "processing" ? "Processing" : ocrSt === "failed" ? "Failed" : "Pending";
-              const effective = FL.documents.effectiveSimulationScore(doc);
-              const period = FL.documents.periodSimulationDisplay(doc);
-              const source = FL.documents.simulationScoreSource(doc);
-              const scoreCell = doc.status === "ignored-duplicate"
-                ? "—"
-                : period && period.score != null
-                  ? `<div>SET period ${FL.esc(String(period.score))}</div><div class="sub">${FL.esc(period.filled || "6/6")} semesters · rank simulation</div>`
-                  : period && period.filled
-                    ? `<div class="sub">Period ${FL.esc(period.filled)}</div><div class="sub">Complete all semesters for SET simulation</div>`
-                    : effective == null
-                      ? `<span class="sub">Score unavailable</span>`
-                      : `<div>Simulation ${FL.esc(String(effective))}</div><div class="sub">${FL.esc(source)}</div>`;
+              const scoreCell = FL.documents.listScoreCell(doc);
+              const validationCell = FL.documents.listValidationCell(doc);
               return `<tr>
                 <td>${FL.esc(doc.id)}</td>
                 <td>${FL.esc(faculty ? faculty.name : "—")}</td>
                 <td>${FL.esc(doc.name)}</td>
                 <td>${FL.esc(FL.documents.kraLabel(doc))}</td>
                 <td>${FL.ui.statusBadge(ocr === "Completed" ? "completed" : ocr === "Processing" ? "processing" : ocr === "Failed" ? "failed" : "pending")}</td>
-                <td>${FL.ui.statusBadge(scored.validation.overall === "valid" ? "valid" : scored.validation.overall === "invalid" ? "invalid" : "reviewer-required")}</td>
+                <td>${validationCell}</td>
                 <td>${scoreCell}</td>
                 <td>${FL.esc(reviewer ? reviewer.name : "—")}</td>
                 <td>${FL.esc(FL.formatWhen(doc.dateSubmitted))}</td>
@@ -1305,6 +1371,49 @@ FL.documents = {
     options = options || {};
     if (doc.ocr && (doc.ocr.status === "processing" || doc.ocr.status === "pending")) {
       return `<div class="card-head"><h2>Document validation</h2></div>${FL.ui.loading("Validation-result loading", "Validation starts after OCR extraction.")}`;
+    }
+    if (validation.setSefParent) {
+      const child = validation.childValidation || { total: 0, validated: 0 };
+      const overallBadge = validation.overall === "valid"
+        ? FL.ui.badge("valid", validation.semesterEvaluationsComplete
+          ? "Semester evaluations complete"
+          : "Valid")
+        : validation.overall === "invalid"
+          ? FL.ui.badge("invalid", "Invalid")
+          : FL.ui.badge("pending", "Semester validation in progress");
+      const reqItem = function (item) {
+        const tone = item.kind === "invalid" ? "invalid" : "pending";
+        return `<li>${FL.ui.statusBadge(tone)} ${FL.esc(item.label)} — ${FL.esc(item.message)}</li>`;
+      };
+      const klass = validation.classification;
+      return `
+      <div class="card-head"><h2>Teaching effectiveness validation</h2>${overallBadge}</div>
+      ${validation.reasons.length ? `<div class="alert ${validation.overall === "invalid" ? "alert-danger" : "alert-warning"}">${validation.reasons.map(FL.esc).join(" ")}</div>` : ""}
+      <h3 class="block-label">Linked semester evaluations</h3>
+      <ul class="check-list">
+        <li>${FL.ui.statusBadge(child.validated === child.total && child.total > 0 ? "valid" : "pending")}
+          ${FL.esc(String(child.validated || 0))} of ${FL.esc(String(child.total || 0))} semester records validated</li>
+        ${child.pending ? `<li>${FL.ui.statusBadge("pending")} ${FL.esc(String(child.pending))} pending review</li>` : ""}
+        ${child.incomplete ? `<li>${FL.ui.statusBadge("pending")} ${FL.esc(String(child.incomplete))} incomplete extraction</li>` : ""}
+        ${child.needsRevision ? `<li>${FL.ui.statusBadge("revision")} ${FL.esc(String(child.needsRevision))} need revision</li>` : ""}
+        ${child.rejected ? `<li>${FL.ui.statusBadge("invalid")} ${FL.esc(String(child.rejected))} rejected</li>` : ""}
+      </ul>
+      <p class="note">Publication-style title/author fields do not apply to SET/SEF summary PDFs. Each semester row is validated independently in the Teaching Evaluations workspace.</p>
+      ${validation.requirements && validation.requirements.length ? `<h3 class="block-label">Blocking checks</h3><ul class="check-list">${validation.requirements.map(reqItem).join("")}</ul>` : ""}
+      <h3 class="block-label">KRA classification</h3>
+      <dl class="facts compact">
+        <div><dt>KRA</dt><dd>Instruction (KRA I)</dd></div>
+        <div><dt>Criterion</dt><dd>Teaching Effectiveness (Criterion A)</dd></div>
+        <div><dt>Indicator</dt><dd>${klass.detected && klass.detected.label ? FL.esc(klass.detected.label) : (doc.indicatorId && FL.rules.findIndicator(doc.indicatorId) ? FL.esc(FL.rules.findIndicator(doc.indicatorId).indicator.name) : "Combined SET/SEF evidence")}</dd></div>
+        <div><dt>Classification</dt><dd>${FL.ui.statusBadge("valid")} Recognized SET/SEF teaching effectiveness evidence</dd></div>
+      </dl>
+      <h3 class="block-label">Parent PDF workflow</h3>
+      <p>${validation.pdfWorkflowPending
+        ? FL.ui.badge("pending", "Documents Pending Review") + " Optional document-level review of the uploaded PDF (separate from semester validation)."
+        : FL.ui.badge("valid", "Document workflow complete")}</p>
+      <h3 class="block-label">Documentary evidence</h3>
+      <p>${FL.ui.statusBadge(validation.evidenceStatus === "complete" ? "valid" : "pending")} ${validation.evidenceStatus === "complete" ? "Required semester evaluations validated." : "Complete semester validation to satisfy Criterion A evidence."}</p>
+      ${options.includeCorrection ? FL.documents.extractionCorrectionHtml(doc, canDecide) : ""}`;
     }
     const field = function (ok, label, detail) {
       return `<li>${FL.ui.statusBadge(ok ? "valid" : "invalid")} ${FL.esc(label)}${detail ? " — " + FL.esc(detail) : ""}</li>`;

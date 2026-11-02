@@ -6,6 +6,188 @@
 window.FL = window.FL || {};
 
 FL.validation = {
+  childValidationSummary: function (document) {
+    const ctx = document.setSefParentContext || {};
+    return ctx.allChildValidationSummary
+      || (document.teachingEvaluationSummary
+        && document.teachingEvaluationSummary.childValidationSummary)
+      || null;
+  },
+
+  isSetSefParentDocument: function (document) {
+    if (!document) return false;
+    if (document.criterionId === "kra1-a") return true;
+    if (document.indicatorId === "kra1-a-teaching-evidence") return true;
+    if (document.indicatorId === "kra1-a-student" || document.indicatorId === "kra1-a-supervisor") {
+      const child = FL.validation.childValidationSummary(document);
+      if (child && child.total > 0) return true;
+    }
+    const summary = document.teachingEvaluationSummary;
+    if (summary && (summary.count > 0 || summary.childValidationSummary)) return true;
+    return false;
+  },
+
+  setSefOwnershipBlockers: function (document) {
+    const items = [];
+    const info = document.documentInformation || {};
+    const verify = info.nameVerificationLabel || info.nameVerificationStatus || "";
+    if (verify === "Name Mismatch") {
+      items.push({
+        kind: "invalid",
+        label: "Document ownership",
+        message: "Faculty name on the document does not match the account owner."
+      });
+    } else if (verify === "Name Not Detected" || verify === "Needs Manual Review") {
+      items.push({
+        kind: "ocr_gap",
+        label: "Document ownership",
+        message: "Faculty name ownership on this PDF needs manual review before semester records can be credited."
+      });
+    }
+    const extracted = document.extractedInfo || {};
+    if ((extracted["Document classification status"] || "").trim() === "needs_classification") {
+      items.push({
+        kind: "ocr_gap",
+        label: "SET/SEF classification",
+        message: "Document composition (SET/SEF) needs classification before scoring."
+      });
+    }
+    return items;
+  },
+
+  evaluateSetSefParent: function (document) {
+    const child = FL.validation.childValidationSummary(document) || {
+      total: 0,
+      validated: 0,
+      pending: 0,
+      needsRevision: 0,
+      rejected: 0,
+      incomplete: 0
+    };
+    const duplicate = FL.validation.duplicate(document);
+    const requirements = FL.validation.setSefOwnershipBlockers(document);
+    const reasons = [];
+    let overall = "valid";
+    const info = document.extractedInfo || {};
+
+    if (duplicate.status === "duplicate") {
+      overall = "invalid";
+      reasons.push("Duplicate file hash of " + duplicate.matchId + ". Duplicate documents are ignored.");
+    }
+
+    requirements.forEach(function (item) {
+      reasons.push(item.message);
+      if (item.kind === "invalid") overall = "invalid";
+      else if (overall === "valid" && item.kind !== "info") overall = "reviewer-required";
+    });
+
+    if (document.ocr && (document.ocr.status === "processing" || document.ocr.status === "pending")) {
+      overall = "reviewer-required";
+      reasons.push("OCR extraction is not finished for this PDF.");
+    } else if (child.total <= 0) {
+      overall = "reviewer-required";
+      reasons.push("No SET/SEF semester records are linked to this PDF yet.");
+    } else {
+      const pending = (child.pending || 0) + (child.incomplete || 0);
+      if (child.rejected > 0) {
+        requirements.push({
+          kind: "invalid",
+          label: "Semester evaluations",
+          message: child.rejected + " semester evaluation record(s) were rejected."
+        });
+        overall = "invalid";
+        reasons.push(child.rejected + " semester evaluation record(s) rejected.");
+      }
+      if (child.needsRevision > 0) {
+        requirements.push({
+          kind: "ocr_gap",
+          label: "Semester evaluations",
+          message: child.needsRevision + " semester evaluation record(s) need revision."
+        });
+        if (overall !== "invalid") overall = "reviewer-required";
+        reasons.push(child.needsRevision + " semester evaluation record(s) need revision.");
+      }
+      if (pending > 0) {
+        requirements.push({
+          kind: "ocr_gap",
+          label: "Semester evaluations",
+          message: pending + " semester evaluation record(s) still pending validation or incomplete extraction."
+        });
+        if (overall !== "invalid") overall = "reviewer-required";
+        reasons.push(pending + " semester evaluation record(s) pending validation.");
+      }
+      if (overall === "valid" && child.validated === child.total) {
+        reasons.push(
+          "All " + child.total + " linked semester evaluation records are validated."
+        );
+        const wf = document.documentWorkflowStatus || document.status || "";
+        const blockers = (document.setSefParentContext && document.setSefParentContext.parentDocumentReviewBlockers) || [];
+        if (blockers.length) {
+          blockers.forEach(function (msg) { reasons.push(msg); });
+          if (overall === "valid") overall = "reviewer-required";
+        } else if (wf === "pending-review" || wf === "pending_review" || wf === "reviewer-required") {
+          reasons.push(
+            "Parent PDF document-level review is still open. This does not invalidate completed semester evaluations."
+          );
+        }
+      }
+    }
+
+    const backendValidation = (info["Validation status"] || "").trim().toLowerCase();
+    if (backendValidation === "invalid") overall = "invalid";
+    if (backendValidation === "needs verification" && overall === "valid" && child.validated < child.total) {
+      overall = "reviewer-required";
+    }
+
+    let classification;
+    const found = document.indicatorId ? FL.rules.findIndicator(document.indicatorId) : null;
+    if (found) {
+      classification = {
+        status: "classified",
+        matches: [found],
+        detected: found.indicator,
+        rule: found
+      };
+    } else if (document.criterionId === "kra1-a") {
+      classification = {
+        status: "classified",
+        matches: [],
+        detected: { label: "Teaching Effectiveness (Criterion A)" },
+        rule: null
+      };
+    } else {
+      classification = FL.validation.classify(document);
+    }
+
+    const evidenceStatus = child.total > 0 && child.validated === child.total ? "complete" : "missing";
+    const fields = {
+      title: true,
+      author: true,
+      date: true,
+      titleValue: document.name || "SET/SEF evaluation summary",
+      authorValue: FL.validation.effectiveAuthor(document) || "Verified per semester record",
+      dateValue: "See linked semester records",
+      ratingValue: ""
+    };
+
+    return {
+      fields: fields,
+      requirements: requirements,
+      classification: classification,
+      evidenceStatus: evidenceStatus,
+      evidenceMissing: evidenceStatus === "complete" ? [] : ["Complete validation on each linked SET/SEF semester record."],
+      duplicateStatus: duplicate.status === "duplicate" ? "duplicate" : "clear",
+      duplicateOf: duplicate.matchId,
+      overall: overall,
+      reasons: reasons,
+      setSefParent: true,
+      childValidation: child,
+      semesterEvaluationsComplete: child.total > 0 && child.validated === child.total,
+      pdfWorkflowPending: (document.documentWorkflowStatus || document.status || "").indexOf("pending") >= 0
+        || document.status === "reviewer-required"
+    };
+  },
+
   textOf: function (document) {
     const ocr = document.ocr || {};
     const info = document.extractedInfo || {};
@@ -197,6 +379,9 @@ FL.validation = {
   },
 
   evaluate: function (document) {
+    if (FL.validation.isSetSefParentDocument(document)) {
+      return FL.validation.evaluateSetSefParent(document);
+    }
     const classification = this.classify(document);
     const fields = this.fields(document);
     const requirements = this.indicatorRequirements(document);
@@ -276,6 +461,24 @@ FL.validation = {
     const fields = result.fields;
     if (result.duplicateStatus === "duplicate") {
       blockers.push({ kind: "invalid", message: "Duplicate file hash. This document cannot be approved." });
+    }
+    if (result.setSefParent) {
+      result.requirements.forEach(function (item) {
+        if (item.kind === "missing_evidence" || item.kind === "invalid" || item.kind === "ocr_gap") {
+          blockers.push({ kind: item.kind, message: item.message });
+        }
+      });
+      if (!result.semesterEvaluationsComplete) {
+        blockers.push({
+          kind: "ocr_gap",
+          message: "Validate each linked SET/SEF semester record before approving the parent PDF."
+        });
+      }
+      return {
+        ok: blockers.length === 0,
+        blockers: blockers,
+        validation: result
+      };
     }
     if (!document.indicatorId) {
       blockers.push({ kind: "ineligible", message: "Match an Annex I indicator before approval." });

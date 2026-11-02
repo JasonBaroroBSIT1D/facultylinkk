@@ -92,6 +92,19 @@ def legacy_document_period_row(doc: Document, profile: FacultyProfile | None = N
     return row
 
 
+def _teaching_evaluations_for_document(doc: Document) -> list:
+    rel = getattr(doc, "teaching_evaluations", None)
+    if rel is None:
+        return []
+    try:
+        return list(rel.all())
+    except Exception:
+        try:
+            return list(rel)
+        except TypeError:
+            return []
+
+
 def folder_evaluation_records(
     profile_id: int,
     indicator_id: str,
@@ -104,7 +117,7 @@ def folder_evaluation_records(
             continue
         children = [
             tev
-            for tev in doc.teaching_evaluations
+            for tev in _teaching_evaluations_for_document(doc)
             if tev.indicator_id == indicator_id
         ]
         if children:

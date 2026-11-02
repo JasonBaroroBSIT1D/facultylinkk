@@ -25,7 +25,24 @@ FL.docFolders = {
   },
 
   _counts: function (rows) {
-    const out = { total: rows.length, pending: 0, approved: 0, revision: 0, rejected: 0 };
+    if (FL.store && FL.store.facultyEvidenceMetricsFromDocs) {
+      const m = FL.store.facultyEvidenceMetricsFromDocs(rows);
+      const out = {
+        total: m.sourcePdfTotal,
+        pending: m.sourcePdfPendingWorkflow,
+        semesterPending: m.semesterEvaluationsPending || 0,
+        approved: 0,
+        revision: 0,
+        rejected: 0
+      };
+      rows.forEach(function (doc) {
+        if (doc.status === "approved" || doc.status === "system-approved") out.approved += 1;
+        else if (doc.status === "revision") out.revision += 1;
+        else if (doc.status === "rejected") out.rejected += 1;
+      });
+      return out;
+    }
+    const out = { total: rows.length, pending: 0, approved: 0, revision: 0, rejected: 0, semesterPending: 0 };
     rows.forEach(function (doc) {
       if (doc.status === "draft" && doc.hasFile !== false) out.pending += 1;
       else if (doc.status === "approved" || doc.status === "system-approved") out.approved += 1;
@@ -122,7 +139,10 @@ FL.docFolders = {
           return k.criteria.map(function (c) { return { kra: k, criterion: c }; });
         }).find(function (x) { return x.criterion.id === state.criterionId; });
         parts.push({
-          label: found ? found.criterion.name : state.criterionId,
+          label: FL.rules.criterionUserLabel(
+            state.criterionId,
+            found ? found.criterion.name : null
+          ),
           level: "criterion",
           criterionId: state.criterionId
         });
@@ -241,10 +261,10 @@ FL.docFolders = {
               <h3>${FL.esc(person.name)}</h3>
               <p class="sub">${FL.esc(person.department || person.college || "")}</p>
               <ul class="doc-faculty-stats">
-                <li><span>Total</span><strong>${c.total}</strong></li>
-                <li><span>Pending</span><strong>${c.pending}</strong></li>
-                <li><span>Approved</span><strong>${c.approved}</strong></li>
-                <li><span>Revision</span><strong>${c.revision}</strong></li>
+                <li><span>Source PDFs</span><strong>${c.total}</strong></li>
+                <li><span>PDF review pending</span><strong>${c.pending}</strong></li>
+                <li><span>Semester pending</span><strong>${c.semesterPending != null ? c.semesterPending : 0}</strong></li>
+                <li><span>Approved PDFs</span><strong>${c.approved}</strong></li>
               </ul>
             </button>
           </article>`;
@@ -305,7 +325,7 @@ FL.docFolders = {
             </li>`;
           }).join("");
           return `<article class="doc-criterion-fold">
-            <h3>${FL.esc(criterion.name)}</h3>
+            <h3>${FL.esc(FL.rules.criterionUserLabel(criterion.id, criterion.name))}</h3>
             <ul class="doc-ind-list">${indicators}</ul>
           </article>`;
         }).join("");

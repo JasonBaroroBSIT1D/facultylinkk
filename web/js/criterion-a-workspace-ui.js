@@ -63,11 +63,20 @@
     },
 
     summaryCounts: function (childValidation, records) {
+      var recLen = (records && records.length) || 0;
       if (childValidation && childValidation.total != null) {
         var total = parseInt(childValidation.total, 10) || 0;
         var validated = parseInt(childValidation.validated, 10) || 0;
         var pending = parseInt(childValidation.pending, 10) || 0;
         var incomplete = parseInt(childValidation.incomplete, 10) || 0;
+        if (recLen > 0 && total !== recLen && FL.tevReviewUi) {
+          var fromRows = FL.tevReviewUi.summaryCounts(records);
+          return {
+            total: fromRows.total,
+            reviewed: fromRows.reviewed,
+            pending: fromRows.pending
+          };
+        }
         return {
           total: total,
           reviewed: validated,

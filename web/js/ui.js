@@ -96,6 +96,7 @@ FL.ui = {
   statusBadge: function (status) {
     const map = {
       approved: ["valid", "Approved"],
+      "review-complete": ["valid", "Review complete"],
       "approved-by-reviewer": ["valid", "Approved by reviewer"],
       "simulation-auto-accepted": ["valid", "Auto-accepted for simulation"],
       "incomplete-extraction": ["pending", "Incomplete extraction"],
@@ -255,25 +256,94 @@ FL.ui = {
 };
 
 FL.compliance = function (facultyId) {
+  const cached = FL.store.evidenceComplianceByFaculty && FL.store.evidenceComplianceByFaculty[facultyId];
+  if (cached) {
+    const sem = cached.semesterEvaluations || {};
+    return {
+      submitted: cached.submittedDocuments != null ? cached.submittedDocuments : 0,
+      validated: sem.validated != null ? sem.validated : 0,
+      validatedDocumentsWorkflow: cached.validatedDocumentsWorkflow || 0,
+      missing: (sem.pending || 0) + (sem.incomplete || 0) + (sem.needsRevision || 0),
+      revision: sem.needsRevision || 0,
+      rejected: sem.rejected || 0,
+      status: cached.status || "Incomplete",
+      statusLabel: cached.statusLabel || cached.status || "Incomplete",
+      requirementsComplete: !!cached.requirementsComplete,
+      semesterTotal: sem.total || 0,
+      documentsPendingReview: cached.documentsPendingReview || 0,
+      progressLabel: cached.progressLabel || "",
+      notes: cached.notes || [],
+      ratio: sem.total ? (sem.validated || 0) / sem.total : 0,
+      fromServer: true
+    };
+  }
+
   const docs = FL.store.documents.filter(function (doc) { return doc.facultyId === facultyId; });
-  let validated = 0;
+  let validatedDocs = 0;
   let missing = 0;
   let revision = 0;
+  let semTotal = 0;
+  let semValidated = 0;
+  let pdfPending = 0;
   docs.forEach(function (doc) {
     const result = FL.validation.evaluate(doc);
-    if (result.overall === "valid" && doc.status === "approved" && result.duplicateStatus !== "duplicate") validated += 1;
-    if (result.overall === "invalid" || result.overall === "reviewer-required" || result.evidenceStatus === "missing") missing += 1;
+    const ctx = doc.setSefParentContext || {};
+    const child = ctx.allChildValidationSummary
+      || (doc.teachingEvaluationSummary && doc.teachingEvaluationSummary.childValidationSummary)
+      || null;
+    if (child && child.total > 0) {
+      semTotal += child.total;
+      semValidated += child.validated || 0;
+      const wf = doc.documentWorkflowStatus || doc.status;
+      if (wf === "pending-review" || wf === "reviewer-required" || wf === "pending_review") {
+        pdfPending += 1;
+      }
+    } else if (result.overall === "valid" && doc.status === "approved" && result.duplicateStatus !== "duplicate") {
+      validatedDocs += 1;
+    }
+    if (result.overall === "invalid" || result.overall === "reviewer-required" || result.evidenceStatus === "missing") {
+      missing += 1;
+    }
     if (doc.status === "revision") revision += 1;
   });
+
   let status = "On track";
-  if (!docs.length || validated === 0) status = "Incomplete";
-  else if (missing || revision || validated < docs.length) status = "Needs attention";
+  let statusLabel = "On track";
+  if (semTotal > 0) {
+    if (semValidated === semTotal && pdfPending > 0) {
+      status = "Needs attention";
+      statusLabel = "Semester Evaluations Validated — Documents Pending Review";
+    } else if (semValidated >= semTotal && pdfPending === 0) {
+      status = "On track";
+      statusLabel = "Requirements Complete";
+    } else if (semValidated > 0) {
+      status = "Needs attention";
+      statusLabel = "Needs attention";
+    } else {
+      status = "Incomplete";
+      statusLabel = "Incomplete";
+    }
+  } else if (!docs.length || validatedDocs === 0) {
+    status = "Incomplete";
+    statusLabel = "Incomplete";
+  } else if (missing || revision || validatedDocs < docs.length) {
+    status = "Needs attention";
+    statusLabel = "Needs attention";
+  }
+
   return {
     submitted: docs.length,
-    validated: validated,
+    validated: semTotal > 0 ? semValidated : validatedDocs,
+    validatedDocumentsWorkflow: validatedDocs,
     missing: missing,
     revision: revision,
     status: status,
-    ratio: docs.length ? validated / docs.length : 0
+    statusLabel: statusLabel,
+    semesterTotal: semTotal,
+    documentsPendingReview: pdfPending,
+    progressLabel: semTotal
+      ? semValidated + " of " + semTotal + " semester evaluations validated"
+      : validatedDocs + " of " + docs.length + " documents validated (workflow)",
+    ratio: semTotal ? semValidated / semTotal : (docs.length ? validatedDocs / docs.length : 0)
   };
 };

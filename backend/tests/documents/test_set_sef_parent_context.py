@@ -65,7 +65,7 @@ def test_parent_pending_when_children_unreviewed():
     assert ctx is not None
     assert ctx["listDisplayStatus"] == "pending-review"
     assert ctx["childValidationSummary"]["pending"] == 2
-    assert "simulation" in (ctx["estimatedPointsExplanation"] or "").lower()
+    assert "pending review" in (ctx["estimatedPointsExplanation"] or "").lower()
 
 
 def test_summary_line_includes_counts():

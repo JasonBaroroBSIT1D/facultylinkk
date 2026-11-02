@@ -42,6 +42,18 @@ var assert = function (cond, msg) {
   assert(s.pending === 6);
 })();
 
+(function testSummaryPrefersLoadedRecordsWhenMismatch() {
+  var rows = [
+    { evaluationType: "SET", reviewerValidationStatus: "approved" },
+    { evaluationType: "SET", reviewerValidationStatus: "approved" },
+    { evaluationType: "SEF", reviewerValidationStatus: "pending-review" }
+  ];
+  var s = ui.summaryCounts({ total: 10, validated: 4, pending: 6 }, rows);
+  assert(s.total === 3);
+  assert(s.reviewed === 2);
+  assert(s.pending === 1);
+})();
+
 (function testAttentionDocs() {
   var att = ui.documentsNeedingAttention(
     [{ documentId: "d1" }, { documentId: "d2" }],

@@ -55,33 +55,96 @@ FL.faculty = {
     return "faculty-detail.html?id=" + encodeURIComponent(id);
   },
 
+  criteriaRowsForKra: function (kraId, kraBlock) {
+    if (kraBlock && Array.isArray(kraBlock.criteriaScores) && kraBlock.criteriaScores.length) {
+      return kraBlock.criteriaScores.map(function (row) {
+        const maxVal = row.maxPoints != null ? row.maxPoints : 0;
+        return {
+          name: FL.rules.criterionUserLabel(row.criterionId, row.name),
+          maxPoints: maxVal,
+          maxLabel: row.bonus ? String(maxVal) + " bonus" : String(maxVal),
+          earned: row.estimatedPoints != null ? row.estimatedPoints : "—",
+          bonus: !!row.bonus
+        };
+      });
+    }
+    const kra = FL.rules && FL.rules.findKra ? FL.rules.findKra(kraId) : null;
+    if (!kra || !kra.criteria) return [];
+    const critDisp = kraBlock && kraBlock.criterionADisplay ? kraBlock.criterionADisplay : null;
+    const critEst = critDisp && critDisp.estimatedPoints != null
+      ? critDisp.estimatedPoints
+      : null;
+    return kra.criteria.map(function (criterion) {
+      let earned = "—";
+      if (kraId === "kra1" && criterion.id === "kra1-a" && critEst != null) {
+        earned = critEst;
+      }
+      return {
+        name: FL.rules.criterionUserLabel(criterion.id, criterion.name),
+        maxPoints: criterion.maxPoints || 0,
+        earned: earned,
+        bonus: !!criterion.bonus
+      };
+    });
+  },
+
   unifiedSimulation: function (facultyId) {
     const cache = FL.store.estimatedAssessmentByFaculty || {};
     const live = cache[facultyId];
     if (live && live.kraScores) {
+      const simMeta = live.simulation && typeof live.simulation === "object" ? live.simulation : {};
       const kras = (live.kraScores || []).map(function (k) {
         const pts = k.estimatedPoints != null ? k.estimatedPoints : k.currentPoints;
+        const kraId = k.kraId || k.id;
         return {
-          id: k.kraId,
-          code: String(k.kraId || "").toUpperCase(),
-          name: k.label || k.kraId,
+          id: kraId,
+          code: String(kraId || "").toUpperCase(),
+          name: k.label || kraId,
           credited: pts,
           earned: pts,
-          maxPoints: k.maxPoints || k.targetPoints || 100
+          maxPoints: k.maxPoints || k.targetPoints || 100,
+          criteria: FL.faculty.criteriaRowsForKra(kraId, k),
+          criteriaScores: k.criteriaScores || null,
+          criterionADisplay: k.criterionADisplay || null
         };
+      });
+      const gaps = [{ tone: "info", text: "Estimated KRA totals from the unified PostgreSQL scoring engine." }];
+      (simMeta.missingRequirements || []).forEach(function (item) {
+        if (!item || !item.text) return;
+        gaps.push({ tone: item.severity === "danger" ? "danger" : "warning", text: item.text });
+      });
+      (simMeta.areasToImprove || []).forEach(function (item) {
+        if (!item || !item.guidance) return;
+        gaps.push({ tone: "info", text: item.guidance });
       });
       return {
         faculty: FL.store.facultyById(facultyId),
         aggregate: {
           kras: kras,
           total: live.estimatedTotalKraPoints || 0,
-          weightedScore: live.weightedEstimatedScore
+          rawTotal: live.estimatedTotalKraPoints || 0,
+          weightedScore: live.weightedEstimatedScore,
+          weightBand: simMeta.weightBand || live.weightBand,
+          appliedWeights: simMeta.appliedWeights
         },
-        gaps: [{ tone: "info", text: "Estimated KRA scores from the unified PostgreSQL scoring engine." }],
+        gaps: gaps,
         live: true
       };
     }
     return FL.scoring.simulation(facultyId);
+  },
+
+  loadUnifiedAssessmentWithTimeout: function (session, facultyId, timeoutMs) {
+    const ms = timeoutMs || 45000;
+    const load = FL.faculty.loadUnifiedAssessment(session, facultyId);
+    return Promise.race([
+      load,
+      new Promise(function (_resolve, reject) {
+        window.setTimeout(function () {
+          reject(new Error("Assessment request timed out. Check that the Flask API is running."));
+        }, ms);
+      })
+    ]);
   },
 
   loadUnifiedAssessment: function (session, facultyId) {
@@ -91,8 +154,15 @@ FL.faculty = {
     }
     if (session.role === "administrator" && FL.store.usesRealAdminApi()) {
       return FL.store.fetchAdminFacultyDetail(facultyId).then(function (data) {
+        FL.store.evidenceComplianceByFaculty = FL.store.evidenceComplianceByFaculty || {};
         if (data.estimatedAssessment) {
           FL.store.estimatedAssessmentByFaculty[facultyId] = data.estimatedAssessment;
+          if (data.estimatedAssessment.evidenceCompliance) {
+            FL.store.evidenceComplianceByFaculty[facultyId] = data.estimatedAssessment.evidenceCompliance;
+          }
+        }
+        if (data.evidenceCompliance) {
+          FL.store.evidenceComplianceByFaculty[facultyId] = data.evidenceCompliance;
         }
         return data.estimatedAssessment || null;
       });
@@ -117,11 +187,14 @@ FL.faculty = {
     return Object.keys(set).sort();
   },
 
-  listHtml: function (people, action, manage) {
+  listHtml: function (people, action, manage, showEvidenceMetrics) {
     if (!people.length) {
       return FL.ui.empty("No faculty records", manage ? "Add a faculty member to begin assignments." : "No faculty match this view.");
     }
     const live = manage && FL.store.isLiveAccountManagement();
+    const metricsCols = showEvidenceMetrics
+      ? `<th>Source PDFs</th><th>Semester evaluations</th><th>PDF document review</th>`
+      : "";
     return `
       <table class="data">
         <thead>
@@ -131,17 +204,38 @@ FL.faculty = {
             <th>Department</th>
             <th>Reviewer</th>
             <th>Status</th>
+            ${metricsCols}
             <th></th>
           </tr>
         </thead>
         <tbody>
           ${people.map(function (person) {
+            let metricsCells = "";
+            if (showEvidenceMetrics) {
+              const semTotal = person.evaluationRecordsTotal || 0;
+              const semVal = person.evaluationRecordsValidated || 0;
+              const semPending = person.semesterEvaluationsPending != null
+                ? person.semesterEvaluationsPending
+                : (person.evaluationRecordsPending || 0);
+              const pdfTotal = person.sourcePdfTotal != null ? person.sourcePdfTotal : (person.documentTotal || 0);
+              const pdfPending = person.sourcePdfPendingWorkflow != null
+                ? person.sourcePdfPendingWorkflow
+                : (person.documentPending || 0);
+              const semCell = semTotal
+                ? `${FL.esc(String(semVal))}/${FL.esc(String(semTotal))} validated · ${semPending ? FL.esc(String(semPending)) + " pending" : "0 pending"}`
+                : "—";
+              metricsCells = `
+              <td>${FL.esc(String(pdfTotal))}</td>
+              <td>${semCell}</td>
+              <td>${pdfPending ? FL.ui.badge("pending", String(pdfPending) + " pending") : FL.ui.badge("valid", "None pending")}</td>`;
+            }
             return `<tr>
               <td><strong>${FL.esc(person.name || person.email || "Faculty")}</strong><div class="sub">${FL.esc(person.email || person.college || "")}</div></td>
               <td>${FL.esc(FL.faculty.displayRank(person))}</td>
               <td>${FL.esc(FL.faculty.displayDepartment(person))}</td>
               <td>${FL.esc(FL.faculty.reviewerLabel(person))}</td>
               <td>${FL.faculty.accountStatusCell(person)}</td>
+              ${metricsCells}
               <td class="action-cell">
                 ${live
                   ? `<button class="btn btn-small btn-ghost" type="button" data-view-faculty="${FL.esc(person.id)}">View faculty</button>`
@@ -198,7 +292,7 @@ FL.faculty = {
           .indexOf(query) !== -1;
       });
       const host = document.getElementById("faculty-table");
-      host.innerHTML = FL.faculty.listHtml(people, options.action, manage);
+      host.innerHTML = FL.faculty.listHtml(people, options.action, manage, options.showEvidenceMetrics);
       if (!manage) return;
       host.querySelectorAll("[data-view-faculty]").forEach(function (button) {
         button.addEventListener("click", function () {
@@ -405,27 +499,112 @@ FL.faculty = {
 
   renderDetail: function (session) {
     const params = new URLSearchParams(window.location.search);
-    const person = FL.store.facultyById(params.get("id"));
+    const facultyId = (params.get("id") || "").trim();
     const page = document.getElementById("page");
-    if (!person) {
-      page.innerHTML = FL.ui.empty("Faculty record not found", "The faculty record is not available.");
-      return;
-    }
-    if (session.role === "reviewer" && person.reviewerId !== session.userId) {
-      page.innerHTML = FL.ui.empty("Faculty record not assigned", "This faculty member is not assigned to your review work.");
-      return;
-    }
-    const paint = function () {
-      FL.faculty._paintDetail(session, person, page);
+    if (!page) return;
+
+    const showRetry = function (title, message, retryFn) {
+      page.innerHTML = FL.ui.emptyWithRetry(title, message, "faculty-detail-retry");
+      const btn = document.getElementById("faculty-detail-retry");
+      if (btn && typeof retryFn === "function") {
+        btn.addEventListener("click", retryFn);
+      }
     };
-    FL.faculty.loadUnifiedAssessment(session, person.id).then(paint).catch(paint);
+
+    const paintDetail = function (person, detailOpts) {
+      try {
+        FL.faculty._paintDetail(session, person, page, detailOpts || {});
+      } catch (paintErr) {
+        if (typeof console !== "undefined" && console.error) {
+          console.error("Faculty detail render failed:", paintErr);
+        }
+        showRetry(
+          "Could not display faculty detail",
+          (paintErr && paintErr.message) || "An unexpected error occurred while building this page.",
+          function () { FL.faculty.renderDetail(session); }
+        );
+      }
+    };
+
+    const beginForPerson = function (person) {
+      if (session.role === "reviewer" && String(person.reviewerId) !== String(session.userId)) {
+        page.innerHTML = FL.ui.empty(
+          "Faculty record not assigned",
+          "This faculty member is not assigned to your review work."
+        );
+        return;
+      }
+      page.innerHTML = FL.ui.loading("Loading faculty detail", "Fetching assessment and documents…");
+      let assessmentError = null;
+      const assessmentLoad = FL.faculty.loadUnifiedAssessmentWithTimeout(session, person.id).catch(function (err) {
+        assessmentError = err;
+        return null;
+      });
+      const documentsLoad = FL.store.usesLiveDocuments()
+        ? FL.store.loadFacultyDocuments(session, person.id).catch(function (docErr) {
+          if (typeof console !== "undefined" && console.warn) {
+            console.warn("Faculty documents could not be loaded for detail view:", docErr);
+          }
+          return null;
+        })
+        : Promise.resolve(null);
+      Promise.all([assessmentLoad, documentsLoad]).then(function () {
+        paintDetail(person, { assessmentError: assessmentError });
+      });
+    };
+
+    const resolvePerson = function () {
+      const person = facultyId ? FL.store.facultyById(facultyId) : null;
+      if (!person) {
+        if (session.role === "reviewer" && FL.store.usesLiveReviewerApi()) {
+          showRetry(
+            "Faculty record not found",
+            facultyId
+              ? "This faculty member is not in your assigned list, or the link may be outdated."
+              : "Open faculty detail from Assigned Faculty so the profile id is included in the URL.",
+            function () {
+              page.innerHTML = FL.ui.loading("Loading faculty detail", "Refreshing assigned faculty…");
+              FL.store.loadReviewerAssignedFaculty().then(resolvePerson).catch(function (err) {
+                showRetry(
+                  "Could not load assigned faculty",
+                  (err && err.message) || "Start the Flask API on port 5000, then retry.",
+                  resolvePerson
+                );
+              });
+            }
+          );
+          return;
+        }
+        page.innerHTML = FL.ui.empty("Faculty record not found", "The faculty record is not available.");
+        return;
+      }
+      beginForPerson(person);
+    };
+
+    if (session.role === "reviewer" && FL.store.usesLiveReviewerApi() && !FL.store.reviewerDirectoryLoaded) {
+      page.innerHTML = FL.ui.loading("Loading faculty detail", "Loading your assigned faculty…");
+      FL.store.loadReviewerAssignedFaculty().then(resolvePerson).catch(function (err) {
+        showRetry(
+          "Could not load assigned faculty",
+          (err && err.message) || "Start the Flask API on port 5000, then retry.",
+          function () { FL.faculty.renderDetail(session); }
+        );
+      });
+      return;
+    }
+    resolvePerson();
   },
 
-  _paintDetail: function (session, person, page) {
+  _paintDetail: function (session, person, page, detailOpts) {
+    detailOpts = detailOpts || {};
     const sim = FL.faculty.unifiedSimulation(person.id);
+    if (!sim.faculty) sim.faculty = person;
     const compliance = FL.compliance(person.id);
     const reviewer = FL.store.userById(person.reviewerId);
     const docs = FL.store.documents.filter(function (doc) { return doc.facultyId === person.id; });
+    const assessmentBanner = detailOpts.assessmentError
+      ? `<div class="alert alert-warning" role="status">Estimated assessment could not be refreshed: ${FL.esc(detailOpts.assessmentError.message || "Request failed.")} KRA totals below may use cached or mock values.</div>`
+      : "";
     const backHref = session.role === "administrator" ? "faculty.html" : "assigned-faculty.html";
     const backLabel = session.role === "administrator" ? "Back to faculty" : "Back to assigned faculty";
     page.innerHTML = `
@@ -437,6 +616,7 @@ FL.faculty = {
         </div>
         <div class="head-actions"><a class="btn btn-ghost" href="${backHref}">${FL.esc(backLabel)}</a></div>
       </div>
+      ${assessmentBanner}
       <div class="tablist" role="tablist">
         ${["Profile", "KRA Scores", "Documents", "Validation", "Evaluation", "Rank Simulation"].map(function (tab, index) {
           return `<button class="tab ${index === 0 ? "is-active" : ""}" type="button" data-tab="${FL.esc(tab)}">${FL.esc(tab)}</button>`;
@@ -459,14 +639,22 @@ FL.faculty = {
             </dl>
           </article>
           <article class="card">
-            <div class="card-head"><h2>Compliance</h2>${FL.ui.statusBadge(compliance.status)}</div>
-            ${FL.ui.progress(compliance.validated, compliance.submitted || 0, "Validated documents")}
+            <div class="card-head"><h2>Compliance</h2>${FL.ui.statusBadge(compliance.status === "On track" ? "valid" : compliance.status === "Incomplete" ? "invalid" : "reviewer-required")}</div>
+            <p class="sub"><strong>${FL.esc(compliance.statusLabel || compliance.status)}</strong></p>
+            ${compliance.semesterTotal
+              ? FL.ui.progress(compliance.validated, compliance.semesterTotal, "Semester evaluations validated")
+              : FL.ui.progress(compliance.validated, compliance.submitted || 0, "Validated evidence")}
             <ul class="plain">
-              <li>Submitted documents: ${compliance.submitted}</li>
-              <li>Validated and approved: ${compliance.validated}</li>
-              <li>Missing requirements or records needing validation: ${compliance.missing}</li>
-              <li>Documents requiring revision: ${compliance.revision}</li>
+              <li>Semester evaluations validated: ${compliance.semesterTotal ? compliance.validated + " / " + compliance.semesterTotal : "—"}</li>
+              <li>Semester evaluations pending: ${compliance.semesterTotal ? (compliance.missing != null ? compliance.missing : "—") : "—"}</li>
+              <li>Source PDFs pending document review: ${compliance.documentsPendingReview != null ? compliance.documentsPendingReview : "—"}</li>
+              <li>Submitted source PDFs: ${compliance.submitted}</li>
             </ul>
+            ${(compliance.notes || []).length
+              ? `<div class="note">${compliance.notes.map(function (n) { return "<p>" + FL.esc(n) + "</p>"; }).join("")}</div>`
+              : (compliance.documentsPendingReview && compliance.semesterTotal && compliance.validated === compliance.semesterTotal
+                ? `<p class="note">Semester SET/SEF records are validated. Parent PDF document-level review is tracked separately and may still show as pending in the documents list.</p>`
+                : "")}
           </article>
         </div>
       </section>
@@ -474,13 +662,16 @@ FL.faculty = {
         <div class="stack">
           ${sim.aggregate.kras.map(function (kra) {
             return `<article class="card">
-              <div class="card-head"><h2>${FL.esc(kra.code)} — ${FL.esc(kra.name)}</h2><strong>${kra.credited} / ${kra.maxPoints}</strong></div>
-              ${FL.ui.progress(kra.credited, kra.maxPoints, "Approved points within the KRA maximum")}
+              <div class="card-head"><h2>${FL.esc(kra.code)} — ${FL.esc(kra.name)}</h2><strong>Estimated Score ${kra.credited != null ? kra.credited : "—"} / ${kra.maxPoints}</strong></div>
+              ${kra.criterionADisplay && kra.criterionADisplay.displayLabel
+                ? `<p class="sub">Criterion A: ${FL.esc(kra.criterionADisplay.displayLabel)}${kra.criterionADisplay.estimatedPoints != null ? " (" + FL.esc(String(kra.criterionADisplay.estimatedPoints)) + ")" : ""}</p>`
+                : ""}
+              ${FL.ui.progress(kra.credited, kra.maxPoints, "Estimated score within the KRA maximum")}
               <div class="table-wrap"><table class="data">
-                <thead><tr><th>Criterion</th><th>Maximum</th><th>Approved points</th></tr></thead>
-                <tbody>${kra.criteria.map(function (criterion) {
-                  return `<tr><td>${FL.esc(criterion.name)}</td><td>${criterion.maxPoints}${criterion.bonus ? " bonus" : ""}</td><td>${criterion.earned}</td></tr>`;
-                }).join("")}</tbody>
+                <thead><tr><th>Criterion</th><th>Maximum</th><th>Estimated score</th></tr></thead>
+                <tbody>${(kra.criteria || []).map(function (criterion) {
+                  return `<tr><td>${FL.esc(criterion.name)}</td><td>${FL.esc(criterion.maxLabel != null ? criterion.maxLabel : String(criterion.maxPoints) + (criterion.bonus ? " bonus" : ""))}</td><td>${FL.esc(String(criterion.earned))}</td></tr>`;
+                }).join("") || `<tr><td colspan="3">Criterion breakdown is estimated at the KRA level from PostgreSQL. Open Evidence Workspace for document-level scores.</td></tr>`}</tbody>
               </table></div>
             </article>`;
           }).join("")}
@@ -492,7 +683,11 @@ FL.faculty = {
             const scored = FL.scoring.scoreDocument(doc);
             const kra = scored.kra ? scored.kra.code : "—";
             const score = scored.finalScore === null ? "—" : String(scored.finalScore);
-            return `<tr><td>${FL.esc(doc.id)}</td><td>${FL.esc(doc.name)}</td><td>${FL.esc(kra)}</td><td>${FL.ui.statusBadge(doc.status)}</td><td>${FL.esc(score)}</td><td><a class="btn btn-small btn-ghost" href="${FL.faculty.documentHref(doc.id)}">Open</a></td></tr>`;
+            const wf = doc.documentWorkflowStatus || doc.status;
+            const statusCell = FL.documents.displayReviewStatus(doc)
+              + (wf !== (doc.reviewDisplayStatus || doc.status)
+                ? `<div class="sub">PDF workflow: ${FL.ui.statusBadge(wf)}</div>` : "");
+            return `<tr><td>${FL.esc(doc.id)}</td><td>${FL.esc(doc.name)}</td><td>${FL.esc(kra)}</td><td>${statusCell}</td><td>${FL.esc(score)}</td><td><a class="btn btn-small btn-ghost" href="${FL.faculty.documentHref(doc.id)}">Open</a></td></tr>`;
           }).join("")}
         </tbody></table>` : FL.ui.empty("No documents", "This faculty member has no submitted documents.")}</div></article>
       </section>
@@ -544,13 +739,14 @@ FL.faculty = {
   },
 
   simulationHtml: function (sim) {
+    const faculty = sim.faculty || {};
     return `
       <div class="callout">
         <strong>Simulation Result</strong>
         <p>This is an estimate based on computed KRA scores and uploaded documentary evidence. FacultyLink is a preparatory and evaluation-support system. It does not replace the official evaluation conducted by authorized committees, and it does not determine the number of sub-ranks.</p>
       </div>
       <div class="stat-grid">
-        <article class="stat"><span>Current rank</span><strong>${FL.esc(sim.faculty.rank)}</strong></article>
+        <article class="stat"><span>Current rank</span><strong>${FL.esc(faculty.rank || "—")}</strong></article>
         <article class="stat"><span>Weighted score</span><strong>${sim.aggregate.weightedScore != null ? sim.aggregate.weightedScore : sim.aggregate.total}</strong><small>Table 2.2 (${FL.esc(sim.aggregate.weightBand || "rank band")}) out of 100</small></article>
         <article class="stat"><span>Raw KRA points</span><strong>${sim.aggregate.rawTotal != null ? sim.aggregate.rawTotal : "—"}</strong><small>Sum before rank weights</small></article>
         ${sim.aggregate.kras.map(function (kra) {
@@ -579,13 +775,35 @@ FL.pages["admin-faculty"] = function (session) {
 };
 
 FL.pages["reviewer-faculty"] = function (session) {
-  FL.faculty.renderList({
-    eyebrow: "Assignments",
-    title: "Assigned Faculty",
-    lede: "Faculty assigned to you, with rank, documents, and validation status.",
-    action: "Open Faculty",
-    people: FL.store.assignedFacultyForReviewer(session)
-  });
+  const mountList = function (people) {
+    FL.faculty.renderList({
+      eyebrow: "Assignments",
+      title: "Assigned Faculty",
+      lede: "Faculty assigned to you. Semester SET/SEF validation is separate from source PDF document review.",
+      action: "Open Faculty",
+      people: people,
+      showEvidenceMetrics: !!FL.store.usesLiveReviewerApi()
+    });
+  };
+  if (FL.store.usesLiveReviewerApi()) {
+    const page = document.getElementById("page");
+    page.innerHTML = FL.ui.loading("Loading assigned faculty", "Fetching evidence counts from PostgreSQL.");
+    FL.store.loadReviewerFacultyDirectory({ page: 1, pageSize: 100, sort: "name" }).then(function (data) {
+      const rows = (data && data.faculty) || [];
+      const byId = {};
+      FL.store.assignedFacultyForReviewer(session).forEach(function (p) { byId[p.id] = p; });
+      rows.forEach(function (row) {
+        byId[row.id] = Object.assign({}, byId[row.id] || {}, row);
+      });
+      mountList(Object.keys(byId).map(function (id) { return byId[id]; }).sort(function (a, b) {
+        return (a.name || "").localeCompare(b.name || "");
+      }));
+    }).catch(function (err) {
+      page.innerHTML = FL.ui.empty("Could not load faculty directory", err.message || "Try again.");
+    });
+    return;
+  }
+  mountList(FL.store.assignedFacultyForReviewer(session));
 };
 
 FL.pages["admin-faculty-detail"] = function (session) { FL.faculty.renderDetail(session); };

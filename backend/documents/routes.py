@@ -269,6 +269,9 @@ def reviewer_list_documents():
         docs = doc_svc.list_reviewer_documents_for_faculty(user, faculty_id)
     else:
         docs = doc_svc.list_reviewer_documents(user)
+    from documents.set_sef_parent_review_sync import sync_set_sef_parent_reviews
+
+    sync_set_sef_parent_reviews(docs, user, trigger="reviewer_documents_list")
     rows = [
         document_to_web(d, api_base=_file_api_base("reviewer", d.public_id))
         for d in docs
@@ -297,6 +300,9 @@ def reviewer_get_document(public_id: str):
     doc = doc_svc.get_document(public_id)
     if not doc or not user or not doc_svc.reviewer_can_access(user, doc):
         return jsonify({"message": "Document was not found."}), 404
+    from documents.set_sef_parent_review_sync import try_sync_parent_document_review
+
+    try_sync_parent_document_review(doc, user, trigger="reviewer_document_detail")
     return jsonify(
         document_to_web(
             doc,
@@ -562,6 +568,9 @@ def admin_document_stats():
 def admin_list_documents():
     faculty_id = (request.args.get("facultyId") or request.args.get("faculty_id") or "").strip() or None
     docs = doc_svc.list_admin_documents(faculty_public_id=faculty_id)
+    from documents.set_sef_parent_review_sync import sync_set_sef_parent_reviews
+
+    sync_set_sef_parent_reviews(docs, None, trigger="admin_documents_list")
     rows = [
         document_to_web(d, api_base=_file_api_base("admin", d.public_id))
         for d in docs
