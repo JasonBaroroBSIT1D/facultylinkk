@@ -11,6 +11,8 @@ abstract final class AppRoutes {
   static const kraExplorer = '/kra-explorer';
   static const criterionBHub = '/criterion-b-hub';
   static const criterionCHub = '/criterion-c-hub';
+  static const kra2AJournalHub = '/kra2-a-journal-hub';
+  static const kra2MainHub = '/kra2-main-hub';
   static const requirementDetails = '/requirement-details';
   static const improvementOpportunities = '/improvement-opportunities';
   static const editProfile = '/edit-profile';

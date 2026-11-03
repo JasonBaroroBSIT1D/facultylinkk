@@ -18,22 +18,70 @@ import '../criterion_c/criterion_c_track_screen.dart';
 import '../../models/teaching_evaluation_record.dart';
 import 'document_viewer_screen.dart';
 
-class DocumentDetailsScreen extends StatelessWidget {
+class DocumentDetailsScreen extends StatefulWidget {
   const DocumentDetailsScreen({super.key, required this.documentId});
 
   final String documentId;
 
   @override
+  State<DocumentDetailsScreen> createState() => _DocumentDetailsScreenState();
+}
+
+class _DocumentDetailsScreenState extends State<DocumentDetailsScreen> {
+  bool _resolving = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  Future<void> _resolve() async {
+    if (AppState.instance.documentById(widget.documentId) != null) {
+      setState(() {
+        _resolving = false;
+        _error = null;
+      });
+      return;
+    }
+    if (!AppState.instance.isSignedIn) {
+      setState(() {
+        _resolving = false;
+        _error = 'Sign in to view this document.';
+      });
+      return;
+    }
+    setState(() {
+      _resolving = true;
+      _error = null;
+    });
+    try {
+      await AppState.instance.refreshFacultyDocument(widget.documentId, quiet: false);
+    } catch (_) {
+      _error = 'We could not load this document. Please try again.';
+    }
+    if (mounted) setState(() => _resolving = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_resolving) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Document')),
+        body: const LoadingState(message: 'Loading document…'),
+      );
+    }
     return ListenableBuilder(
       listenable: AppState.instance,
       builder: (context, _) {
-        final document = AppState.instance.documentById(documentId);
+        final document = AppState.instance.documentById(widget.documentId);
         if (document == null) {
           return Scaffold(
             appBar: AppBar(title: const Text('Document')),
-            body: const ErrorState(
-              message: 'This document is no longer available.',
+            body: ErrorState(
+              message: _error ?? 'This document is no longer available.',
+              onRetry: _resolve,
             ),
           );
         }
@@ -178,19 +226,14 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
     }
   }
 
-  void _openOriginal(BuildContext context) {
-    if (!document.hasFile) {
-      showAppSnackBar(
-        context,
-        'Original file is not available for this record.',
-        error: true,
-      );
-      return;
-    }
-    Navigator.push(
+  Future<void> _openOriginal(BuildContext context) async {
+    await AppState.instance.refreshFacultyDocument(document.id, quiet: true);
+    if (!context.mounted) return;
+    final latest = AppState.instance.documentById(document.id) ?? document;
+    await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => DocumentViewerScreen(document: document),
+        builder: (_) => DocumentViewerScreen(document: latest),
       ),
     );
   }

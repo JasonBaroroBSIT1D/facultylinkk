@@ -230,6 +230,68 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> fetchKra2ASummary() async {
+    return fetchKra2Summary('kra2-a');
+  }
+
+  Future<Map<String, dynamic>> fetchKra2AAccomplishments() async {
+    return fetchKra2Accomplishments('kra2-a');
+  }
+
+  Future<Map<String, dynamic>> fetchKra2Summary(String criterionId) async {
+    final crit = criterionId.trim();
+    return _getJson(
+      '/api/faculty/me/documents/$crit/summary',
+      authenticated: true,
+      allowRefresh: true,
+    );
+  }
+
+  Future<Map<String, dynamic>> fetchKra2Accomplishments(String criterionId) async {
+    final crit = criterionId.trim();
+    return _getJson(
+      '/api/faculty/me/documents/$crit/accomplishments',
+      authenticated: true,
+      allowRefresh: true,
+    );
+  }
+
+  Future<Map<String, dynamic>> fetchKra2EvidenceBundle(String documentId) async {
+    return _getJson(
+      '/api/faculty/me/documents/$documentId/kra2/evidence-bundle',
+      authenticated: true,
+      allowRefresh: true,
+    );
+  }
+
+  Future<Map<String, dynamic>> patchKra2EvidenceBundle(
+    String documentId,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _send(
+      'PATCH',
+      '/api/faculty/me/documents/$documentId/kra2/evidence-bundle',
+      body: body,
+      authenticated: true,
+    );
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> linkKra2SupportingDocument({
+    required String primaryDocumentId,
+    required String supportingDocumentId,
+    required String evidenceSlot,
+  }) async {
+    return _postJson(
+      '/api/faculty/me/documents/$primaryDocumentId/kra2/link-supporting',
+      {
+        'supportingDocumentId': supportingDocumentId,
+        'evidenceSlot': evidenceSlot,
+      },
+      authenticated: true,
+    );
+  }
+
   Future<Map<String, dynamic>> fetchCriterionCSummary() async {
     return _getJson(
       '/api/faculty/me/documents/criterion-c/summary',

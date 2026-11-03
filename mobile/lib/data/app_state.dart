@@ -12,6 +12,7 @@ import 'faculty_api_mapper.dart';
 import 'faculty_session_defaults.dart';
 import 'mock_auth.dart';
 import 'mock_data.dart';
+import 'kra2_criterion_remote.dart';
 import 'scoring_configuration.dart';
 
 /// App-wide faculty state backed by Flask JWT APIs when signed in.
@@ -618,6 +619,25 @@ class AppState extends ChangeNotifier {
     await refreshFacultyDocument(documentId, quiet: true);
   }
 
+  Future<Map<String, dynamic>> fetchKra2EvidenceBundle(String documentId) async {
+    if (_useMockAuthForTests || !isSignedIn) {
+      throw StateError('KRA II evidence requires a live API session.');
+    }
+    return _api.fetchKra2EvidenceBundle(documentId);
+  }
+
+  Future<Map<String, dynamic>> patchKra2EvidenceBundle(
+    String documentId,
+    Map<String, dynamic> body,
+  ) async {
+    if (_useMockAuthForTests || !isSignedIn) {
+      throw StateError('KRA II updates require a live API session.');
+    }
+    final result = await _api.patchKra2EvidenceBundle(documentId, body);
+    await refreshFacultyDocument(documentId, quiet: true);
+    return result;
+  }
+
   Future<FacultyDocument?> refreshFacultyDocument(String documentId, {bool quiet = false}) async {
     if (_useMockAuthForTests || !isSignedIn) return documentById(documentId);
     try {
@@ -633,6 +653,8 @@ class AppState extends ChangeNotifier {
           updated,
           ...documents.sublist(index + 1),
         ];
+      } else {
+        documents = [...documents, updated];
       }
       notifyListeners();
       return updated;
@@ -647,6 +669,7 @@ class AppState extends ChangeNotifier {
     String documentId, {
     int maxAttempts = 24,
     Duration interval = const Duration(seconds: 3),
+    bool refreshTeachingAndSimulation = true,
   }) async {
     if (_useMockAuthForTests || !isSignedIn) return documentById(documentId);
     FacultyDocument? latest;
@@ -656,11 +679,30 @@ class AppState extends ChangeNotifier {
       if (status == 'completed' || status == 'failed') break;
       await Future<void>.delayed(interval);
     }
-    await fetchTeachingEffectivenessFromApi(quiet: true);
-    await fetchSetSefIndicatorFromApi('kra1-a-student', quiet: true);
-    await fetchSetSefIndicatorFromApi('kra1-a-supervisor', quiet: true);
-    await refreshRankSimulationFromApi(quiet: true);
+    if (refreshTeachingAndSimulation) {
+      await fetchTeachingEffectivenessFromApi(quiet: true);
+      await fetchSetSefIndicatorFromApi('kra1-a-student', quiet: true);
+      await fetchSetSefIndicatorFromApi('kra1-a-supervisor', quiet: true);
+      await refreshRankSimulationFromApi(quiet: true);
+    }
     return latest;
+  }
+
+  /// Poll OCR in the background without blocking UI; updates [onUpdate] each tick.
+  Future<void> pollKra2OcrInBackground(
+    String documentId, {
+    void Function(String? ocrStatus)? onUpdate,
+    int maxAttempts = 24,
+    Duration interval = const Duration(seconds: 3),
+  }) async {
+    if (_useMockAuthForTests || !isSignedIn) return;
+    for (var i = 0; i < maxAttempts; i++) {
+      final latest = await refreshFacultyDocument(documentId, quiet: true);
+      onUpdate?.call(latest?.ocrStatus);
+      final status = (latest?.ocrStatus ?? '').toLowerCase();
+      if (status == 'completed' || status == 'failed' || status == 'complete') break;
+      await Future<void>.delayed(interval);
+    }
   }
 
   Future<void> refreshRankSimulationFromApi({bool quiet = false}) async {
@@ -689,6 +731,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _clearLiveSessionData() {
+    Kra2CriterionRemote.invalidate();
     faculty = FacultySessionDefaults.faculty;
     documents = const [];
     notifications = const [];

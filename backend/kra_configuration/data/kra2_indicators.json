@@ -1,0 +1,813 @@
+{
+  "version": "1.0",
+  "source": "web/js/rules.js",
+  "pdfVerified": false,
+  "indicatorCount": 54,
+  "indicators": [
+    {
+      "id": "kra2-a-book-sole",
+      "criterionId": "kra2-a",
+      "name": "Sole author of an academic book",
+      "points": 100.0,
+      "maxPoints": 100.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the published academic book showing author, date, and title",
+        "Evidence of peer review and publication by a reputable academic or university press"
+      ]
+    },
+    {
+      "id": "kra2-a-book-co",
+      "criterionId": "kra2-a",
+      "name": "Co-author of an academic book",
+      "points": 100.0,
+      "maxPoints": 100.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the published academic book",
+        "Certificate of Contribution Form_Research Output (Annex D), signed by all co-authors and certified by the Research Director"
+      ]
+    },
+    {
+      "id": "kra2-a-chapter-sole",
+      "criterionId": "kra2-a",
+      "name": "Sole author of an edited academic book chapter",
+      "points": 35.0,
+      "maxPoints": 35.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the published chapter showing author, date, and book title",
+        "Evidence of peer review"
+      ]
+    },
+    {
+      "id": "kra2-a-chapter-co",
+      "criterionId": "kra2-a",
+      "name": "Co-author of an edited academic book chapter",
+      "points": 35.0,
+      "maxPoints": 35.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the published chapter",
+        "Certificate of Contribution Form_Research Output (Annex D)"
+      ]
+    },
+    {
+      "id": "kra2-a-journal-sole",
+      "criterionId": "kra2-a",
+      "name": "Sole author of a journal article",
+      "points": 50.0,
+      "maxPoints": 50.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the published article showing author, date, and journal title"
+      ]
+    },
+    {
+      "id": "kra2-a-journal-co",
+      "criterionId": "kra2-a",
+      "name": "Co-author of a journal article",
+      "points": 50.0,
+      "maxPoints": 50.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the published article",
+        "Certificate of Contribution Form_Research Output (Annex D)"
+      ]
+    },
+    {
+      "id": "kra2-a-monograph-sole",
+      "criterionId": "kra2-a",
+      "name": "Sole author of an academic monograph",
+      "points": 100.0,
+      "maxPoints": 100.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the published monograph",
+        "Evidence of peer review"
+      ]
+    },
+    {
+      "id": "kra2-a-monograph-co",
+      "criterionId": "kra2-a",
+      "name": "Co-author of an academic monograph",
+      "points": 100.0,
+      "maxPoints": 100.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the published monograph",
+        "Certificate of Contribution Form_Research Output (Annex D)"
+      ]
+    },
+    {
+      "id": "kra2-a-translation-sole",
+      "criterionId": "kra2-a",
+      "name": "Research translated into a project, policy, or product — Sole / Lead",
+      "points": 35.0,
+      "maxPoints": 70.0,
+      "contribution": "sole",
+      "group": "kra2-a-translation",
+      "groupMax": 70.0,
+      "evidenceHints": [
+        "Completed research output that served as basis",
+        "Evidence of presentation, publication, or official submission",
+        "Description of the project/policy/product and proof of approval, completion, or utilization"
+      ]
+    },
+    {
+      "id": "kra2-a-translation-co",
+      "criterionId": "kra2-a",
+      "name": "Research translated into a project, policy, or product — Co-contributor",
+      "points": 35.0,
+      "maxPoints": 70.0,
+      "contribution": "declared",
+      "group": "kra2-a-translation",
+      "groupMax": 70.0,
+      "evidenceHints": [
+        "Completed research output and translation evidence",
+        "Certificate of Contribution Form_Translated Research (Annex E)"
+      ]
+    },
+    {
+      "id": "kra2-a-cite",
+      "criterionId": "kra2-a",
+      "name": "Research publication cited",
+      "points": 10.0,
+      "maxPoints": 60.0,
+      "contribution": "not-applicable",
+      "group": "kra2-a-cite",
+      "groupMax": 60.0,
+      "evidenceHints": [
+        "Copy of the faculty’s cited article published in a Scopus-, WoS-, or ACI-indexed journal",
+        "Copy of the citing article also published in a Scopus-, WoS-, or ACI-indexed journal",
+        "Certification from the Research Director attesting indexing at the time of publication"
+      ]
+    },
+    {
+      "id": "kra2-b-patent-a-sole",
+      "criterionId": "kra2-b",
+      "name": "Invention patent — Acceptance (sole inventor)",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Photo of the invention",
+        "Special Order signed by the President",
+        "Formality Examination Report with no noted defects from IPOPHL"
+      ]
+    },
+    {
+      "id": "kra2-b-patent-a-co",
+      "criterionId": "kra2-b",
+      "name": "Invention patent — Acceptance (co-inventor)",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "IPOPHL acceptance documents",
+        "Certificate of Contribution Form_Intellectual Property (Annex F)"
+      ]
+    },
+    {
+      "id": "kra2-b-patent-p-sole",
+      "criterionId": "kra2-b",
+      "name": "Invention patent — Publication (sole inventor)",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Photo of the invention",
+        "Special Order signed by the President",
+        "Substantive Examination Report / notice of publication from IPOPHL"
+      ]
+    },
+    {
+      "id": "kra2-b-patent-p-co",
+      "criterionId": "kra2-b",
+      "name": "Invention patent — Publication (co-inventor)",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "IPOPHL publication documents",
+        "Certificate of Contribution Form_Intellectual Property (Annex F)"
+      ]
+    },
+    {
+      "id": "kra2-b-patent-g-sole",
+      "criterionId": "kra2-b",
+      "name": "Invention patent — Grant (sole inventor)",
+      "points": 80.0,
+      "maxPoints": 80.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Photo of the invention",
+        "Special Order signed by the President",
+        "Patent Certificate issued by IPOPHL"
+      ]
+    },
+    {
+      "id": "kra2-b-patent-g-co",
+      "criterionId": "kra2-b",
+      "name": "Invention patent — Grant (co-inventor)",
+      "points": 80.0,
+      "maxPoints": 80.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "IPOPHL patent certificate",
+        "Certificate of Contribution Form_Intellectual Property (Annex F)"
+      ]
+    },
+    {
+      "id": "kra2-b-comm-local",
+      "criterionId": "kra2-b",
+      "name": "Commercialized patented product — Local",
+      "points": 5.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": "kra2-b-comm-local",
+      "groupMax": 20.0,
+      "evidenceHints": [
+        "Photo of the patented product",
+        "Invention Patent Certificate",
+        "CPR or equivalent / licensing agreement",
+        "Proof of commercialization",
+        "Certification from Research Director / ITSO"
+      ]
+    },
+    {
+      "id": "kra2-b-comm-intl",
+      "criterionId": "kra2-b",
+      "name": "Commercialized patented product — International",
+      "points": 10.0,
+      "maxPoints": 30.0,
+      "contribution": "not-applicable",
+      "group": "kra2-b-comm-intl",
+      "groupMax": 30.0,
+      "evidenceHints": [
+        "Photo of the patented product",
+        "Invention Patent Certificate",
+        "Licensing or technology-transfer agreement",
+        "Proof of commercialization outside the Philippines",
+        "Certification from Research Director / ITSO"
+      ]
+    },
+    {
+      "id": "kra2-b-um-sole",
+      "criterionId": "kra2-b",
+      "name": "Utility model — Registration (sole inventor)",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Photo of the utility model",
+        "Special Order signed by the President",
+        "UM Certificate of Registration from IPOPHL"
+      ]
+    },
+    {
+      "id": "kra2-b-um-co",
+      "criterionId": "kra2-b",
+      "name": "Utility model — Registration (co-inventor)",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "UM certificate",
+        "Certificate of Contribution Form_Intellectual Property (Annex F)"
+      ]
+    },
+    {
+      "id": "kra2-b-id-sole",
+      "criterionId": "kra2-b",
+      "name": "Industrial design — Registration (sole inventor)",
+      "points": 5.0,
+      "maxPoints": 5.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Photo of the industrial design",
+        "Special Order signed by the President",
+        "ID Certificate of Registration from IPOPHL"
+      ]
+    },
+    {
+      "id": "kra2-b-id-co",
+      "criterionId": "kra2-b",
+      "name": "Industrial design — Registration (co-inventor)",
+      "points": 5.0,
+      "maxPoints": 5.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "ID certificate",
+        "Certificate of Contribution Form_Intellectual Property (Annex F)"
+      ]
+    },
+    {
+      "id": "kra2-b-sw-new-sole",
+      "criterionId": "kra2-b",
+      "name": "New copyrighted and utilized software — Sole developer",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Special Order signed by the President",
+        "Project summary",
+        "User manual / design / source documentation",
+        "Copyright Certificate from IPOPHL",
+        "End-user utilization certification"
+      ]
+    },
+    {
+      "id": "kra2-b-sw-new-co",
+      "criterionId": "kra2-b",
+      "name": "New copyrighted and utilized software — Co-developer",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Same software evidence",
+        "Certificate of Contribution Form_Software (Annex G)"
+      ]
+    },
+    {
+      "id": "kra2-b-sw-upd-sole",
+      "criterionId": "kra2-b",
+      "name": "Updated copyrighted and utilized software — Sole developer",
+      "points": 4.0,
+      "maxPoints": 4.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Special Order signed by the President",
+        "Project summary",
+        "Copyright Certificate from IPOPHL",
+        "End-user utilization certification",
+        "Description of substantial new functionalities not in the previous version"
+      ]
+    },
+    {
+      "id": "kra2-b-sw-upd-co",
+      "criterionId": "kra2-b",
+      "name": "Updated copyrighted and utilized software — Co-developer",
+      "points": 4.0,
+      "maxPoints": 4.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Same updated-software evidence",
+        "Certificate of Contribution Form_Software (Annex G)"
+      ]
+    },
+    {
+      "id": "kra2-b-variety-sole",
+      "criterionId": "kra2-b",
+      "name": "New plant variety, animal breed, or microbial strain — Sole developer",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        ",\n                ",
+        ",\n                "
+      ]
+    },
+    {
+      "id": "kra2-b-variety-co",
+      "criterionId": "kra2-b",
+      "name": "New plant variety, animal breed, or microbial strain — Co-developer",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Registration / deposit evidence",
+        "Certificate of Contribution Form_New Cultivars, Breeds and Strains (Annex H)"
+      ]
+    },
+    {
+      "id": "kra2-c-music-comp-sole",
+      "criterionId": "kra2-c",
+      "name": "Musical composition",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Published original musical score and/or copyright registration",
+        "Proof of invitation/acceptance",
+        "Proof of first performance"
+      ]
+    },
+    {
+      "id": "kra2-c-music-comp-co",
+      "criterionId": "kra2-c",
+      "name": "Musical composition — Co-composer",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Same composition evidence",
+        "Certificate of Contribution Form_Creative Works (Annex I)"
+      ]
+    },
+    {
+      "id": "kra2-c-music-arr-sole",
+      "criterionId": "kra2-c",
+      "name": "Musical arrangement",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Published arranged or original arrangement score",
+        "Proof of invitation/acceptance",
+        "Proof of first performance",
+        "Dean/Program Director certification of role where applicable"
+      ]
+    },
+    {
+      "id": "kra2-c-music-arr-co",
+      "criterionId": "kra2-c",
+      "name": "Musical arrangement — Co-arranger",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Same arrangement evidence",
+        "Certificate of Contribution Form_Creative Works (Annex I)"
+      ]
+    },
+    {
+      "id": "kra2-c-music-perf",
+      "criterionId": "kra2-c",
+      "name": "Musical performance (vocal or instrumental)",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Proof of invitation/acceptance",
+        "Proof of performance",
+        "Organizer/conductor/director certification"
+      ]
+    },
+    {
+      "id": "kra2-c-conducting",
+      "criterionId": "kra2-c",
+      "name": "Conducting",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Proof of invitation/acceptance as conductor",
+        "Proof of performance",
+        "Organizer/music director certification"
+      ]
+    },
+    {
+      "id": "kra2-c-music-prod-sole",
+      "criterionId": "kra2-c",
+      "name": "Music production",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Produced music track with clear producer credit",
+        "Copyright registration",
+        "Published release details",
+        "Dean certification of role and scope"
+      ]
+    },
+    {
+      "id": "kra2-c-music-prod-co",
+      "criterionId": "kra2-c",
+      "name": "Music production — Co-producer",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Same production evidence",
+        "Certificate of Contribution Form_Creative Works (Annex I)"
+      ]
+    },
+    {
+      "id": "kra2-c-choreo-sole",
+      "criterionId": "kra2-c",
+      "name": "Original choreography",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Choreographic notations or written description",
+        "Proof of invitation/acceptance",
+        "Proof of first performance",
+        "Organizer certification"
+      ]
+    },
+    {
+      "id": "kra2-c-choreo-co",
+      "criterionId": "kra2-c",
+      "name": "Original choreography — Co-choreographer",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Same choreography evidence",
+        "Certificate of Contribution Form_Creative Works (Annex I)"
+      ]
+    },
+    {
+      "id": "kra2-c-dance-perf",
+      "criterionId": "kra2-c",
+      "name": "Dance performance",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Proof of dance performance",
+        "Certification from choreographer, artistic director, or department head"
+      ]
+    },
+    {
+      "id": "kra2-c-playwright-sole",
+      "criterionId": "kra2-c",
+      "name": "Playwright",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Full script",
+        "Copyright registration",
+        "Proof of invitation/acceptance",
+        "Proof of production",
+        "Director certification"
+      ]
+    },
+    {
+      "id": "kra2-c-playwright-co",
+      "criterionId": "kra2-c",
+      "name": "Playwright — Co-author",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Same playwright evidence",
+        "Certificate of Contribution Form_Creative Works (Annex I)"
+      ]
+    },
+    {
+      "id": "kra2-c-directing",
+      "criterionId": "kra2-c",
+      "name": "Theatrical directing",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Proof of invitation/acceptance as director",
+        "Event program or flyer",
+        "Video/photo documentation",
+        "Production manager certification"
+      ]
+    },
+    {
+      "id": "kra2-c-acting",
+      "criterionId": "kra2-c",
+      "name": "Acting",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Proof of invitation/acceptance as actor",
+        "Program/playbill/cast list",
+        "Video/photo documentation",
+        "Director or production manager certification"
+      ]
+    },
+    {
+      "id": "kra2-c-prod-design",
+      "criterionId": "kra2-c",
+      "name": "Production design",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Proof of invitation/acceptance as designer",
+        "Design portfolio",
+        "Photo/video of realized design",
+        "Program credits",
+        "Director or production manager certification"
+      ]
+    },
+    {
+      "id": "kra2-c-visual",
+      "criterionId": "kra2-c",
+      "name": "Visual arts exhibition (painting, drawing, mixed media, sculpture, photography, digital art)",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Photograph of the exhibited work with title, description, date, and venue",
+        "Proof of invitation/acceptance",
+        "Exhibition catalog/brochure/program",
+        "Gallery information",
+        "Curator or gallery director certification"
+      ]
+    },
+    {
+      "id": "kra2-c-arch-design",
+      "criterionId": "kra2-c",
+      "name": "Architectural, engineering, or interior design (exhibition or juried)",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Design proposal or project portfolio",
+        "Proof of invitation/acceptance or peer/jury evaluation",
+        "Exhibition or competition documentation",
+        "Authorship documentation",
+        "Information on the gallery, event, or organizing body"
+      ]
+    },
+    {
+      "id": "kra2-c-film",
+      "criterionId": "kra2-c",
+      "name": "Film (short, feature, documentary, experimental, animated)",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy or working link to the film",
+        "Proof of invitation/acceptance or festival entry",
+        "Festival program or screening announcement with role credit",
+        "Festival organizer certification"
+      ]
+    },
+    {
+      "id": "kra2-c-novel-sole",
+      "criterionId": "kra2-c",
+      "name": "Literary publication — Novel",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the published and copyrighted novel",
+        "Publisher guidelines and evidence of editorial review",
+        "Proof of publisher credibility"
+      ]
+    },
+    {
+      "id": "kra2-c-novel-co",
+      "criterionId": "kra2-c",
+      "name": "Literary publication — Novel (co-author)",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Same novel evidence",
+        "Certificate of Contribution Form_Creative Works (Annex I)"
+      ]
+    },
+    {
+      "id": "kra2-c-story-sole",
+      "criterionId": "kra2-c",
+      "name": "Literary publication — Short story",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "sole",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the anthology, literary magazine, or journal issue",
+        "Publisher guidelines and evidence of editorial review",
+        "Proof of publisher credibility"
+      ]
+    },
+    {
+      "id": "kra2-c-story-co",
+      "criterionId": "kra2-c",
+      "name": "Literary publication — Short story (co-author)",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "declared",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Same short-story evidence",
+        "Certificate of Contribution Form_Creative Works (Annex I)"
+      ]
+    },
+    {
+      "id": "kra2-c-poetry",
+      "criterionId": "kra2-c",
+      "name": "Literary publication — Poetry",
+      "points": 2.0,
+      "maxPoints": 2.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the anthology, literary magazine, or journal issue",
+        "Publisher guidelines and evidence of editorial review",
+        "Proof of publisher credibility"
+      ]
+    },
+    {
+      "id": "kra2-c-essay",
+      "criterionId": "kra2-c",
+      "name": "Literary publication — Literary essay",
+      "points": 2.0,
+      "maxPoints": 2.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "evidenceHints": [
+        "Copy of the anthology, literary magazine, or journal issue",
+        "Publisher guidelines and evidence of editorial review",
+        "Proof of publisher credibility"
+      ]
+    }
+  ]
+}

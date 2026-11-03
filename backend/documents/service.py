@@ -224,14 +224,27 @@ def create_upload(
             attach_supporting_upload_link as attach_c_supporting,
             maybe_initialize_criterion_c_bundle,
         )
+        from documents.kra2_evidence.service import (
+            Kra2EvidenceError,
+            attach_supporting_upload_link as attach_kra2_supporting,
+            maybe_initialize_kra2_bundle,
+        )
+        from kra_configuration.kra2_annex import is_kra2_criterion
 
         slot = (evidence_slot or "").strip()
         primary_ref = (bundle_primary_public_id or "").strip()
         criterion = (criterion_id or "").strip()
         if primary_ref and slot:
             primary_doc = get_document(primary_ref)
-            if primary_doc and (primary_doc.criterion_id or "").strip() == "kra1-c":
+            crit = (primary_doc.criterion_id or "").strip() if primary_doc else ""
+            if primary_doc and crit == "kra1-c":
                 attach_c_supporting(
+                    doc,
+                    primary_public_id=primary_ref,
+                    evidence_slot=slot,
+                )
+            elif primary_doc and is_kra2_criterion(crit):
+                attach_kra2_supporting(
                     doc,
                     primary_public_id=primary_ref,
                     evidence_slot=slot,
@@ -245,7 +258,8 @@ def create_upload(
         else:
             maybe_initialize_criterion_c_bundle(doc)
             maybe_initialize_criterion_b_bundle(doc)
-    except (CriterionBEvidenceError, CriterionCEvidenceError) as error:
+            maybe_initialize_kra2_bundle(doc)
+    except (CriterionBEvidenceError, CriterionCEvidenceError, Kra2EvidenceError) as error:
         db.session.rollback()
         stored = resolve_path(relative)
         if stored and stored.is_file():

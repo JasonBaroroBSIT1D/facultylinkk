@@ -71,6 +71,97 @@ def faculty_criterion_c_accomplishments():
     return jsonify({"accomplishments": list_faculty_accomplishments(user.faculty_profile.id)}), 200
 
 
+@faculty_docs_bp.get("/kra2-a/summary")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra2_a_summary():
+    from documents.kra2_evidence.service import kra2_summary_for_faculty
+    from kra_configuration.kra2_annex import CRITERION_A_ID
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify(kra2_summary_for_faculty(user.faculty_profile.id, criterion_id=CRITERION_A_ID)), 200
+
+
+@faculty_docs_bp.get("/kra2/catalog")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra2_catalog():
+    from kra_configuration.kra2_indicator_registry import all_indicators, official_rules_verified
+
+    return jsonify(
+        {
+            "officialRulesVerified": official_rules_verified(),
+            "indicators": all_indicators(),
+        }
+    ), 200
+
+
+def _faculty_kra2_criterion_summary(criterion_id: str):
+    from documents.kra2_evidence.service import kra2_summary_for_faculty
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify(kra2_summary_for_faculty(user.faculty_profile.id, criterion_id=criterion_id)), 200
+
+
+def _faculty_kra2_criterion_accomplishments(criterion_id: str):
+    from documents.kra2_evidence.service import list_faculty_accomplishments
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify(
+        {"accomplishments": list_faculty_accomplishments(user.faculty_profile.id, criterion_id=criterion_id)}
+    ), 200
+
+
+@faculty_docs_bp.get("/kra2-b/summary")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra2_b_summary():
+    from kra_configuration.kra2_annex import CRITERION_B_ID
+
+    return _faculty_kra2_criterion_summary(CRITERION_B_ID)
+
+
+@faculty_docs_bp.get("/kra2-b/accomplishments")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra2_b_accomplishments():
+    from kra_configuration.kra2_annex import CRITERION_B_ID
+
+    return _faculty_kra2_criterion_accomplishments(CRITERION_B_ID)
+
+
+@faculty_docs_bp.get("/kra2-c/summary")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra2_c_summary():
+    from kra_configuration.kra2_annex import CRITERION_C_ID
+
+    return _faculty_kra2_criterion_summary(CRITERION_C_ID)
+
+
+@faculty_docs_bp.get("/kra2-c/accomplishments")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra2_c_accomplishments():
+    from kra_configuration.kra2_annex import CRITERION_C_ID
+
+    return _faculty_kra2_criterion_accomplishments(CRITERION_C_ID)
+
+
+@faculty_docs_bp.get("/kra2-a/accomplishments")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra2_a_accomplishments():
+    from documents.kra2_evidence.service import list_faculty_accomplishments
+    from kra_configuration.kra2_annex import CRITERION_A_ID
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify(
+        {"accomplishments": list_faculty_accomplishments(user.faculty_profile.id, criterion_id=CRITERION_A_ID)}
+    ), 200
+
+
 @faculty_docs_bp.post("")
 @perm.roles_required(ROLE_FACULTY)
 def faculty_upload_document():
@@ -400,6 +491,128 @@ def faculty_link_criterion_c_supporting(public_id: str):
             "cannot_link_self": "A document cannot be linked to itself.",
         }
         return jsonify({"message": messages.get(error.code, "Link failed.")}), 400
+    return jsonify(
+        {
+            "document": document_to_web(primary, api_base=_file_api_base("faculty", primary.public_id)),
+            "validation": validation,
+        }
+    ), 200
+
+
+def _kra2_evidence_error_response(error) -> tuple:
+    from documents.kra2_evidence.service import Kra2EvidenceError
+
+    if not isinstance(error, Kra2EvidenceError):
+        raise error
+    messages = {
+        "primary_not_found": (404, "Document was not found."),
+        "bundle_not_initialized": (400, "Evidence bundle is not initialized for this accomplishment."),
+        "supporting_not_found": (404, "Supporting document was not found."),
+        "invalid_evidence_slot": (400, "That evidence slot is not allowed for this KRA II accomplishment."),
+        "duplicate_primary_hash": (400, "Supporting file cannot be identical to the primary file."),
+        "cannot_link_self": (400, "A document cannot be linked to itself."),
+        "forbidden": (403, "You do not have access to this document."),
+        "cannot_verify_empty_slot": (400, "Cannot verify a slot with no linked document."),
+        "invalid_slot_status": (400, "Unknown checklist status."),
+        "accomplishment_not_ready_for_decision": (
+            400,
+            "Verify all required evidence and resolve blockers before approving.",
+        ),
+        "review_rejection_remarks_required": (
+            400,
+            "Provide reviewer remarks (at least 10 characters) when rejecting.",
+        ),
+        "review_approval_remarks_required": (
+            400,
+            "Provide reviewer remarks (at least 10 characters) when approving.",
+        ),
+        "assessed_points_invalid": (400, "Enter a valid assessed points value."),
+        "assessed_points_exceeds_indicator_max": (
+            400,
+            "Assessed points exceed the published maximum for this indicator.",
+        ),
+        "assessed_points_exceeds_eligible": (
+            400,
+            "Assessed points exceed the system-calculated eligible amount for this accomplishment.",
+        ),
+        "assessed_points_not_adjustable": (
+            400,
+            "This indicator uses fixed official points. Confirm eligibility using the published score.",
+        ),
+        "score_adjustment_reason_required": (
+            400,
+            "Explain why the assessed score differs from the system-calculated eligible points.",
+        ),
+        "indicator_points_unknown": (400, "Published indicator points are not configured."),
+        "accomplishment_already_finalized": (
+            400,
+            "This accomplishment is already approved. Reassessment requires an authorized workflow.",
+        ),
+    }
+    status, msg = messages.get(error.code, (400, "Update failed."))
+    return jsonify({"message": msg}), status
+
+
+@faculty_docs_bp.get("/<public_id>/kra2/evidence-bundle")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_get_kra2_bundle(public_id: str):
+    from documents.kra2_evidence.service import bundle_api_payload
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    doc = doc_svc.get_owned_document(public_id, user) if user else None
+    if not doc:
+        return jsonify({"message": "Document was not found."}), 404
+    return jsonify(bundle_api_payload(doc)), 200
+
+
+@faculty_docs_bp.patch("/<public_id>/kra2/evidence-bundle")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_patch_kra2_bundle(public_id: str):
+    from documents.kra2_evidence.service import Kra2EvidenceError, update_bundle_metadata, bundle_api_payload
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    try:
+        doc, validation = update_bundle_metadata(user, public_id, body)
+    except Kra2EvidenceError as error:
+        return _kra2_evidence_error_response(error)
+    payload = bundle_api_payload(doc)
+    return jsonify(
+        {
+            "document": document_to_web(doc, api_base=_file_api_base("faculty", doc.public_id)),
+            "validation": validation,
+            "bundle": payload.get("bundle"),
+            "scoring": payload.get("scoring"),
+            "ocrStatus": payload.get("ocrStatus"),
+            "ocrExtraction": payload.get("ocrExtraction"),
+        }
+    ), 200
+
+
+@faculty_docs_bp.post("/<public_id>/kra2/link-supporting")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_link_kra2_supporting(public_id: str):
+    from documents.kra2_evidence.service import Kra2EvidenceError, link_existing_supporting_document
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    supporting_id = (body.get("supportingDocumentId") or body.get("supporting_document_id") or "").strip()
+    slot = (body.get("evidenceSlot") or body.get("evidence_slot") or "").strip()
+    if not supporting_id or not slot:
+        return jsonify({"message": "supportingDocumentId and evidenceSlot are required."}), 400
+    try:
+        primary, validation = link_existing_supporting_document(
+            user,
+            primary_public_id=public_id,
+            supporting_public_id=supporting_id,
+            evidence_slot=slot,
+        )
+    except Kra2EvidenceError as error:
+        return _kra2_evidence_error_response(error)
     return jsonify(
         {
             "document": document_to_web(primary, api_base=_file_api_base("faculty", primary.public_id)),
@@ -791,6 +1004,169 @@ def _reviewer_faculty_profile_or_404(user, faculty_public_id: str) -> FacultyPro
     if not profile or not user or profile.reviewer_user_id != user.id:
         return None
     return profile
+
+
+@reviewer_docs_bp.get("/documents/<public_id>/kra2/evidence-bundle")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_get_kra2_bundle(public_id: str):
+    from documents.kra2_evidence.service import bundle_api_payload
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    doc = doc_svc.get_document(public_id)
+    if not doc or not user or not doc_svc.reviewer_can_access(user, doc):
+        return jsonify({"message": "Document was not found."}), 404
+    return jsonify(bundle_api_payload(doc)), 200
+
+
+@reviewer_docs_bp.patch("/documents/<public_id>/kra2/evidence-bundle")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_patch_kra2_bundle(public_id: str):
+    from documents.kra2_evidence.service import Kra2EvidenceError, reviewer_update_kra2, bundle_api_payload
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    body = request.get_json(silent=True) or {}
+    slot_id = (body.get("evidenceSlot") or body.get("evidence_slot") or body.get("slotId") or "").strip()
+    status = (body.get("status") or "").strip()
+    review_status = (body.get("reviewStatus") or body.get("review_status") or "").strip() or None
+    has_remarks = bool((body.get("remarks") or body.get("reviewerRemarks") or "").strip())
+    metadata_keys = (
+        "outputTitle",
+        "outputVenue",
+        "journalTitle",
+        "authorsLine",
+        "publicationDate",
+        "publicationReference",
+        "registrationNumber",
+        "registrationDate",
+        "citationContext",
+        "indexingAttestation",
+        "declaredContributionPercent",
+    )
+    metadata_patch = {k: body[k] for k in metadata_keys if k in body}
+    if body.get("confirmReviewerMetadata") is True:
+        metadata_patch["confirmReviewerMetadata"] = True
+    has_metadata = bool(metadata_patch)
+    if not slot_id and not review_status and not has_remarks and not has_metadata:
+        return jsonify({"message": "evidenceSlot/status, reviewStatus, metadata, or remarks required."}), 400
+    if slot_id and not status:
+        return jsonify({"message": "status is required when evidenceSlot is provided."}), 400
+    try:
+        doc, validation = reviewer_update_kra2(
+            user,
+            public_id,
+            slot_id=slot_id or None,
+            status=status or None,
+            reviewer_note=(body.get("reviewerNote") or body.get("note") or ""),
+            review_status=review_status,
+            remarks=(body.get("remarks") or body.get("reviewerRemarks") or ""),
+            assessed_points=body.get("assessedPoints") or body.get("assessed_points"),
+            score_adjustment_reason=(
+                body.get("scoreAdjustmentReason") or body.get("score_adjustment_reason") or ""
+            ),
+            metadata=metadata_patch if has_metadata else None,
+        )
+    except Kra2EvidenceError as error:
+        return _kra2_evidence_error_response(error)
+    payload = bundle_api_payload(doc)
+    return jsonify(
+        {
+            "document": document_to_web(doc, api_base=_file_api_base("reviewer", doc.public_id), ocr_detail=True),
+            "validation": validation,
+            "bundle": payload.get("bundle"),
+            "scoring": payload.get("scoring"),
+            "ocrExtraction": payload.get("ocrExtraction"),
+        }
+    ), 200
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra2-a/summary")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra2_a_summary(faculty_public_id: str):
+    from documents.kra2_evidence.service import kra2_summary_for_faculty
+    from kra_configuration.kra2_annex import CRITERION_A_ID
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = _reviewer_faculty_profile_or_404(user, faculty_public_id)
+    if not profile:
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    return jsonify(kra2_summary_for_faculty(profile.id, criterion_id=CRITERION_A_ID)), 200
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra2-a/accomplishments")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra2_a_accomplishments(faculty_public_id: str):
+    from documents.kra2_evidence.service import list_faculty_accomplishments
+    from kra_configuration.kra2_annex import CRITERION_A_ID
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = _reviewer_faculty_profile_or_404(user, faculty_public_id)
+    if not profile:
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    return jsonify(
+        {"accomplishments": list_faculty_accomplishments(profile.id, criterion_id=CRITERION_A_ID)}
+    ), 200
+
+
+def _reviewer_kra2_criterion_summary(faculty_public_id: str, criterion_id: str):
+    from documents.kra2_evidence.service import kra2_summary_for_faculty
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = _reviewer_faculty_profile_or_404(user, faculty_public_id)
+    if not profile:
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    return jsonify(kra2_summary_for_faculty(profile.id, criterion_id=criterion_id)), 200
+
+
+def _reviewer_kra2_criterion_accomplishments(faculty_public_id: str, criterion_id: str):
+    from documents.kra2_evidence.service import list_faculty_accomplishments
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = _reviewer_faculty_profile_or_404(user, faculty_public_id)
+    if not profile:
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    return jsonify(
+        {"accomplishments": list_faculty_accomplishments(profile.id, criterion_id=criterion_id)}
+    ), 200
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra2-b/summary")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra2_b_summary(faculty_public_id: str):
+    from kra_configuration.kra2_annex import CRITERION_B_ID
+
+    return _reviewer_kra2_criterion_summary(faculty_public_id, CRITERION_B_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra2-b/accomplishments")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra2_b_accomplishments(faculty_public_id: str):
+    from kra_configuration.kra2_annex import CRITERION_B_ID
+
+    return _reviewer_kra2_criterion_accomplishments(faculty_public_id, CRITERION_B_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra2-c/summary")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra2_c_summary(faculty_public_id: str):
+    from kra_configuration.kra2_annex import CRITERION_C_ID
+
+    return _reviewer_kra2_criterion_summary(faculty_public_id, CRITERION_C_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra2-c/accomplishments")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra2_c_accomplishments(faculty_public_id: str):
+    from kra_configuration.kra2_annex import CRITERION_C_ID
+
+    return _reviewer_kra2_criterion_accomplishments(faculty_public_id, CRITERION_C_ID)
 
 
 @reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/criterion-c/summary")

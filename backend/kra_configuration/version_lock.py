@@ -43,6 +43,11 @@ def document_has_finalized_scoring(doc: Document) -> bool:
         ra = bundle.get("reviewerAssessment")
         if isinstance(ra, dict) and (ra.get("reviewStatus") or "").lower() == "approved":
             return True
+    bundle2 = info.get("kra2EvidenceBundle")
+    if isinstance(bundle2, dict):
+        ra2 = bundle2.get("reviewerAssessment")
+        if isinstance(ra2, dict) and (ra2.get("reviewStatus") or "").lower() == "approved":
+            return True
     return False
 
 
@@ -59,6 +64,22 @@ def maybe_lock_document_scoring_configuration(doc: Document) -> None:
 
 
 def record_configuration_in_criterion_c_bundle(
+    bundle: dict[str, Any],
+    *,
+    resolution: ScoringConfigurationResolution,
+) -> None:
+    _record_configuration_in_evidence_bundle(bundle, resolution=resolution)
+
+
+def record_configuration_in_kra2_bundle(
+    bundle: dict[str, Any],
+    *,
+    resolution: ScoringConfigurationResolution,
+) -> None:
+    _record_configuration_in_evidence_bundle(bundle, resolution=resolution)
+
+
+def _record_configuration_in_evidence_bundle(
     bundle: dict[str, Any],
     *,
     resolution: ScoringConfigurationResolution,

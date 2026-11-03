@@ -1506,8 +1506,20 @@ FL.evidence = {
     if (!state.facultyId && state.docFilter === "all") {
       jobs.push(FL.evidence._loadDirectory(session, state, isAdmin));
     } else {
-      if (state.facultyId) jobs.push(FL.store.loadFacultyDocuments(session, state.facultyId));
-      else jobs.push(FL.store.loadLiveDocuments(session));
+      if (state.facultyId) {
+        const kra2Criterion =
+          state.kraId === "kra2" &&
+          (state.criterionId === "kra2-a" ||
+            state.criterionId === "kra2-b" ||
+            state.criterionId === "kra2-c");
+        if (kra2Criterion) {
+          FL.store.loadFacultyDocuments(session, state.facultyId).catch(function () {
+            return null;
+          });
+        } else {
+          jobs.push(FL.store.loadFacultyDocuments(session, state.facultyId));
+        }
+      } else jobs.push(FL.store.loadLiveDocuments(session));
     }
     Promise.all(jobs).then(finish).catch(function (err) {
       page.innerHTML = FL.ui.empty("Workspace unavailable", err.message || "Could not load evidence data.");
@@ -1535,7 +1547,7 @@ FL.evidence = {
     }
     return Promise.all(jobs).then(function () {
       if (document.getElementById("evidence-stats")) {
-        FL.evidence._paintStats(FL.store.evidenceStats || {}, isAdmin);
+        FL.evidence._paintStats(FL.store.evidenceStats || {}, isAdmin, FL.evidence.parseLocation());
       }
       if (!document.querySelector(".evidence-directory") || !FL.store.evidenceDirectory) return;
       const state = FL.evidence.parseLocation();
@@ -1679,7 +1691,7 @@ FL.evidence = {
         <div class="evidence-body card" id="evidence-body"></div>
       </div>`;
 
-    FL.evidence._paintStats(stats, isAdmin);
+    FL.evidence._paintStats(stats, isAdmin, state);
     if (isAdmin && FL.store.usesRealAdminApi()) FL.evidence._paintSetSefSimulationPolicy(session);
     FL.evidence._paintCrumb(state, isAdmin, session);
     FL.evidence._bindBack(state, session);
@@ -1775,9 +1787,24 @@ FL.evidence = {
     }).join("");
   },
 
-  _paintStats: function (stats, isAdmin) {
+  _paintStats: function (stats, isAdmin, state) {
     const host = document.getElementById("evidence-stats");
     if (!host) return;
+    if (
+      state &&
+      state.kraId === "kra2" &&
+      state.facultyId &&
+      (state.criterionId === "kra2-a" || state.criterionId === "kra2-b" || state.criterionId === "kra2-c")
+    ) {
+      host.innerHTML =
+        '<div class="evidence-stat is-accent-teal"><div class="evidence-stat-body"><span>KRA II statistics</span><strong>Loading…</strong></div></div>';
+      return;
+    }
+    if (state && state.kraId === "kra2" && state.facultyId) {
+      host.innerHTML =
+        '<p class="muted" style="margin:0 0 1rem">Select a criterion to view KRA II accomplishment statistics.</p>';
+      return;
+    }
     const cards = isAdmin
       ? [
           { label: "Faculty with documents", value: stats.facultyWithDocuments, iconKey: "faculty", accent: "teal" },
@@ -2086,6 +2113,18 @@ FL.evidence = {
         FL.criterionCReview.mountAccomplishmentListInWorkspace(session, state, isAdmin, host, criterion);
       } else {
         host.innerHTML = FL.ui.empty("Criterion C unavailable", "Reload the page to open faculty accomplishments.");
+      }
+      return;
+    }
+    if (state.criterionId === "kra2-a" || state.criterionId === "kra2-b" || state.criterionId === "kra2-c") {
+      if (state.indicatorId) {
+        state.indicatorId = "";
+        FL.evidence.pushLocation(state);
+      }
+      if (FL.kra2AReview && FL.kra2AReview.mountAccomplishmentListInWorkspace) {
+        FL.kra2AReview.mountAccomplishmentListInWorkspace(session, state, isAdmin, host, criterion);
+      } else {
+        host.innerHTML = FL.ui.empty("KRA II unavailable", "Reload the page to open accomplishments.");
       }
       return;
     }

@@ -153,6 +153,14 @@ def _apply_success(doc: Document, result, job: DocumentOcrJob) -> None:
         before=criterion_c_before,
         after=dict(doc.extracted_info or {}),
     )
+    try:
+        from kra_configuration.kra2_annex import is_kra2_indicator
+        from documents.kra2_evidence.ocr_extraction import apply_kra2_ocr_pipeline
+
+        if is_kra2_indicator(doc.indicator_id):
+            apply_kra2_ocr_pipeline(doc, text=text)
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("KRA II OCR metadata merge failed for document %s", doc.public_id)
     sync_teaching_evaluations_for_document(
         doc,
         text=text,

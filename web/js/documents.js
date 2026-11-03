@@ -659,7 +659,13 @@ FL.documents = {
       }
       const tevFocus = params.get("tev");
       if (tevFocus) doc._highlightTev = tevFocus;
-      return FL.documents.hydrateAuthenticatedFile(doc).finally(function () {
+      var hydrate = FL.documents.hydrateAuthenticatedFile(doc).catch(function (hydrateErr) {
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn("Document preview hydrate failed:", hydrateErr);
+        }
+        return doc;
+      });
+      return hydrate.finally(function () {
         FL.documents.paintReview(session, doc, canDecide);
       });
     }).catch(function (error) {
@@ -676,6 +682,19 @@ FL.documents = {
     if (status === "processing") return "processing";
     if (status === "failed") return "failed";
     return "pending";
+  },
+
+  _isKra2Criterion: function (criterionId) {
+    return criterionId === "kra2-a" || criterionId === "kra2-b" || criterionId === "kra2-c";
+  },
+
+  _isKra2PrimaryAccomplishment: function (doc) {
+    if (!doc || !FL.documents._isKra2Criterion(doc.criterionId)) return false;
+    var ev = doc.kra2Evidence;
+    if (ev && ev.isSupportingDocument) return false;
+    var link = doc.extractedInfo && doc.extractedInfo.kra2EvidenceLink;
+    if (link && link.role === "supporting") return false;
+    return true;
   },
 
   paintReview: function (session, doc, canDecide) {
@@ -705,6 +724,18 @@ FL.documents = {
       FL.criterionCReview
     ) {
       FL.criterionCReview.paintReviewPage(session, doc, canDecide, {
+        faculty: faculty,
+        back: back,
+        backLabel: backLabel
+      });
+      return;
+    }
+    if (
+      FL.documents._isKra2Criterion(doc.criterionId) &&
+      FL.documents._isKra2PrimaryAccomplishment(doc) &&
+      FL.kra2AReview
+    ) {
+      FL.kra2AReview.paintReviewPage(session, doc, canDecide, {
         faculty: faculty,
         back: back,
         backLabel: backLabel

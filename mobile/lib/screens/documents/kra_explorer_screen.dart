@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../../data/app_state.dart';
 import '../../data/criterion_b_catalog.dart';
 import '../../data/criterion_c_catalog.dart';
+import '../../data/kra2_catalog.dart';
+import '../kra2/kra2_criterion_hub_screen.dart';
+import '../kra2/kra2_main_hub_screen.dart';
+import '../kra2/kra2_wizard_screen.dart';
 import '../../data/kra_scoring_display.dart';
 import '../../data/mock_kra_catalog.dart';
 import '../../data/teaching_effectiveness_mapper.dart';
@@ -81,6 +85,46 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         Navigator.pushReplacementNamed(context, AppRoutes.criterionCHub);
+      });
+    }
+    if (_criterionId == Kra2Catalog.criterionA ||
+        _criterionId == Kra2Catalog.criterionB ||
+        _criterionId == Kra2Catalog.criterionC) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final cid = _criterionId ?? '';
+        final ind = (_indicatorId ?? '').trim();
+        if (ind.isNotEmpty) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => Kra2WizardScreen(
+                criterionId: cid,
+                initialIndicatorId: ind,
+              ),
+            ),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => Kra2CriterionHubScreen(criterionId: cid),
+            ),
+          );
+        }
+      });
+    }
+    if (widget.kra == KraType.research &&
+        (widget.initialCriterionId == null || widget.initialCriterionId!.isEmpty) &&
+        (widget.initialIndicatorId == null || widget.initialIndicatorId!.isEmpty) &&
+        (_criterionId == null || _criterionId!.isEmpty) &&
+        (_indicatorId == null || _indicatorId!.isEmpty)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const Kra2MainHubScreen()),
+        );
       });
     }
   }

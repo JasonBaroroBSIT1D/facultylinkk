@@ -15,6 +15,9 @@ import 'screens/documents/document_flow_args.dart';
 import 'screens/documents/kra_explorer_screen.dart';
 import 'screens/criterion_b/criterion_b_hub_screen.dart';
 import 'screens/criterion_c/criterion_c_hub_screen.dart';
+import 'data/kra2_catalog.dart';
+import 'screens/kra2/kra2_criterion_hub_screen.dart';
+import 'screens/kra2/kra2_main_hub_screen.dart';
 import 'screens/documents/upload_document_screen.dart';
 import 'screens/notifications/notifications_screen.dart';
 import 'screens/profile/profile_screen.dart';
@@ -24,6 +27,7 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiConfig.initialize();
+  await Kra2Catalog.preload();
   runApp(const FacultyLinkApp());
 }
 
@@ -81,6 +85,12 @@ class FacultyLinkApp extends StatelessWidget {
             return MaterialPageRoute(builder: (_) => const CriterionBHubScreen());
           case AppRoutes.criterionCHub:
             return MaterialPageRoute(builder: (_) => const CriterionCHubScreen());
+          case AppRoutes.kra2AJournalHub:
+            return MaterialPageRoute(
+              builder: (_) => const Kra2CriterionHubScreen(criterionId: Kra2Catalog.criterionA),
+            );
+          case AppRoutes.kra2MainHub:
+            return MaterialPageRoute(builder: (_) => const Kra2MainHubScreen());
           case AppRoutes.kraExplorer:
             final args = settings.arguments;
             if (args is KraExplorerLaunch) {

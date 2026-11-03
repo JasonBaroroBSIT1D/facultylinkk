@@ -1854,3 +1854,142 @@ body.ca-tev-drawer-open {
   flex: 1 1 100%;
   margin: 0;
 }
+
+.kra2-a-review .kra2-subheading {
+  font-size: 0.95rem;
+  margin: var(--fl-space-3) 0 var(--fl-space-2);
+  font-weight: 600;
+}
+
+.kra2-a-review .kra2-section-lede {
+  margin-bottom: var(--fl-space-2);
+}
+
+.kra2-scoring-panel {
+  margin: var(--fl-space-3) 0;
+  padding: var(--fl-space-3);
+  border: 1px solid var(--fl-border-subtle, rgba(0, 0, 0, 0.08));
+  border-radius: var(--fl-radius-md, 8px);
+  background: var(--fl-surface-muted, rgba(0, 0, 0, 0.02));
+}
+
+.kra2-scoring-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--fl-space-2);
+  margin-bottom: var(--fl-space-3);
+}
+
+.kra2-system-points {
+  font-size: 1.25rem;
+}
+
+.kra2-scoring-label {
+  display: block;
+  margin-bottom: var(--fl-space-3);
+  font-weight: 500;
+}
+
+.kra2-scoring-input {
+  display: block;
+  width: min(12rem, 100%);
+  margin-top: var(--fl-space-1);
+  padding: 0.5rem 0.65rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.kra2-scoring-textarea,
+.kra2-remarks-input {
+  display: block;
+  width: 100%;
+  max-width: 42rem;
+  margin-top: var(--fl-space-1);
+  padding: 0.65rem 0.75rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.kra2-remarks-label {
+  display: block;
+  margin-top: var(--fl-space-3);
+  font-weight: 500;
+}
+
+.kra2-decision-actions {
+  margin-top: var(--fl-space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2);
+}
+
+.kra2-scoring-readonly {
+  margin-bottom: var(--fl-space-2);
+}
+
+.kra2-scoring-readonly strong {
+  display: block;
+  font-size: 1.25rem;
+  margin-top: 0.25rem;
+}
+
+.kra2-evidence-checklist .cc-evidence-card {
+  margin-top: var(--fl-space-2);
+}
+
+.kra2-approval-checklist.is-ready .kra2-checklist-ok {
+  color: var(--fl-accent-ok, #0a7a3e);
+}
+
+.kra2-checklist-blocker {
+  color: var(--fl-text, inherit);
+}
+
+.kra2-test-notice {
+  font-size: 0.85rem;
+  margin-bottom: var(--fl-space-2);
+}
+
+.kra2-metadata-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fl-space-2);
+}
+
+.kra2-metadata-fields {
+  display: grid;
+  gap: var(--fl-space-2);
+  margin: var(--fl-space-2) 0 var(--fl-space-3);
+  max-width: 42rem;
+}
+
+.kra2-metadata-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-weight: 500;
+}
+
+.kra2-metadata-fields input {
+  padding: 0.5rem 0.65rem;
+  font-weight: 400;
+}
+
+.kra2-scoring-row--highlight {
+  padding: var(--fl-space-2) 0;
+  border-top: 1px solid var(--fl-border-subtle, rgba(0, 0, 0, 0.08));
+  border-bottom: 1px solid var(--fl-border-subtle, rgba(0, 0, 0, 0.08));
+  margin: var(--fl-space-2) 0;
+}
+
+.kra2-scoring-method-help {
+  margin-bottom: var(--fl-space-2);
+}
+
+.kra2-final-points {
+  font-size: 1.15rem;
+  color: var(--fl-accent-teal, #0d6e6e);
+}

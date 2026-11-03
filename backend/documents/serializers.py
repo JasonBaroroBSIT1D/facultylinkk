@@ -115,6 +115,13 @@ def document_to_web(
             payload["criterionCEvidence"] = c_bundle_payload(doc)
         except ImportError:
             pass
+    if (doc.criterion_id or "").startswith("kra2-"):
+        try:
+            from documents.kra2_evidence.service import bundle_api_payload as kra2_bundle_payload
+
+            payload["kra2Evidence"] = kra2_bundle_payload(doc)
+        except ImportError:
+            pass
     if doc.file_path and api_base:
         payload["fileApiPath"] = f"{api_base}/file"
         payload["fileUrl"] = f"{api_base}/file"
