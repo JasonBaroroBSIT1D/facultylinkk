@@ -13,6 +13,8 @@ import 'screens/assessment/assessment_screen.dart';
 import 'screens/documents/document_details_screen.dart';
 import 'screens/documents/document_flow_args.dart';
 import 'screens/documents/kra_explorer_screen.dart';
+import 'screens/criterion_b/criterion_b_hub_screen.dart';
+import 'screens/criterion_c/criterion_c_hub_screen.dart';
 import 'screens/documents/upload_document_screen.dart';
 import 'screens/notifications/notifications_screen.dart';
 import 'screens/profile/profile_screen.dart';
@@ -75,6 +77,10 @@ class FacultyLinkApp extends StatelessWidget {
             return MaterialPageRoute(
               builder: (_) => UploadDocumentScreen.fromArguments(settings.arguments),
             );
+          case AppRoutes.criterionBHub:
+            return MaterialPageRoute(builder: (_) => const CriterionBHubScreen());
+          case AppRoutes.criterionCHub:
+            return MaterialPageRoute(builder: (_) => const CriterionCHubScreen());
           case AppRoutes.kraExplorer:
             final args = settings.arguments;
             if (args is KraExplorerLaunch) {

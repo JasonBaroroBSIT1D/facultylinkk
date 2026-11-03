@@ -1,0 +1,67 @@
+{
+  "tag": "CRITERION-B-ACTIVATION-PREFLIGHT",
+  "startedAt": "2026-11-02T19:40:01.414420+00:00",
+  "system": "single_database_single_backend",
+  "checks": [
+    "restorable_backup_present",
+    "adapter_off_until_env_set",
+    "automated_regression_passed",
+    "jason_current_score_matches_aggregate_when_adapter_on"
+  ],
+  "warnings": [],
+  "blockers": [],
+  "database": "facultylink",
+  "adapterEnvRaw": "0",
+  "adapterEnabledAtImport": false,
+  "backup": {
+    "path": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\backend\\backups\\facultylink_phase6b2_20261103_003750.dump",
+    "source": "LATEST_PHASE6B2_BACKUP.txt",
+    "sizeMb": 0.09
+  },
+  "pytest": {
+    "exitCode": 0,
+    "stdout": "......................................                                   [100%]\n38 passed in 0.14s\n",
+    "stderr": ""
+  },
+  "liveReadOnly": {
+    "accomplishment": {
+      "documentId": "doc_64d33454ab0f",
+      "title": "01 Primary Textbook",
+      "status": "pending_review",
+      "indicatorId": "kra1-b-textbook-co",
+      "validationStatus": "valid",
+      "readyForScoring": true,
+      "systemEstimatePoints": 15.0,
+      "guidelineCompliantVerifiedPoints": 15.0,
+      "reviewerProposedPoints": 14.0,
+      "currentScoreLabel": "Reviewer Assessed",
+      "currentScorePoints": 14.0,
+      "currentScoreSource": "reviewer_assessment"
+    },
+    "beforeAdapterEnvOff": {
+      "adapterOn": false,
+      "criterionBEstimatedPoints": null,
+      "criterionBPreviewPoints": 14.0,
+      "criterionBIntegrationState": "criterion_b_adapter_disabled",
+      "criterionBScoringSource": "legacy_document_points",
+      "kra1EstimatedPoints": null,
+      "kra1CriteriaBPoints": null,
+      "simulationEstimatedTotal": 0,
+      "simulationAdapterEnabledField": false
+    },
+    "afterAdapterSimulatedOn": {
+      "adapterOn": true,
+      "criterionBEstimatedPoints": 14.0,
+      "criterionBPreviewPoints": null,
+      "criterionBIntegrationState": null,
+      "criterionBScoringSource": "criterion_b_evidence_bundle",
+      "kra1EstimatedPoints": 14.0,
+      "kra1CriteriaBPoints": 14.0,
+      "simulationEstimatedTotal": 14.0,
+      "simulationAdapterEnabledField": true
+    }
+  },
+  "readyForActivationApproval": true,
+  "activationSteps": "See backend/docs/CRITERION_B_SINGLE_SYSTEM_ACTIVATION.md \u2014 add env var to backend/.env, restart Flask :5000.",
+  "finishedAt": "2026-11-02T19:40:06.977577+00:00"
+}

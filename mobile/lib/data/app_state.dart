@@ -4,12 +4,15 @@ import 'package:flutter/foundation.dart';
 import '../models/enums.dart';
 import '../models/models.dart';
 import 'api_client.dart';
+import 'criterion_b_evidence.dart';
+import 'criterion_c_evidence.dart';
 import 'app_auth_exception.dart';
 import 'auth_response.dart';
 import 'faculty_api_mapper.dart';
 import 'faculty_session_defaults.dart';
 import 'mock_auth.dart';
 import 'mock_data.dart';
+import 'scoring_configuration.dart';
 
 /// App-wide faculty state backed by Flask JWT APIs when signed in.
 class AppState extends ChangeNotifier {
@@ -33,6 +36,11 @@ class AppState extends ChangeNotifier {
   PreparationPeriod? _preparationPeriod;
   Map<String, dynamic>? _teachingEffectiveness;
   final Map<String, Map<String, dynamic>> _setSefIndicatorBlocks = {};
+
+  ScoringConfiguration? _scoringConfiguration;
+  bool scoringConfigurationLoading = false;
+  String? scoringConfigurationError;
+  DateTime? _scoringConfigurationFetchedAt;
 
   bool isSignedIn = false;
   bool mustChangePassword = false;
@@ -93,6 +101,10 @@ class AppState extends ChangeNotifier {
 
   Map<String, dynamic>? setSefIndicatorBlock(String indicatorId) =>
       _setSefIndicatorBlocks[indicatorId];
+
+  ScoringConfiguration? get scoringConfiguration => _scoringConfiguration;
+
+  DateTime? get scoringConfigurationFetchedAt => _scoringConfigurationFetchedAt;
 
   bool get profileLoaded => _profileLoaded;
   bool _profileLoaded = false;
@@ -397,6 +409,8 @@ class AppState extends ChangeNotifier {
       );
     }
 
+    await refreshScoringConfiguration(quiet: true);
+
     if (!skipProtectedApis) {
       await fetchAssignedReviewer(quiet: true);
       await fetchDocumentsFromApi(quiet: true);
@@ -404,6 +418,32 @@ class AppState extends ChangeNotifier {
       await fetchSetSefIndicatorFromApi('kra1-a-student', quiet: true);
       await fetchSetSefIndicatorFromApi('kra1-a-supervisor', quiet: true);
       await refreshRankSimulationFromApi(quiet: true);
+    }
+  }
+
+  Future<void> refreshScoringConfiguration({bool quiet = false, bool force = false}) async {
+    if (_useMockAuthForTests || !isSignedIn) return;
+    if (!force &&
+        _scoringConfigurationFetchedAt != null &&
+        DateTime.now().difference(_scoringConfigurationFetchedAt!) <
+            const Duration(minutes: 10)) {
+      return;
+    }
+    scoringConfigurationLoading = true;
+    scoringConfigurationError = null;
+    notifyListeners();
+    try {
+      final raw = await _api.fetchScoringConfiguration();
+      final parsed = ScoringConfiguration.fromApi(raw);
+      _scoringConfiguration = parsed;
+      ScoringConfigurationHolder.current = parsed;
+      _scoringConfigurationFetchedAt = DateTime.now();
+    } catch (e) {
+      scoringConfigurationError = e.toString();
+      if (!quiet) rethrow;
+    } finally {
+      scoringConfigurationLoading = false;
+      notifyListeners();
     }
   }
 
@@ -432,6 +472,150 @@ class AppState extends ChangeNotifier {
       if (!quiet) rethrow;
       return null;
     }
+  }
+
+  Future<CriterionBEvidencePayload?> fetchCriterionBEvidenceBundle(
+    String documentId, {
+    bool quiet = false,
+  }) async {
+    if (_useMockAuthForTests || !isSignedIn) return null;
+    try {
+      final raw = await _api.fetchCriterionBEvidenceBundle(documentId);
+      final payload = CriterionBEvidencePayload.fromApi(raw);
+      await refreshFacultyDocument(documentId, quiet: true);
+      return payload;
+    } catch (_) {
+      if (!quiet) rethrow;
+      return null;
+    }
+  }
+
+  Future<CriterionBEvidencePayload?> patchCriterionBEvidenceBundle(
+    String documentId,
+    Map<String, dynamic> body,
+  ) async {
+    if (_useMockAuthForTests || !isSignedIn) {
+      throw StateError('Criterion B evidence requires a live API session.');
+    }
+    final raw = await _api.patchCriterionBEvidenceBundle(documentId, body);
+    await refreshFacultyDocument(documentId, quiet: true);
+    final validation = raw['validation'];
+    if (validation is Map) {
+      return CriterionBEvidencePayload(
+        bundle: raw['bundle'] is Map
+            ? Map<String, dynamic>.from(raw['bundle'] as Map)
+            : documentById(documentId)?.criterionBEvidence?.bundle,
+        validation: CriterionBValidation.fromApi(Map<String, dynamic>.from(validation)),
+      );
+    }
+    return documentById(documentId)?.criterionBEvidence;
+  }
+
+  Future<void> linkCriterionBSupporting({
+    required String primaryDocumentId,
+    required String supportingDocumentId,
+    required String evidenceSlot,
+  }) async {
+    if (_useMockAuthForTests || !isSignedIn) {
+      throw StateError('Criterion B linking requires a live API session.');
+    }
+    await _api.linkCriterionBSupportingDocument(
+      primaryDocumentId: primaryDocumentId,
+      supportingDocumentId: supportingDocumentId,
+      evidenceSlot: evidenceSlot,
+    );
+    await refreshFacultyDocument(primaryDocumentId, quiet: true);
+    await refreshFacultyDocument(supportingDocumentId, quiet: true);
+  }
+
+  Future<CriterionCSummary?> fetchCriterionCSummary({bool quiet = false}) async {
+    if (_useMockAuthForTests || !isSignedIn) return null;
+    try {
+      final raw = await _api.fetchCriterionCSummary();
+      return CriterionCSummary.fromApi(raw);
+    } catch (_) {
+      if (!quiet) rethrow;
+      return null;
+    }
+  }
+
+  Future<List<CriterionCAccomplishmentRow>> fetchCriterionCAccomplishments({
+    bool quiet = false,
+  }) async {
+    if (_useMockAuthForTests || !isSignedIn) return [];
+    try {
+      final raw = await _api.fetchCriterionCAccomplishments();
+      final list = raw['accomplishments'];
+      if (list is! List) return [];
+      return list
+          .whereType<Map>()
+          .map((e) => CriterionCAccomplishmentRow.fromApi(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (_) {
+      if (!quiet) rethrow;
+      return [];
+    }
+  }
+
+  Future<CriterionCEvidencePayload?> fetchCriterionCEvidenceBundle(
+    String documentId, {
+    bool quiet = false,
+  }) async {
+    if (_useMockAuthForTests || !isSignedIn) return null;
+    try {
+      final raw = await _api.fetchCriterionCEvidenceBundle(documentId);
+      final payload = CriterionCEvidencePayload.fromApi(raw);
+      await refreshFacultyDocument(documentId, quiet: true);
+      return payload;
+    } catch (_) {
+      if (!quiet) rethrow;
+      return null;
+    }
+  }
+
+  Future<CriterionCEvidencePayload?> patchCriterionCEvidenceBundle(
+    String documentId,
+    Map<String, dynamic> body,
+  ) async {
+    if (_useMockAuthForTests || !isSignedIn) {
+      throw StateError('Criterion C evidence requires a live API session.');
+    }
+    await _api.patchCriterionCEvidenceBundle(documentId, body);
+    await refreshFacultyDocument(documentId, quiet: true);
+    return fetchCriterionCEvidenceBundle(documentId, quiet: true);
+  }
+
+  Future<void> retryFacultyDocumentOcr(String documentId) async {
+    if (_useMockAuthForTests || !isSignedIn) {
+      throw StateError('OCR retry requires a live API session.');
+    }
+    await _api.retryFacultyDocumentOcr(documentId);
+    await refreshFacultyDocument(documentId, quiet: true);
+  }
+
+  Future<void> linkCriterionCSupporting({
+    required String primaryDocumentId,
+    required String supportingDocumentId,
+    required String evidenceSlot,
+  }) async {
+    if (_useMockAuthForTests || !isSignedIn) {
+      throw StateError('Criterion C linking requires a live API session.');
+    }
+    await _api.linkCriterionCSupportingDocument(
+      primaryDocumentId: primaryDocumentId,
+      supportingDocumentId: supportingDocumentId,
+      evidenceSlot: evidenceSlot,
+    );
+    await refreshFacultyDocument(primaryDocumentId, quiet: true);
+    await refreshFacultyDocument(supportingDocumentId, quiet: true);
+  }
+
+  Future<void> submitCriterionCAccomplishment(String documentId) async {
+    if (_useMockAuthForTests || !isSignedIn) {
+      throw StateError('Submit requires a live API session.');
+    }
+    await _api.submitFacultyDocument(documentId);
+    await refreshFacultyDocument(documentId, quiet: true);
   }
 
   Future<FacultyDocument?> refreshFacultyDocument(String documentId, {bool quiet = false}) async {
@@ -515,6 +699,11 @@ class AppState extends ChangeNotifier {
     _preparationPeriod = null;
     _teachingEffectiveness = null;
     _setSefIndicatorBlocks.clear();
+    _scoringConfiguration = null;
+    _scoringConfigurationFetchedAt = null;
+    scoringConfigurationError = null;
+    scoringConfigurationLoading = false;
+    ScoringConfigurationHolder.clear();
     assignedReviewer = null;
     assignedReviewerError = null;
     assignedReviewerLoading = false;
@@ -690,6 +879,8 @@ class AppState extends ChangeNotifier {
     String? packageId,
     int? requirementIndex,
     List<int>? fileBytes,
+    String? bundlePrimaryDocumentId,
+    String? evidenceSlot,
   }) async {
     return _runExclusive('Uploading document...', () async {
       final isCriterionAAuto =
@@ -707,6 +898,8 @@ class AppState extends ChangeNotifier {
           indicatorId: indicatorId ?? '',
           fileName: fileName,
           fileBytes: fileBytes,
+          bundlePrimaryId: bundlePrimaryDocumentId,
+          evidenceSlot: evidenceSlot,
         );
         final doc = FacultyDocument.fromApi(saved);
         localDocumentBytes[doc.id] = Uint8List.fromList(fileBytes);

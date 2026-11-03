@@ -147,6 +147,8 @@ def create_upload(
     criterion_id: str,
     indicator_id: str = "",
     replaces_public_id: str | None = None,
+    bundle_primary_public_id: str | None = None,
+    evidence_slot: str | None = None,
 ) -> Document:
     profile = faculty_profile_for_user(faculty_user)
     if not profile:
@@ -210,6 +212,45 @@ def create_upload(
     if hasattr(doc, "replaces_document_id"):
         doc.replaces_document_id = replaces_id
     db.session.add(doc)
+    db.session.flush()
+    try:
+        from documents.criterion_b_evidence.service import (
+            CriterionBEvidenceError,
+            attach_supporting_upload_link as attach_b_supporting,
+            maybe_initialize_criterion_b_bundle,
+        )
+        from documents.criterion_c_evidence.service import (
+            CriterionCEvidenceError,
+            attach_supporting_upload_link as attach_c_supporting,
+            maybe_initialize_criterion_c_bundle,
+        )
+
+        slot = (evidence_slot or "").strip()
+        primary_ref = (bundle_primary_public_id or "").strip()
+        criterion = (criterion_id or "").strip()
+        if primary_ref and slot:
+            primary_doc = get_document(primary_ref)
+            if primary_doc and (primary_doc.criterion_id or "").strip() == "kra1-c":
+                attach_c_supporting(
+                    doc,
+                    primary_public_id=primary_ref,
+                    evidence_slot=slot,
+                )
+            else:
+                attach_b_supporting(
+                    doc,
+                    primary_public_id=primary_ref,
+                    evidence_slot=slot,
+                )
+        else:
+            maybe_initialize_criterion_c_bundle(doc)
+            maybe_initialize_criterion_b_bundle(doc)
+    except (CriterionBEvidenceError, CriterionCEvidenceError) as error:
+        db.session.rollback()
+        stored = resolve_path(relative)
+        if stored and stored.is_file():
+            stored.unlink()
+        raise ValueError(error.code) from error
     if prev is not None:
         _soft_delete_document_internal(
             prev,
@@ -290,6 +331,9 @@ def apply_review_decision(
         append_review_history(doc, actor=reviewer, action="revision", remarks=remarks, status_after="needs_revision")
     else:
         raise ValueError("invalid_decision")
+    from kra_configuration.version_lock import maybe_lock_document_scoring_configuration
+
+    maybe_lock_document_scoring_configuration(doc)
     db.session.commit()
     _recalculate_faculty_score_for_document(doc, actor=reviewer, reason="reviewer_document_decision")
     return doc

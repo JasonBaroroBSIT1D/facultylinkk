@@ -1,0 +1,63 @@
+{
+  "uploadRoot": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\backend\\uploads",
+  "referencedFiles": 5,
+  "missingOnDisk": [],
+  "diskOrphans": [],
+  "manifest": [
+    {
+      "documentId": "doc_4561c33e9ce6",
+      "relativePath": "faculty/1/3137063f8468474ea1f06be510e5dcad.pdf",
+      "fileName": "04_Library_Certification.pdf",
+      "mimeType": "application/pdf",
+      "dbFileSize": 2478,
+      "deleted": false,
+      "existsOnDisk": true,
+      "diskSize": 2478,
+      "sha256": "2eac73ccb3181d2f292577ee9b5703d33b30a6763feb02f0ed733a488a5aec58"
+    },
+    {
+      "documentId": "doc_946122d0bb49",
+      "relativePath": "faculty/1/5f73bee13f6146aa992bc2127992c650.pdf",
+      "fileName": "03_Approved_Course_Syllabus.pdf",
+      "mimeType": "application/pdf",
+      "dbFileSize": 2640,
+      "deleted": false,
+      "existsOnDisk": true,
+      "diskSize": 2640,
+      "sha256": "9b6f70f208d524e61a9e861e884bc6545cd51ec669ba5c24f3641e032ec0f3a4"
+    },
+    {
+      "documentId": "doc_e527d4d69609",
+      "relativePath": "faculty/1/c1630c7ba94b46349380155edcc37910.pdf",
+      "fileName": "02_IMDC_Evaluation_and_Approval.pdf",
+      "mimeType": "application/pdf",
+      "dbFileSize": 2554,
+      "deleted": false,
+      "existsOnDisk": true,
+      "diskSize": 2554,
+      "sha256": "e405db639c50628fe69e9ae1a6564557a71b1cf3290c85448e5980fa528133e3"
+    },
+    {
+      "documentId": "doc_5149570d90a2",
+      "relativePath": "faculty/1/cfd29f3c96a547a0b4b2ca63bfb78acd.pdf",
+      "fileName": "06_Coauthorship_and_Contribution.pdf",
+      "mimeType": "application/pdf",
+      "dbFileSize": 2520,
+      "deleted": false,
+      "existsOnDisk": true,
+      "diskSize": 2520,
+      "sha256": "aa57a1ef03db20cea346ac18682a44c675f721880d39e67dcc840c792bc0c9b6"
+    },
+    {
+      "documentId": "doc_64d33454ab0f",
+      "relativePath": "faculty/1/eb1d2a83515247838f9dd95ff1cd566f.pdf",
+      "fileName": "01_Primary_Textbook.pdf",
+      "mimeType": "application/pdf",
+      "dbFileSize": 2840,
+      "deleted": false,
+      "existsOnDisk": true,
+      "diskSize": 2840,
+      "sha256": "d2558d12f5430bf935b9ecaf5bd3f6e85801e45d78f24f57e896fcc9267d6081"
+    }
+  ]
+}

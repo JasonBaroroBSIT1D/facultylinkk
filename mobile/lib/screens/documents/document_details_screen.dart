@@ -10,7 +10,11 @@ import '../../widgets/app_buttons.dart';
 import '../../widgets/common.dart';
 import '../../widgets/dialogs.dart';
 import '../../widgets/status_badge.dart';
+import '../../widgets/criterion_b_evidence_panel.dart';
 import '../../widgets/teaching_evaluation_record_tile.dart';
+import '../../data/criterion_b_catalog.dart';
+import '../../data/criterion_c_catalog.dart';
+import '../criterion_c/criterion_c_track_screen.dart';
 import '../../models/teaching_evaluation_record.dart';
 import 'document_viewer_screen.dart';
 
@@ -356,6 +360,24 @@ class _DocumentDetailsBodyState extends State<_DocumentDetailsBody> {
               child: LinearProgressIndicator(minHeight: 2),
             ),
           const SizedBox(height: 12),
+          if (document.criterionId == CriterionBCatalog.criterionId)
+            CriterionBEvidencePanel(document: document),
+          if (document.criterionId == CriterionCCatalog.criterionId &&
+              document.isCriterionCPrimaryClaim)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: OutlinedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CriterionCTrackScreen(primaryDocumentId: document.id),
+                    ),
+                  );
+                },
+                child: const Text('Open Criterion C accomplishment workflow'),
+              ),
+            ),
           _SectionCard(
             title: 'Document information',
             child: Column(

@@ -8,6 +8,7 @@ from documents.routes import admin_docs_bp, faculty_docs_bp, reviewer_docs_bp
 from faculty_routes import faculty_bp
 from reviewer_routes import reviewer_bp
 from kra_configuration.routes import kra_config_admin_bp
+from kra_configuration.read_routes import scoring_read_bp
 from auth_models import RevokedToken
 from cli import (
     create_administrator,
@@ -51,6 +52,7 @@ def create_app(config_class: type = Config) -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(kra_config_admin_bp, url_prefix="/api/admin")
+    app.register_blueprint(scoring_read_bp, url_prefix="/api")
     app.register_blueprint(faculty_bp)
     app.register_blueprint(reviewer_bp)
     app.register_blueprint(faculty_docs_bp)

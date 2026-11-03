@@ -54,6 +54,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         label: 'Refreshing documents...',
         soft: true,
       );
+      AppState.instance.refreshScoringConfiguration(quiet: true, force: true);
     }
   }
 

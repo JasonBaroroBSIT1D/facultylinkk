@@ -145,6 +145,9 @@ class Document(TimestampMixin, db.Model):
     deleted_at = db.Column(db.DateTime(timezone=True))
     version_number = db.Column(db.Integer, nullable=False, default=1)
     replaces_document_id = db.Column(db.Integer, db.ForeignKey("documents.id"), index=True)
+    scoring_kra_configuration_id = db.Column(
+        db.Integer, db.ForeignKey("kra_configuration.id"), nullable=True, index=True
+    )
 
     faculty_profile = db.relationship("FacultyProfile", back_populates="documents")
     replaces_document = db.relationship("Document", remote_side=[id], foreign_keys=[replaces_document_id])
@@ -332,6 +335,9 @@ class EvaluationPeriod(TimestampMixin, db.Model):
     review_close = db.Column(db.Date)
     status = db.Column(db.String(40), nullable=False, default="draft")
     timezone = db.Column(db.String(64), default="Asia/Manila")
+    kra_configuration_id = db.Column(
+        db.Integer, db.ForeignKey("kra_configuration.id"), nullable=True, index=True
+    )
 
 
 class Notification(TimestampMixin, db.Model):

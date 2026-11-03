@@ -78,6 +78,24 @@ class ApiClient {
     );
   }
 
+  /// Applicable published official scoring configuration (Phase C5/C6).
+  Future<Map<String, dynamic>> fetchScoringConfiguration() async {
+    return _getJson(
+      '/api/faculty/me/scoring-configuration',
+      authenticated: true,
+      allowRefresh: true,
+    );
+  }
+
+  /// Optional shared applicable endpoint (same payload shape as faculty route).
+  Future<Map<String, dynamic>> fetchApplicableScoringConfiguration({String? asOf}) async {
+    var path = '/api/scoring-configuration/applicable';
+    if (asOf != null && asOf.isNotEmpty) {
+      path = '$path?asOf=${Uri.encodeQueryComponent(asOf)}';
+    }
+    return _getJson(path, authenticated: true, allowRefresh: true);
+  }
+
   Future<Map<String, dynamic>> fetchMyAssignedReviewer() async {
     return _getJson(
       '/api/faculty/me/reviewer',
@@ -105,6 +123,8 @@ class ApiClient {
     required String fileName,
     required List<int> fileBytes,
     String? replacesDocumentId,
+    String? bundlePrimaryId,
+    String? evidenceSlot,
   }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/faculty/me/documents');
     Future<http.Response> send(String? bearer) async {
@@ -118,6 +138,12 @@ class ApiClient {
       request.fields['indicatorId'] = indicatorId;
       if (replacesDocumentId != null && replacesDocumentId.isNotEmpty) {
         request.fields['replacesDocumentId'] = replacesDocumentId;
+      }
+      if (bundlePrimaryId != null && bundlePrimaryId.isNotEmpty) {
+        request.fields['bundlePrimaryId'] = bundlePrimaryId;
+      }
+      if (evidenceSlot != null && evidenceSlot.isNotEmpty) {
+        request.fields['evidenceSlot'] = evidenceSlot;
       }
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -164,6 +190,102 @@ class ApiClient {
     return _postJson(
       '/api/faculty/me/documents/$documentId/submit',
       {},
+      authenticated: true,
+    );
+  }
+
+  Future<Map<String, dynamic>> fetchCriterionBEvidenceBundle(String documentId) async {
+    return _getJson(
+      '/api/faculty/me/documents/$documentId/criterion-b/evidence-bundle',
+      authenticated: true,
+      allowRefresh: true,
+    );
+  }
+
+  Future<Map<String, dynamic>> patchCriterionBEvidenceBundle(
+    String documentId,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _send(
+      'PATCH',
+      '/api/faculty/me/documents/$documentId/criterion-b/evidence-bundle',
+      body: body,
+      authenticated: true,
+    );
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> linkCriterionBSupportingDocument({
+    required String primaryDocumentId,
+    required String supportingDocumentId,
+    required String evidenceSlot,
+  }) async {
+    return _postJson(
+      '/api/faculty/me/documents/$primaryDocumentId/criterion-b/link-supporting',
+      {
+        'supportingDocumentId': supportingDocumentId,
+        'evidenceSlot': evidenceSlot,
+      },
+      authenticated: true,
+    );
+  }
+
+  Future<Map<String, dynamic>> fetchCriterionCSummary() async {
+    return _getJson(
+      '/api/faculty/me/documents/criterion-c/summary',
+      authenticated: true,
+      allowRefresh: true,
+    );
+  }
+
+  Future<Map<String, dynamic>> fetchCriterionCAccomplishments() async {
+    return _getJson(
+      '/api/faculty/me/documents/criterion-c/accomplishments',
+      authenticated: true,
+      allowRefresh: true,
+    );
+  }
+
+  Future<Map<String, dynamic>> fetchCriterionCEvidenceBundle(String documentId) async {
+    return _getJson(
+      '/api/faculty/me/documents/$documentId/criterion-c/evidence-bundle',
+      authenticated: true,
+      allowRefresh: true,
+    );
+  }
+
+  Future<Map<String, dynamic>> patchCriterionCEvidenceBundle(
+    String documentId,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _send(
+      'PATCH',
+      '/api/faculty/me/documents/$documentId/criterion-c/evidence-bundle',
+      body: body,
+      authenticated: true,
+    );
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> retryFacultyDocumentOcr(String documentId) async {
+    return _postJson(
+      '/api/faculty/me/documents/$documentId/ocr/retry',
+      const {},
+      authenticated: true,
+    );
+  }
+
+  Future<Map<String, dynamic>> linkCriterionCSupportingDocument({
+    required String primaryDocumentId,
+    required String supportingDocumentId,
+    required String evidenceSlot,
+  }) async {
+    return _postJson(
+      '/api/faculty/me/documents/$primaryDocumentId/criterion-c/link-supporting',
+      {
+        'supportingDocumentId': supportingDocumentId,
+        'evidenceSlot': evidenceSlot,
+      },
       authenticated: true,
     );
   }
@@ -328,6 +450,14 @@ class ApiClient {
       }
       if (method == 'DELETE') {
         return apiDelete(_http, uri, headers: headers);
+      }
+      if (method == 'PATCH') {
+        return apiPatch(
+          _http,
+          uri,
+          headers: headers,
+          body: jsonEncode(body ?? {}),
+        );
       }
       return apiPost(
         _http,

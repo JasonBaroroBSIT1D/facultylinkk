@@ -91,7 +91,9 @@ abstract final class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.navy,
           foregroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(54),
+          // Size.fromHeight() sets width to infinity and breaks buttons inside Row (e.g. Add Work footer).
+          minimumSize: const Size(64, 54),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
@@ -100,7 +102,8 @@ abstract final class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.navy,
           backgroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(54),
+          minimumSize: const Size(64, 54),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           side: const BorderSide(color: AppColors.navy, width: 1.4),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
           textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),

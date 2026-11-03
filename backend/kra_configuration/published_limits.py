@@ -5,18 +5,24 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from datetime import date
+
+from kra_configuration.resolver import resolve_scoring_configuration, settings_blob_from_resolution
 from kra_configuration.service import get_published_row, kra_settings_from_json
 
 _CRITERION_ID_RE = re.compile(r"^kra\d+-([a-d])$", re.IGNORECASE)
 
 
-def published_settings_blob(settings_json: dict | None = None) -> dict[str, Any]:
+def published_settings_blob(
+    settings_json: dict | None = None,
+    *,
+    as_of: date | None = None,
+    kra_configuration_id: int | None = None,
+) -> dict[str, Any]:
     if settings_json is not None:
         return kra_settings_from_json(settings_json)
-    row = get_published_row()
-    if not row:
-        return kra_settings_from_json({})
-    return kra_settings_from_json(row.settings_json if isinstance(row.settings_json, dict) else {})
+    resolution = resolve_scoring_configuration(as_of=as_of, kra_configuration_id=kra_configuration_id)
+    return settings_blob_from_resolution(resolution)
 
 
 def kra_config_row(settings: dict[str, Any], kra_id: str) -> dict[str, Any] | None:

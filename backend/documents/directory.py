@@ -190,8 +190,11 @@ def paginated_faculty_directory(
     for doc_list in docs_by_profile.values():
         page_docs.extend(doc_list)
     if page_docs:
+        from documents.criterion_c_evidence.workflow_sync import heal_criterion_c_workflow_for_documents
         from documents.set_sef_parent_review_sync import sync_set_sef_parent_reviews
 
+        if heal_criterion_c_workflow_for_documents(page_docs):
+            db.session.commit()
         sync_set_sef_parent_reviews(page_docs, None, trigger="faculty_directory")
 
     def row_dict(profile: FacultyProfile) -> dict:

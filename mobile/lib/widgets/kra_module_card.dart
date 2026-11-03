@@ -129,6 +129,20 @@ class _KraModuleCardState extends State<KraModuleCard> {
                               ),
                             ],
                           ),
+                          if (score.integrationFootnote != null &&
+                              score.integrationFootnote!.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              score.integrationFootnote!,
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                height: 1.35,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 10),
                           Text(
                             '${score.currentPoints}',

@@ -85,6 +85,7 @@ FL.auth = {
     FL.api.send("POST", "/api/logout").catch(function () { /* clear locally even if API unreachable */ })
       .finally(function () {
         if (FL.apiClient) FL.apiClient.clearTokens();
+        if (FL.scoringConfiguration && FL.scoringConfiguration.clear) FL.scoringConfiguration.clear();
         window.location.href = loginUrl;
       });
   },

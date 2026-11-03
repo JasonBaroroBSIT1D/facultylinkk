@@ -59,12 +59,21 @@ FL.faculty = {
     if (kraBlock && Array.isArray(kraBlock.criteriaScores) && kraBlock.criteriaScores.length) {
       return kraBlock.criteriaScores.map(function (row) {
         const maxVal = row.maxPoints != null ? row.maxPoints : 0;
+        let earned = "—";
+        if (row.estimatedPoints != null) {
+          earned = row.estimatedPoints;
+        } else if (row.accomplishmentPreviewPoints != null) {
+          earned = row.accomplishmentPreviewPoints + " (preview)";
+        } else if (row.integrationState === "criterion_b_adapter_disabled") {
+          earned = "Pending integration";
+        }
         return {
           name: FL.rules.criterionUserLabel(row.criterionId, row.name),
           maxPoints: maxVal,
           maxLabel: row.bonus ? String(maxVal) + " bonus" : String(maxVal),
-          earned: row.estimatedPoints != null ? row.estimatedPoints : "—",
-          bonus: !!row.bonus
+          earned: earned,
+          bonus: !!row.bonus,
+          previewNote: row.accomplishmentPreviewNote || null
         };
       });
     }

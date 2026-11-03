@@ -49,6 +49,20 @@ def effective_document_points(doc: Document) -> float | None:
     """Points this document may contribute to the unified estimated KRA total."""
     if doc.deleted_at is not None:
         return None
+    try:
+        from documents.criterion_b_evidence.bundle import is_supporting_evidence_document as _b_supporting
+
+        if _b_supporting(doc):
+            return None
+    except ImportError:
+        pass
+    try:
+        from documents.criterion_c_evidence.bundle import is_supporting_evidence_document as _c_supporting
+
+        if _c_supporting(doc):
+            return None
+    except ImportError:
+        pass
     if doc.status in _EXCLUDED_STATUSES:
         return None
     if _is_duplicate(doc):

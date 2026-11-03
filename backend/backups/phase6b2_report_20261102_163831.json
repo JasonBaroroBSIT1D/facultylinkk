@@ -1,0 +1,143 @@
+{
+  "tag": "PHASE6B2",
+  "startedAt": "2026-11-02T16:38:21.190110+00:00",
+  "adapterEnabled": false,
+  "recordsCreated": [
+    {
+      "publicId": "doc_481dd5cf3ee0",
+      "title": "PHASE6B2 IM Primary overlap",
+      "indicatorId": "kra1-b-module-sole",
+      "primaryPublicId": null,
+      "evidenceSlot": null
+    },
+    {
+      "publicId": "doc_da444c7efa2f",
+      "title": "PHASE6B2 IM IMDC overlap",
+      "indicatorId": "kra1-b-module-sole",
+      "primaryPublicId": "doc_481dd5cf3ee0",
+      "evidenceSlot": "imdc_evaluation_approval"
+    },
+    {
+      "publicId": "doc_c1e9f4eeaa9d",
+      "title": "PHASE6B2 IM Primary sequential",
+      "indicatorId": "kra1-b-module-sole",
+      "primaryPublicId": null,
+      "evidenceSlot": null
+    },
+    {
+      "publicId": "doc_b485620cc3ca",
+      "title": "PHASE6B2 IM Library sequential",
+      "indicatorId": "kra1-b-module-sole",
+      "primaryPublicId": "doc_c1e9f4eeaa9d",
+      "evidenceSlot": "library_certification"
+    },
+    {
+      "publicId": "doc_b8c828e96ca8",
+      "title": "PHASE6B2 Program Lead",
+      "indicatorId": "kra1-b-program-lead",
+      "primaryPublicId": null,
+      "evidenceSlot": null
+    },
+    {
+      "publicId": "doc_119fdbfd8cc2",
+      "title": "PHASE6B2 Prog dean_contribution_ce",
+      "indicatorId": "kra1-b-program-lead",
+      "primaryPublicId": "doc_b8c828e96ca8",
+      "evidenceSlot": "dean_contribution_certification"
+    },
+    {
+      "publicId": "doc_d68cd1dff837",
+      "title": "PHASE6B2 Prog academic_council_res",
+      "indicatorId": "kra1-b-program-lead",
+      "primaryPublicId": "doc_b8c828e96ca8",
+      "evidenceSlot": "academic_council_resolution"
+    },
+    {
+      "publicId": "doc_bdfe48232869",
+      "title": "PHASE6B2 Prog governing_board_reso",
+      "indicatorId": "kra1-b-program-lead",
+      "primaryPublicId": "doc_b8c828e96ca8",
+      "evidenceSlot": "governing_board_resolution"
+    },
+    {
+      "publicId": "doc_f74f0fcb2ed6",
+      "title": "PHASE6B2 Prog implementation_evide",
+      "indicatorId": "kra1-b-program-lead",
+      "primaryPublicId": "doc_b8c828e96ca8",
+      "evidenceSlot": "implementation_evidence"
+    },
+    {
+      "publicId": "doc_bc08e1222454",
+      "title": "PHASE6B2 Prog feasibility_study",
+      "indicatorId": "kra1-b-program-lead",
+      "primaryPublicId": "doc_b8c828e96ca8",
+      "evidenceSlot": "feasibility_study"
+    },
+    {
+      "publicId": "doc_f9abd3870b59",
+      "title": "PHASE6B2 RRPA doc",
+      "indicatorId": "kra1-b-program-lead",
+      "primaryPublicId": "doc_b8c828e96ca8",
+      "evidenceSlot": "rrpa_or_copc"
+    }
+  ],
+  "steps": [
+    {
+      "step": "im_after_overlap_ocr",
+      "claimType": "instructional_material",
+      "materialTitle": "PHASE6B2 Overlap Module",
+      "imdcDocumentId": "doc_da444c7efa2f",
+      "validationStatus": "incomplete"
+    },
+    {
+      "step": "program_rrpa_unknown",
+      "readyForScoring": false,
+      "flags": [
+        "rrpa_copc_applicability_undetermined"
+      ]
+    },
+    {
+      "step": "program_all_verified",
+      "readyForScoring": true,
+      "validationStatus": "valid"
+    },
+    {
+      "step": "program_rrpa_not_applicable",
+      "rrpaCopcApplicability": "not_applicable",
+      "readyForScoring": true
+    }
+  ],
+  "ocrScenarios": [
+    {
+      "name": "overlap_primary_and_supporting",
+      "primaryOcr": "completed",
+      "supportingOcr": "completed"
+    },
+    {
+      "name": "ocr_retry_after_reviewer_verify",
+      "status": "completed"
+    },
+    {
+      "name": "ocr_before_then_after_supporting",
+      "libraryLinked": true
+    }
+  ],
+  "defects": [],
+  "database": "facultylink",
+  "facultyEmail": "jasonbaroro5@gmail.com",
+  "reviewerEmail": "jaso.jary@gmail.com",
+  "simBaseline": {
+    "estimatedPoints": null,
+    "maxPoints": null
+  },
+  "caps": {
+    "kra1": 100.0,
+    "criterionB": 30.0
+  },
+  "simAfter": {
+    "estimatedPoints": null,
+    "maxPoints": null
+  },
+  "success": true,
+  "finishedAt": "2026-11-02T16:38:31.037638+00:00"
+}

@@ -1,3 +1,7 @@
+import '../data/criterion_b_catalog.dart';
+import '../data/criterion_c_catalog.dart';
+import '../data/criterion_c_evidence.dart';
+import '../data/criterion_b_evidence.dart';
 import 'enums.dart';
 import 'teaching_evaluation_record.dart';
 
@@ -132,6 +136,7 @@ class KraScore {
     this.validatedPoints,
     this.provisionalPoints,
     this.assessed = true,
+    this.integrationFootnote,
   });
 
   final KraType type;
@@ -144,6 +149,7 @@ class KraScore {
   final double? validatedPoints;
   final double? provisionalPoints;
   final bool assessed;
+  final String? integrationFootnote;
 
   double get progress =>
       targetPoints == 0 ? 0 : (currentPoints / targetPoints).clamp(0, 1);
@@ -166,6 +172,27 @@ class KraScore {
     final assessed = json['assessed'] as bool? ?? true;
     final estimated = (json['estimatedPoints'] as num?)?.toDouble() ??
         (json['currentPoints'] as num?)?.toDouble();
+    String? integrationFootnote;
+    final criteriaRaw = json['criteriaScores'];
+    if (criteriaRaw is List) {
+      for (final row in criteriaRaw.whereType<Map>()) {
+        final preview = row['accomplishmentPreviewPoints'];
+        if (preview == null) continue;
+        final note = row['accomplishmentPreviewNote']?.toString();
+        if (row['criterionId'] == 'kra1-b') {
+          integrationFootnote =
+              'Criterion B accomplishment total: $preview pts (preview — not yet in KRA total). ${note ?? ''}'
+                  .trim();
+          break;
+        }
+        if (row['criterionId'] == 'kra1-c' &&
+            row['simulationAdapterEnabled'] != true) {
+          integrationFootnote =
+              'Criterion C accomplishment total: $preview pts. ${note ?? ''}'.trim();
+          break;
+        }
+      }
+    }
     return KraScore(
       type: FacultyDocument.kraFromWebId(kraId),
       currentPoints: (estimated?.round()) ??
@@ -179,6 +206,7 @@ class KraScore {
       validatedPoints: (json['validatedPoints'] as num?)?.toDouble(),
       provisionalPoints: (json['provisionalPoints'] as num?)?.toDouble(),
       assessed: assessed,
+      integrationFootnote: integrationFootnote,
     );
   }
 }
@@ -231,6 +259,8 @@ class FacultyDocument {
     this.documentWorkflowStatus,
     this.reviewDisplayStatusRaw,
     this.documentInformation,
+    this.criterionBEvidence,
+    this.criterionCEvidence,
   });
 
   final String id;
@@ -267,6 +297,31 @@ class FacultyDocument {
   final String? documentWorkflowStatus;
   final String? reviewDisplayStatusRaw;
   final Map<String, dynamic>? documentInformation;
+  final CriterionBEvidencePayload? criterionBEvidence;
+  final CriterionCEvidencePayload? criterionCEvidence;
+
+  bool get isCriterionCSupportingDocument {
+    if (criterionId != CriterionCCatalog.criterionId) return false;
+    final ev = criterionCEvidence;
+    if (ev?.isSupportingDocument == true) return true;
+    final role = ev?.link?['role']?.toString();
+    return role == 'supporting';
+  }
+
+  bool get isCriterionCPrimaryClaim =>
+      criterionId == CriterionCCatalog.criterionId && !isCriterionCSupportingDocument;
+
+  bool get isCriterionBSupportingDocument {
+    if (criterionId != CriterionBCatalog.criterionId) return false;
+    final ev = criterionBEvidence;
+    if (ev?.isSupportingDocument == true) return true;
+    final role = ev?.link?['role']?.toString();
+    return role == 'supporting';
+  }
+
+  bool get isCriterionBPrimaryClaim =>
+      criterionId == CriterionBCatalog.criterionId &&
+      !isCriterionBSupportingDocument;
 
   bool get hasLinkedTeachingEvaluations =>
       teachingEvaluations != null && teachingEvaluations!.isNotEmpty;
@@ -404,10 +459,12 @@ class FacultyDocument {
         '—';
   }
 
-  bool get countsInSimulation =>
-      (effectiveSimulationScore != null && effectiveSimulationScore! > 0) ||
-      (extractedInfo['SET period simulation score'] ?? '').trim().isNotEmpty ||
-      (extractedInfo['SEF period simulation score'] ?? '').trim().isNotEmpty;
+  bool get countsInSimulation {
+    if (isCriterionBSupportingDocument) return false;
+    return (effectiveSimulationScore != null && effectiveSimulationScore! > 0) ||
+        (extractedInfo['SET period simulation score'] ?? '').trim().isNotEmpty ||
+        (extractedInfo['SEF period simulation score'] ?? '').trim().isNotEmpty;
+  }
 
   bool get scoresViaChildSemesterRecords =>
       isSetSefIndicatorId(indicatorId) ||
@@ -594,6 +651,26 @@ class FacultyDocument {
     if (docInfoRaw is Map) {
       documentInformation = Map<String, dynamic>.from(docInfoRaw);
     }
+    final criterionBEvidenceRaw = json['criterionBEvidence'];
+    final criterionBEvidence = criterionBEvidenceRaw is Map
+        ? CriterionBEvidencePayload.fromApi(
+            Map<String, dynamic>.from(criterionBEvidenceRaw),
+          )
+        : null;
+    final criterionCEvidenceRaw = json['criterionCEvidence'];
+    final criterionCEvidence = criterionCEvidenceRaw is Map
+        ? CriterionCEvidencePayload.fromApi(
+            Map<String, dynamic>.from(criterionCEvidenceRaw),
+          )
+        : null;
+    final estPoints = json['estimatedPoints'];
+    double? effectiveScore;
+    final supportingEvidence =
+        (criterionBEvidence?.isSupportingDocument ?? false) ||
+            (criterionCEvidence?.isSupportingDocument ?? false);
+    if (estPoints is num && !supportingEvidence) {
+      effectiveScore = estPoints.toDouble();
+    }
 
     return FacultyDocument(
       id: (json['id'] as String?) ?? '',
@@ -628,6 +705,9 @@ class FacultyDocument {
       teachingEvaluations: linkedEvaluations,
       teachingEvaluationSummary: tevSummary,
       documentInformation: documentInformation,
+      criterionBEvidence: criterionBEvidence,
+      criterionCEvidence: criterionCEvidence,
+      effectiveSimulationScore: effectiveScore,
     );
   }
 }

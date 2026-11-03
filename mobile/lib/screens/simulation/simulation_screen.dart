@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/common.dart';
 import '../../widgets/rank_upgrade_simulation_card.dart';
+import '../../widgets/scoring_configuration_banner.dart';
 import '../../widgets/teaching_effectiveness_summary_card.dart';
 
 class SimulationScreen extends StatefulWidget {
@@ -34,6 +35,7 @@ class _SimulationScreenState extends State<SimulationScreen> {
       _error = null;
     });
     try {
+      await state.refreshScoringConfiguration(force: true, quiet: true);
       await state.refreshRankSimulationFromApi();
     } catch (e) {
       setState(() => _error = e.toString());
@@ -83,6 +85,8 @@ class _SimulationScreenState extends State<SimulationScreen> {
                   color: AppColors.navy,
                   background: AppColors.goldSoft,
                 ),
+                const SizedBox(height: 12),
+                const ScoringConfigurationBanner(compact: true),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(

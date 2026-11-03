@@ -101,6 +101,20 @@ def document_to_web(
             "kraId": doc.kra_id,
             "criterionId": doc.criterion_id,
         }
+    if doc.criterion_id == "kra1-b":
+        try:
+            from documents.criterion_b_evidence.service import bundle_api_payload
+
+            payload["criterionBEvidence"] = bundle_api_payload(doc)
+        except ImportError:
+            pass
+    if doc.criterion_id == "kra1-c":
+        try:
+            from documents.criterion_c_evidence.service import bundle_api_payload as c_bundle_payload
+
+            payload["criterionCEvidence"] = c_bundle_payload(doc)
+        except ImportError:
+            pass
     if doc.file_path and api_base:
         payload["fileApiPath"] = f"{api_base}/file"
         payload["fileUrl"] = f"{api_base}/file"

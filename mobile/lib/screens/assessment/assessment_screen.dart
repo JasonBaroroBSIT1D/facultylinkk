@@ -10,6 +10,7 @@ import '../../widgets/common.dart';
 import '../../widgets/kra_card.dart';
 import '../../widgets/progress_ring.dart';
 import '../../widgets/status_badge.dart';
+import '../../widgets/scoring_configuration_banner.dart';
 import '../../widgets/teaching_effectiveness_summary_card.dart';
 
 class AssessmentScreen extends StatefulWidget {
@@ -97,6 +98,7 @@ class _KraScoresTabState extends State<_KraScoresTab> {
     super.initState();
     if (AppState.instance.isSignedIn && !AppState.instance.usesMockAuth) {
       AppState.instance.fetchTeachingEffectivenessFromApi(quiet: true);
+      AppState.instance.refreshScoringConfiguration(quiet: true);
     }
   }
 
@@ -114,6 +116,7 @@ class _KraScoresTabState extends State<_KraScoresTab> {
         return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
+        const ScoringConfigurationBanner(compact: true),
         if (liveTe && criterionA != null) ...[
           TeachingEffectivenessSummaryCard(data: criterionA),
           const SizedBox(height: 14),

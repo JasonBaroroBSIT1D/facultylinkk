@@ -16,9 +16,10 @@ from kra_configuration.published_limits import (
     criteria_entries_for_kra,
     published_criterion_max_points,
     published_kra_max_points,
-    published_settings_blob,
 )
-from kra_configuration.service import get_published_row, kra_settings_from_json
+from kra_configuration.resolver import resolution_metadata
+from kra_configuration.service import get_published_row
+from kra_configuration.version_lock import resolve_settings_for_faculty_simulation
 
 SIMULATION_DISCLAIMER = (
     "Estimated KRA scores and potential rank eligibility are provided for faculty self-assessment "
@@ -64,16 +65,19 @@ def resolve_rank_band(rank: str | None) -> str:
     return "Instructor"
 
 
-def _published_settings() -> dict[str, Any]:
-    row = get_published_row()
-    if not row:
-        return {}
-    return kra_settings_from_json(row.settings_json if isinstance(row.settings_json, dict) else {})
+def _published_settings() -> tuple[dict[str, Any], Any]:
+    blob, resolution = resolve_settings_for_faculty_simulation()
+    return blob, resolution
 
 
 def weights_for_rank(rank: str | None) -> tuple[str, dict[str, float]]:
     band = resolve_rank_band(rank)
-    published = _published_settings().get("rankWeights")
+    settings, resolution = _published_settings()
+    published = settings.get("rankWeights")
+    if (not published or not isinstance(published, dict) or band not in published) and resolution.row:
+        column_rw = resolution.row.rank_weights if isinstance(resolution.row.rank_weights, dict) else {}
+        if column_rw:
+            published = column_rw
     source = {}
     if isinstance(published, dict) and band in published and isinstance(published[band], dict):
         source = published[band]
@@ -116,6 +120,14 @@ def unified_teaching_estimated_points(te: dict[str, Any]) -> float | None:
     return None
 
 
+def unified_teaching_validated_points(te: dict[str, Any]) -> float | None:
+    """Reviewer-validated Criterion A (SET/SEF) points only."""
+    val = te.get("combinedValidatedPoints")
+    if val is not None:
+        return _round2(float(val))
+    return None
+
+
 def _weighted_estimated_total(kra_points: dict[str, dict[str, Any]], weights: dict[str, float]) -> float | None:
     any_assessed = False
     total = 0.0
@@ -138,7 +150,10 @@ def _weighted_estimated_total(kra_points: dict[str, dict[str, Any]], weights: di
 
 def _attach_unified_aliases(block: dict[str, Any]) -> dict[str, Any]:
     est = block.get("estimatedPoints")
-    block["validatedPoints"] = est
+    val = block.get("validatedPoints")
+    if val is None:
+        val = est
+    block["validatedPoints"] = val
     block["provisionalPoints"] = est
     block["currentPoints"] = int(round(float(est or 0)))
     return block
@@ -187,21 +202,27 @@ def _kra_from_documents(profile: FacultyProfile, key: str, doc_count: int) -> di
     block = aggregate_documents_for_kra(profile, key)
     if doc_count and not block.get("documentCount"):
         block["documentCount"] = doc_count
-    settings = published_settings_blob()
+    settings, _resolution = _published_settings()
     block["targetPoints"] = int(round(block.get("maxPoints") or published_kra_max_points(key, settings)))
     criteria_scores: list[dict[str, Any]] = []
     for entry in criteria_entries_for_kra(settings, key):
         cid = entry["criterionId"]
         crit = aggregate_criterion_documents(profile, key, cid)
-        criteria_scores.append(
-            {
-                "criterionId": cid,
-                "name": criterion_display_name(cid, entry),
-                "maxPoints": float(entry.get("maxPoints") or crit.get("maxPoints") or 0),
-                "estimatedPoints": crit.get("estimatedPoints"),
-                "bonus": criterion_is_bonus(entry),
-            }
-        )
+        row: dict[str, Any] = {
+            "criterionId": cid,
+            "name": criterion_display_name(cid, entry),
+            "maxPoints": float(entry.get("maxPoints") or crit.get("maxPoints") or 0),
+            "estimatedPoints": crit.get("estimatedPoints"),
+            "bonus": criterion_is_bonus(entry),
+        }
+        if crit.get("integrationState"):
+            row["integrationState"] = crit.get("integrationState")
+        if crit.get("accomplishmentPreviewPoints") is not None:
+            row["accomplishmentPreviewPoints"] = crit.get("accomplishmentPreviewPoints")
+            row["accomplishmentPreviewNote"] = crit.get("accomplishmentPreviewNote")
+        if crit.get("simulationAdapterEnabled") is not None:
+            row["simulationAdapterEnabled"] = crit.get("simulationAdapterEnabled")
+        criteria_scores.append(row)
     if criteria_scores:
         block["criteriaScores"] = criteria_scores
     return block
@@ -239,27 +260,40 @@ def _build_kra1_criteria_scores(
         elif cid == "kra1-b":
             cmax = float(entry.get("maxPoints") or b_block.get("maxPoints") or 0)
             est = b_block.get("estimatedPoints")
+            crit_val = b_block.get("validatedPoints")
         elif cid == "kra1-c":
             cmax = float(entry.get("maxPoints") or c_block.get("maxPoints") or 0)
             est = c_block.get("estimatedPoints")
+            crit_val = c_block.get("validatedPoints")
         else:
             cmax = float(entry.get("maxPoints") or 0)
             extra = aggregate_criterion_documents(profile, "kra1", cid)
             est = extra.get("estimatedPoints")
-        scores.append(
-            {
-                "criterionId": cid,
-                "name": criterion_display_name(cid, entry),
-                "maxPoints": cmax,
-                "estimatedPoints": _round2(float(est)) if est is not None else None,
-                "bonus": criterion_is_bonus(entry),
-            }
-        )
+            crit_val = extra.get("validatedPoints")
+        row: dict[str, Any] = {
+            "criterionId": cid,
+            "name": criterion_display_name(cid, entry),
+            "maxPoints": cmax,
+            "estimatedPoints": _round2(float(est)) if est is not None else None,
+            "bonus": criterion_is_bonus(entry),
+        }
+        if cid != "kra1-a" and crit_val is not None:
+            row["validatedPoints"] = _round2(float(crit_val))
+        src_block = b_block if cid == "kra1-b" else c_block if cid == "kra1-c" else None
+        if src_block:
+            if src_block.get("integrationState"):
+                row["integrationState"] = src_block.get("integrationState")
+            if src_block.get("accomplishmentPreviewPoints") is not None:
+                row["accomplishmentPreviewPoints"] = src_block.get("accomplishmentPreviewPoints")
+                row["accomplishmentPreviewNote"] = src_block.get("accomplishmentPreviewNote")
+            if src_block.get("simulationAdapterEnabled") is not None:
+                row["simulationAdapterEnabled"] = src_block.get("simulationAdapterEnabled")
+        scores.append(row)
     return scores
 
 
 def _kra1_from_teaching(profile: FacultyProfile, te: dict[str, Any], doc_count: int) -> dict[str, Any]:
-    settings = published_settings_blob()
+    settings, _resolution = _published_settings()
     max_pts = published_kra_max_points("kra1", settings)
     criteria_scores = _build_kra1_criteria_scores(profile, te, settings)
     set_b = te.get("set") if isinstance(te.get("set"), dict) else {}
@@ -268,18 +302,33 @@ def _kra1_from_teaching(profile: FacultyProfile, te: dict[str, Any], doc_count: 
     sef_uploads = ((sef_b.get("coverageSummary") or {}).get("totalUploads") or 0)
     has_any = set_uploads > 0 or sef_uploads > 0
     estimated = unified_teaching_estimated_points(te)
+    validated = unified_teaching_validated_points(te)
     extra_points = 0.0
+    extra_validated = 0.0
     extra_assessed = False
+    extra_validated_assessed = False
     for row in criteria_scores:
         if row["criterionId"] == "kra1-a":
             continue
         if row.get("estimatedPoints") is not None:
             extra_assessed = True
             extra_points += float(row["estimatedPoints"])
+        if row.get("validatedPoints") is not None:
+            try:
+                v = float(row["validatedPoints"])
+            except (TypeError, ValueError):
+                v = 0.0
+            if v > 0:
+                extra_validated_assessed = True
+                extra_validated += v
     if estimated is not None or extra_assessed:
         estimated = _round2((float(estimated or 0) + extra_points))
     elif not has_any and not extra_assessed:
         estimated = None
+    if validated is not None or extra_validated_assessed:
+        validated = _round2((float(validated or 0) + extra_validated))
+    else:
+        validated = 0.0 if (estimated is not None or extra_assessed) else None
     breakdown = []
     if set_uploads:
         set_est = (
@@ -305,6 +354,21 @@ def _kra1_from_teaching(profile: FacultyProfile, te: dict[str, Any], doc_count: 
                 "title": "SEF (supervisor evaluation)",
                 "points": int(round(float(sef_est or 0))),
                 "note": _set_sef_note(sef_b, validated_key="validatedPoints"),
+            }
+        )
+    for crit_row in criteria_scores:
+        cid = crit_row.get("criterionId")
+        if cid not in ("kra1-b", "kra1-c"):
+            continue
+        est_crit = crit_row.get("estimatedPoints")
+        if est_crit is None:
+            continue
+        label = crit_row.get("name") or cid
+        breakdown.append(
+            {
+                "title": f"{label} (Criterion {'B' if cid == 'kra1-b' else 'C'})",
+                "points": int(round(float(est_crit))),
+                "note": "Estimated from eligible accomplishment evidence (simulation).",
             }
         )
     if not has_any and not extra_assessed and estimated is None:
@@ -340,6 +404,7 @@ def _kra1_from_teaching(profile: FacultyProfile, te: dict[str, Any], doc_count: 
             "label": KRA_LABELS["kra1"],
             "assessed": estimated is not None,
             "estimatedPoints": estimated,
+            "validatedPoints": validated,
             "targetPoints": int(round(max_pts)),
             "maxPoints": max_pts,
             "documentCount": doc_count,
@@ -384,7 +449,8 @@ def _build_checklist(
                 "text": "Published official scoring configuration is incomplete or missing.",
             }
         )
-    thresholds = _rank_thresholds(_published_settings())
+    settings, _resolution = _published_settings()
+    thresholds = _rank_thresholds(settings)
     if not thresholds:
         items.append(
             {
@@ -477,7 +543,8 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
     current_rank = profile.current_rank or ""
     target_rank = (profile.target_rank or "").strip()
     band, weights = weights_for_rank(current_rank)
-    published_row = get_published_row()
+    sim_settings, sim_resolution = _published_settings()
+    published_row = sim_resolution.row or get_published_row()
     config_complete = bool(published_row) and bool(
         (te.get("configurationComplete") is True)
         or (kra_points["kra1"].get("teachingEffectiveness") and te.get("configurationComplete"))
@@ -489,7 +556,7 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
 
     weighted_estimated = _weighted_estimated_total(kra_points, weights)
 
-    thresholds = _rank_thresholds(_published_settings())
+    thresholds = _rank_thresholds(sim_settings)
     target_key = target_rank or band
     threshold_entry = thresholds.get(target_rank) or thresholds.get(target_key) or thresholds.get(band)
     required_score = None
@@ -526,6 +593,11 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
         for k in MOBILE_KRA_KEYS
         if kra_points[k].get("assessed") and kra_points[k].get("estimatedPoints") is not None
     )
+    validated_sum = sum(
+        float(kra_points[k].get("validatedPoints") or 0)
+        for k in MOBILE_KRA_KEYS
+        if kra_points[k].get("assessed")
+    )
 
     return {
         "currentRank": current_rank,
@@ -533,7 +605,21 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
         "nextPossibleRank": target_rank or "",
         "weightBand": band,
         "appliedWeights": weights,
-        "kraConfigVersion": (_published_settings().get("version") or (published_row.settings_json or {}).get("version") if published_row else None),
+        "kraConfigVersion": (
+            sim_settings.get("version")
+            or (published_row.settings_json or {}).get("version")
+            if published_row and isinstance(published_row.settings_json, dict)
+            else None
+        ),
+        "scoringConfiguration": resolution_metadata(sim_resolution),
+        "rankWeightsPolicy": {
+            "source": "published_admin_configuration"
+            if (sim_settings.get("rankWeights") or (published_row.rank_weights if published_row else {}))
+            else "table_22_defaults_in_engine",
+            "publishedRankWeightsPresent": bool(
+                sim_settings.get("rankWeights") or (published_row.rank_weights if published_row else {})
+            ),
+        },
         "scoringFormula": "Weighted Final Score = Σ (KRA points × Table 2.2 rank weight %)",
         "teachingEffectiveness": {
             "combinedProvisionalPoints": te.get("combinedProvisionalPoints"),
@@ -544,10 +630,10 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
         },
         "estimatedTotalKraPoints": _round2(estimated_sum) if estimated_sum else 0,
         "estimatedKraPoints": _round2(estimated_sum) if estimated_sum else 0,
-        "validatedKraPoints": _round2(estimated_sum) if estimated_sum else 0,
+        "validatedKraPoints": _round2(validated_sum) if validated_sum else 0,
         "provisionalKraPoints": _round2(estimated_sum) if estimated_sum else None,
         "weightedEstimatedScore": weighted_estimated,
-        "weightedValidatedScore": weighted_estimated,
+        "weightedValidatedScore": _weighted_total(kra_points, weights, use_validated=True),
         "weightedProvisionalScore": weighted_estimated,
         "requiredWeightedScore": required_score,
         "progressPercent": progress_percent,

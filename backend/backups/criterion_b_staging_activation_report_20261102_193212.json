@@ -1,0 +1,89 @@
+{
+  "tag": "CRITERION-B-STAGING-VERIFY",
+  "startedAt": "2026-11-02T19:32:11.913922+00:00",
+  "checks": [
+    {
+      "name": "current_score_matches_criterion_b_aggregate",
+      "documentId": "doc_64d33454ab0f",
+      "points": 14.0
+    },
+    {
+      "name": "audit_system_estimate_preserved",
+      "documentId": "doc_64d33454ab0f",
+      "systemEstimatePoints": 15.0
+    },
+    {
+      "name": "jason_scenario_row",
+      "documentId": "doc_64d33454ab0f",
+      "checks": [
+        [
+          "current_score_reviewer_assessed",
+          14.0
+        ],
+        [
+          "criterion_b_aggregated",
+          14.0
+        ]
+      ]
+    }
+  ],
+  "defects": [],
+  "warnings": [],
+  "goRecommendation": "GO (staging read-only checks passed \u2014 confirm UI manually on staging host)",
+  "database": "facultylink",
+  "adapterEnv": "0",
+  "adapterAtImport": false,
+  "stagingMode": "read-only facultylink (local copy only \u2014 not for production hosts)",
+  "adapterInProcess": true,
+  "jasonAccomplishments": [
+    {
+      "documentId": "doc_64d33454ab0f",
+      "title": "01 Primary Textbook",
+      "status": "pending_review",
+      "indicatorId": "kra1-b-textbook-co",
+      "validationStatus": "valid",
+      "readyForScoring": true,
+      "systemEstimatePoints": 15.0,
+      "guidelineCompliantVerifiedPoints": 15.0,
+      "reviewerProposedPoints": 14.0,
+      "currentScoreLabel": "Reviewer Assessed",
+      "currentScorePoints": 14.0,
+      "currentScoreSource": "reviewer_assessment"
+    }
+  ],
+  "scoreComparison": [
+    {
+      "documentId": "doc_64d33454ab0f",
+      "beforeAdapterOff": {
+        "adapterOn": false,
+        "criterionBEstimatedPoints": null,
+        "criterionBPreviewPoints": 14.0,
+        "criterionBIntegrationState": "criterion_b_adapter_disabled",
+        "criterionBScoringSource": "legacy_document_points",
+        "kra1EstimatedPoints": null,
+        "kra1CriteriaBPoints": null,
+        "simulationEstimatedTotal": 0,
+        "simulationAdapterEnabledField": false
+      },
+      "afterAdapterOn": {
+        "adapterOn": true,
+        "criterionBEstimatedPoints": 14.0,
+        "criterionBPreviewPoints": null,
+        "criterionBIntegrationState": null,
+        "criterionBScoringSource": "criterion_b_evidence_bundle",
+        "kra1EstimatedPoints": 14.0,
+        "kra1CriteriaBPoints": 14.0,
+        "simulationEstimatedTotal": 14.0,
+        "simulationAdapterEnabledField": true
+      }
+    }
+  ],
+  "supportingExclusion": {
+    "primaryCount": 1,
+    "supportingCount": 4,
+    "aggregatedDocumentCount": 1,
+    "estimatedPoints": 14.0
+  },
+  "finishedAt": "2026-11-02T19:32:12.834140+00:00",
+  "automatedTestCommand": "cd backend && python -m pytest tests/staging/test_criterion_b_activation_scenarios.py -q"
+}

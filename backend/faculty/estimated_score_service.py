@@ -31,13 +31,18 @@ def persist_unified_kra_scores(profile: FacultyProfile, kra_blocks: list[dict[st
         if est is None and not block.get("assessed"):
             continue
         points = float(est or 0)
+        verified = block.get("validatedPoints")
+        try:
+            verified_points = float(verified) if verified is not None else points
+        except (TypeError, ValueError):
+            verified_points = points
         row = existing.get(key)
         if not row:
             row = KraScore(
                 faculty_profile_id=profile.id,
                 kra_key=key,
                 estimated_points=points,
-                verified_points=points,
+                verified_points=verified_points,
                 target_points=block.get("maxPoints") or _kra_max_points(key),
                 document_count=block.get("documentCount") or 0,
                 status_label=block.get("statusLabel") or "Estimated",
@@ -45,7 +50,7 @@ def persist_unified_kra_scores(profile: FacultyProfile, kra_blocks: list[dict[st
             db.session.add(row)
         else:
             row.estimated_points = points
-            row.verified_points = points
+            row.verified_points = verified_points
             row.document_count = block.get("documentCount") or row.document_count or 0
             row.status_label = block.get("statusLabel") or row.status_label
             row.target_points = block.get("maxPoints") or row.target_points

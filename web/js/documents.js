@@ -374,7 +374,7 @@ FL.documents = {
       back.set("faculty", facultyId);
       if (kraId) back.set("kra", kraId);
       if (criterionId) back.set("criterion", criterionId);
-      if (indicatorId) back.set("indicator", indicatorId);
+      if (indicatorId && criterionId !== "kra1-b" && criterionId !== "kra1-c") back.set("indicator", indicatorId);
       return "documents.html?" + back.toString();
     }
     return canDecide ? "documents.html?filter=pending-review" : "documents.html";
@@ -382,6 +382,13 @@ FL.documents = {
 
   reviewContextBackLabel: function (doc) {
     const params = new URLSearchParams(window.location.search);
+    const criterionId = params.get("criterion") || doc.criterionId || "";
+    if (criterionId === "kra1-b") {
+      return "Back to Criterion B accomplishments";
+    }
+    if (criterionId === "kra1-c") {
+      return "Back to Criterion C accomplishments";
+    }
     const indicatorId = params.get("indicator") || doc.indicatorId || "";
     if (indicatorId && FL.rules.findIndicator(indicatorId)) {
       return "Back to " + FL.rules.findIndicator(indicatorId).indicator.name;
@@ -678,6 +685,32 @@ FL.documents = {
     const validation = scored.validation;
     const back = FL.documents.reviewContextBackHref(doc, canDecide);
     const backLabel = FL.documents.reviewContextBackLabel(doc);
+    if (
+      doc.criterionId === "kra1-b" &&
+      FL.criterionBWorkspaceUi &&
+      FL.criterionBWorkspaceUi.isPrimaryClaimDocument(doc) &&
+      FL.criterionBSimpleReview
+    ) {
+      FL.criterionBSimpleReview.paintReviewPage(session, doc, canDecide, {
+        faculty: faculty,
+        back: back,
+        backLabel: backLabel
+      });
+      return;
+    }
+    if (
+      doc.criterionId === "kra1-c" &&
+      FL.criterionCWorkspaceUi &&
+      FL.criterionCWorkspaceUi.isPrimaryClaimDocument(doc) &&
+      FL.criterionCReview
+    ) {
+      FL.criterionCReview.paintReviewPage(session, doc, canDecide, {
+        faculty: faculty,
+        back: back,
+        backLabel: backLabel
+      });
+      return;
+    }
     const activeTab = FL.documents._reviewActiveTab || "review";
     const toolbar = doc.fileUrl
       ? `<div class="doc-toolbar">
@@ -709,6 +742,7 @@ FL.documents = {
       </header>
       ${FL.documents.compactWorkflowHtml(doc, scored)}
       ${FL.documents.teachingEvaluationsPanelHtml(doc, canDecide)}
+      <div id="criterion-b-evidence-slot"></div>
       <div class="review-tabs" role="tablist" aria-label="Document review sections">
         <button type="button" role="tab" id="review-tab-btn-review" data-tab="review" aria-controls="review-tab-panel-review" aria-selected="true">Review</button>
         <button type="button" role="tab" id="review-tab-btn-ocr" data-tab="ocr" aria-controls="review-tab-panel-ocr" aria-selected="false" tabindex="-1">OCR Details</button>
@@ -773,6 +807,11 @@ FL.documents = {
       </div>`;
     FL.documents.bindReviewTabs(activeTab);
     FL.documents.bindZoom();
+    FL.documents.mountAllAuthenticatedPreviews(page, session);
+    FL.documents.bindPreviewDownloads(session);
+    if (FL.criterionBEvidence && doc.criterionId === "kra1-b") {
+      FL.criterionBEvidence.mountReviewPanel(session, doc, canDecide);
+    }
     const openOriginal = function (event) {
       if (event) {
         event.preventDefault();
@@ -914,6 +953,12 @@ FL.documents = {
       if (!blob || blob.size < 16) {
         throw Object.assign(new Error("The document file could not be loaded for preview."), { status: 502 });
       }
+      if ((blob.type || "").toLowerCase().indexOf("text/html") >= 0) {
+        throw Object.assign(
+          new Error("The server returned a web page instead of the document file. Check the file URL and sign-in."),
+          { status: 502 }
+        );
+      }
       const isPdfName = (doc.fileName || doc.name || "").toLowerCase().endsWith(".pdf");
       const isPdfType = (blob.type || "").indexOf("pdf") >= 0;
       function attachBlobUrl(pdfBlob) {
@@ -923,40 +968,97 @@ FL.documents = {
         doc._objectUrl = URL.createObjectURL(pdfBlob);
         return doc;
       }
-      if (isPdfName || isPdfType) {
-        return blob.slice(0, 4).arrayBuffer().then(function (buf) {
-          const bytes = new Uint8Array(buf);
+      return blob.slice(0, Math.min(64, blob.size)).arrayBuffer().then(function (buf) {
+        const bytes = new Uint8Array(buf);
+        const headText = bytes.length
+          ? new TextDecoder().decode(bytes.slice(0, Math.min(32, bytes.length))).trim().toLowerCase()
+          : "";
+        if (headText.indexOf("<!doctype") === 0 || headText.indexOf("<html") === 0) {
+          throw Object.assign(
+            new Error("The server returned HTML instead of the uploaded file (often a sign-in or app page)."),
+            { status: 502 }
+          );
+        }
+        if (isPdfName || isPdfType) {
           if (bytes.length < 4 || bytes[0] !== 0x25 || bytes[1] !== 0x50 || bytes[2] !== 0x44 || bytes[3] !== 0x46) {
             throw Object.assign(new Error("The server did not return a valid PDF for preview."), { status: 502 });
           }
           const pdfBlob = blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
           return attachBlobUrl(pdfBlob);
-        });
-      }
-      return attachBlobUrl(blob);
+        }
+        return attachBlobUrl(blob);
+      });
     });
   },
 
-  loadDocumentPdfPreview: function (doc, frameEl) {
-    if (!frameEl) return Promise.resolve();
-    frameEl.innerHTML = "<p class=\"ca-preview-loading\" role=\"status\">Loading document preview…</p>";
-    return FL.documents.hydrateAuthenticatedFile(doc).then(function (hydrated) {
-      const url = FL.documents.inlineFileUrl(hydrated);
-      const isPdf = (hydrated.fileName || "").toLowerCase().endsWith(".pdf")
-        || (hydrated.mimeType || "").indexOf("pdf") >= 0;
-      if (url && isPdf) {
-        frameEl.innerHTML = "<iframe title=\"PDF preview\" src=\"" + FL.esc(url)
-          + "\" class=\"tev-drawer-iframe\"></iframe>";
+  mountAuthenticatedPreview: function (doc, containerEl, options) {
+    options = options || {};
+    if (!containerEl) return Promise.resolve();
+    const session = options.session || null;
+    const esc = FL.esc;
+    let activeDoc = doc;
+
+    function showError(message, canRetry) {
+      containerEl.innerHTML = "<div class=\"ca-preview-error\"><p>" + esc(message || "Preview failed.") + "</p>"
+        + (canRetry !== false
+          ? "<button type=\"button\" class=\"btn btn-ghost btn-small\" data-doc-preview-retry>Retry</button>"
+          : "")
+        + "</div>";
+      const retryBtn = containerEl.querySelector("[data-doc-preview-retry]");
+      if (retryBtn) {
+        retryBtn.addEventListener("click", function () {
+          FL.documents.mountAuthenticatedPreview(activeDoc, containerEl, options);
+        });
+      }
+    }
+
+    containerEl.innerHTML = "<p class=\"ca-preview-loading\" role=\"status\">Loading document preview…</p>";
+
+    function ensureDocumentRow() {
+      if (activeDoc && activeDoc.fileApiPath) return Promise.resolve(activeDoc);
+      if (!activeDoc || !activeDoc.id || !FL.store.usesLiveDocuments()) return Promise.resolve(activeDoc);
+      return FL.store.refreshLiveDocument(session, activeDoc.id).then(function (fresh) {
+        activeDoc = fresh || activeDoc;
+        return activeDoc;
+      });
+    }
+
+    return ensureDocumentRow().then(function (d) {
+      if (!d || (!d.fileApiPath && !d.fileUrl && !d._objectUrl)) {
+        containerEl.innerHTML = "<p class=\"ca-preview-error\">This document file is not available for preview.</p>";
         return;
       }
-      if (url) {
-        frameEl.innerHTML = "<p class=\"note\">Preview is limited for this file type. Use the Document tab below.</p>";
+      if (!FL.store.usesLiveDocuments() || !d.fileApiPath) {
+        containerEl.innerHTML = FL.documents.renderOriginalFileMarkup(d);
+        FL.documents.bindZoom();
         return;
       }
-      frameEl.innerHTML = "<p class=\"note\">No inline preview is available. Use the Document tab below for the original file.</p>";
+      return FL.documents.hydrateAuthenticatedFile(d, { previewDocId: d.id }).then(function (hydrated) {
+        activeDoc = hydrated;
+        containerEl.innerHTML = FL.documents.renderOriginalFileMarkup(hydrated);
+        FL.documents.bindZoom();
+        FL.documents.bindPreviewDownloads(session);
+      });
     }).catch(function (error) {
-      frameEl.innerHTML = "<p class=\"ca-preview-error\">" + FL.esc(error.message || "Preview failed.") + "</p>";
+      showError(error.message || "Preview failed.", true);
     });
+  },
+
+  mountAllAuthenticatedPreviews: function (rootEl, session) {
+    const root = rootEl || document;
+    root.querySelectorAll("[data-doc-preview-id]").forEach(function (el) {
+      const docId = el.getAttribute("data-doc-preview-id");
+      const doc = FL.store.documentById(docId);
+      if (!doc) {
+        el.innerHTML = "<p class=\"ca-preview-error\">Document record not found.</p>";
+        return;
+      }
+      FL.documents.mountAuthenticatedPreview(doc, el, { session: session });
+    });
+  },
+
+  loadDocumentPdfPreview: function (doc, frameEl, session) {
+    return FL.documents.mountAuthenticatedPreview(doc, frameEl, { session: session });
   },
 
   downloadAuthenticatedFile: function (doc, fileName) {
@@ -979,6 +1081,24 @@ FL.documents = {
   },
 
   /* Zoom buttons for image previews on tablet and phone (pinch zoom also works). */
+  bindPreviewDownloads: function (session) {
+    document.querySelectorAll("[data-doc-preview-download]").forEach(function (btn) {
+      if (btn._flPreviewDownloadBound) return;
+      btn._flPreviewDownloadBound = true;
+      btn.addEventListener("click", function () {
+        const docId = btn.getAttribute("data-doc-preview-download");
+        const doc = FL.store.documentById(docId);
+        if (!doc) {
+          FL.ui.toast("Document not found.", "danger");
+          return;
+        }
+        FL.documents.downloadAuthenticatedFile(doc, doc.fileName || doc.name).catch(function (err) {
+          FL.ui.toast(err.message || "Download failed.", "danger");
+        });
+      });
+    });
+  },
+
   bindZoom: function () {
     const frame = document.querySelector(".original-file-frame--zoom");
     if (!frame) return;
@@ -1016,24 +1136,43 @@ FL.documents = {
   },
 
   originalFileHtml: function (doc) {
-    if (!doc.fileUrl) {
-      return `<div class="preview-page"><p class="note">Original file is not stored for this record. Use the extracted summary on the right.</p></div>`;
+    if (FL.store.usesLiveDocuments() && doc.fileApiPath && !doc._objectUrl) {
+      return "<div class=\"doc-preview-mount original-file original-file--pdf\" data-doc-preview-id=\""
+        + FL.esc(doc.id) + "\"><div class=\"original-file-frame original-file-frame--doc original-file-frame--pdf\">"
+        + "<p class=\"ca-preview-loading\" role=\"status\">Loading document preview…</p></div></div>";
     }
-    const lower = String(doc.fileName || "").toLowerCase();
+    return FL.documents.renderOriginalFileMarkup(doc);
+  },
+
+  renderOriginalFileMarkup: function (doc) {
+    const hasFile = !!(doc.fileUrl || doc.fileApiPath || doc._objectUrl);
+    if (!hasFile) {
+      return "<div class=\"preview-page\"><p class=\"note\">Original file is not stored for this record. Use the extracted summary on the right.</p></div>";
+    }
+    const lower = String(doc.fileName || doc.name || "").toLowerCase();
     const mime = String(doc.mimeType || "").toLowerCase();
-    const inlineUrl = FL.esc(FL.documents.inlineFileUrl(doc));
+    const inlineUrl = FL.documents.inlineFileUrl(doc);
+    if (!inlineUrl) {
+      return "<div class=\"preview-page\"><p class=\"note\">Preparing secure preview…</p></div>";
+    }
+    const safeUrl = FL.esc(inlineUrl);
     const isImage = mime.indexOf("image/") === 0 || /\.(png|jpe?g|gif|webp|bmp|tif|tiff)$/.test(lower);
     const isPdf = mime.indexOf("pdf") >= 0 || /\.pdf$/.test(lower);
     if (isImage) {
-      const zoomTools = `<span class="zoom-tools" role="group" aria-label="Zoom document"><button class="btn btn-small btn-ghost" type="button" data-zoom="out" aria-label="Zoom out">−</button><span class="zoom-level" aria-live="polite">100%</span><button class="btn btn-small btn-ghost" type="button" data-zoom="in" aria-label="Zoom in">+</button><button class="btn btn-small btn-ghost" type="button" data-zoom="fit">Fit</button></span>`;
-      return `<div class="original-file"><div class="original-file-actions">${zoomTools}</div><div class="original-file-frame original-file-frame--doc original-file-frame--zoom"><img src="${inlineUrl}" alt="${FL.esc(doc.fileName || "Uploaded document")}"></div></div>`;
+      const zoomTools = "<span class=\"zoom-tools\" role=\"group\" aria-label=\"Zoom document\"><button class=\"btn btn-small btn-ghost\" type=\"button\" data-zoom=\"out\" aria-label=\"Zoom out\">−</button><span class=\"zoom-level\" aria-live=\"polite\">100%</span><button class=\"btn btn-small btn-ghost\" type=\"button\" data-zoom=\"in\" aria-label=\"Zoom in\">+</button><button class=\"btn btn-small btn-ghost\" type=\"button\" data-zoom=\"fit\">Fit</button></span>";
+      return "<div class=\"original-file\"><div class=\"original-file-actions\">" + zoomTools
+        + "</div><div class=\"original-file-frame original-file-frame--doc original-file-frame--zoom\"><img src=\""
+        + safeUrl + "\" alt=\"" + FL.esc(doc.fileName || doc.name || "Uploaded document") + "\"></div></div>";
     }
     if (isPdf) {
-      const src = inlineUrl + "#toolbar=0&navpanes=0&scrollbar=1&view=FitH";
-      return `<div class="original-file original-file--pdf"><div class="original-file-frame original-file-frame--doc original-file-frame--pdf"><iframe title="Original PDF preview" src="${src}"></iframe></div></div>`;
+      const src = safeUrl + "#toolbar=0&amp;navpanes=0&amp;scrollbar=1&amp;view=FitH";
+      return "<div class=\"original-file original-file--pdf\"><div class=\"original-file-frame original-file-frame--doc original-file-frame--pdf\"><iframe title=\"Original PDF preview\" src=\""
+        + src + "\"></iframe></div></div>";
     }
-    const excerpt = (doc.extractedInfo && (doc.extractedInfo["OCR excerpt"] || doc.extractedInfo.OCR)) || (doc.ocr && doc.ocr.content) || "";
-    return `<div class="original-file"><div class="original-file-placeholder"><p class="note">Inline preview is not available for this file type. Use Open in new tab or Download from the toolbar above.</p>${excerpt ? `<div class="ocr-content">${FL.esc(String(excerpt).slice(0, 1200))}</div>` : ""}</div></div>`;
+    const downloadName = FL.esc(doc.fileName || doc.name || "document");
+    return "<div class=\"original-file\"><div class=\"original-file-placeholder\"><p class=\"note\">Inline preview is not available for this file type.</p>"
+      + "<button type=\"button\" class=\"btn btn-primary btn-small\" data-doc-preview-download=\"" + FL.esc(doc.id)
+      + "\">Download " + downloadName + "</button></div></div>";
   },
 
   ocrHtml: function (doc, scored, session, canDecide, opts) {
@@ -1892,7 +2031,7 @@ FL.documents = {
     doc._tevDrawerOpen = tevId;
     FL.documents._tevDrawerDoc = doc;
     if (previewFrame) {
-      FL.documents.loadDocumentPdfPreview(doc, previewFrame);
+      FL.documents.loadDocumentPdfPreview(doc, previewFrame, session);
     }
     drawer.classList.add("is-open");
     drawer.setAttribute("aria-hidden", "false");

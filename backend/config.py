@@ -2,11 +2,16 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()
+from dotenv import dotenv_values, load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
+
+# Criterion B adapter: `backend/.env` wins over shell defaults (e.g. CI/agent `=0`).
+_env_file = dotenv_values(BASE_DIR / ".env")
+_adapter_raw = _env_file.get("CRITERION_B_SIMULATION_ADAPTER_ENABLED")
+if _adapter_raw is not None and str(_adapter_raw).strip() != "":
+    os.environ["CRITERION_B_SIMULATION_ADAPTER_ENABLED"] = str(_adapter_raw).strip()
 
 
 def _require_postgres_url(env_key: str) -> str:

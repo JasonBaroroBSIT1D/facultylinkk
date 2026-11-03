@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../data/app_state.dart';
+import '../../data/criterion_b_catalog.dart';
+import '../../data/criterion_c_catalog.dart';
+import '../../data/kra_scoring_display.dart';
 import '../../data/mock_kra_catalog.dart';
 import '../../data/teaching_effectiveness_mapper.dart';
 import '../../models/teaching_evaluation_record.dart';
@@ -58,6 +61,9 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
             FacultyDocument.isSetSefIndicatorId(widget.initialIndicatorId)
         ? null
         : widget.initialIndicatorId;
+    if (AppState.instance.isSignedIn && !AppState.instance.usesMockAuth) {
+      AppState.instance.refreshScoringConfiguration(quiet: true);
+    }
     _load().then((_) {
       if (_criterionId == FacultyDocument.criterionAId) {
         _loadCriterionATeachingData();
@@ -65,6 +71,18 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
         _loadSetSefRecords(_indicatorId!);
       }
     });
+    if (_criterionId == CriterionBCatalog.criterionId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, AppRoutes.criterionBHub);
+      });
+    }
+    if (_criterionId == CriterionCCatalog.criterionId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, AppRoutes.criterionCHub);
+      });
+    }
   }
 
   Future<void> _load() async {
@@ -115,7 +133,11 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
           )
           .toList();
     }
-    return all.where((d) => d.indicatorId == indicatorId).toList();
+    final matched = all.where((d) => d.indicatorId == indicatorId).toList();
+    if (CriterionBCatalog.isCriterionBIndicator(indicatorId)) {
+      return matched.where((d) => d.isCriterionBPrimaryClaim).toList();
+    }
+    return matched;
   }
 
   int _docCountForCriterion(String criterionId) {
@@ -156,6 +178,14 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
   }
 
   void _openCriterion(String? id) {
+    if (id == CriterionBCatalog.criterionId) {
+      Navigator.pushReplacementNamed(context, AppRoutes.criterionBHub);
+      return;
+    }
+    if (id == CriterionCCatalog.criterionId) {
+      Navigator.pushReplacementNamed(context, AppRoutes.criterionCHub);
+      return;
+    }
     setState(() {
       _criterionId = id;
       _indicatorId = null;
@@ -297,8 +327,121 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
       return _buildCriterionAWorkspace();
     }
     if (_indicatorId != null) return _buildIndicatorDocs();
-    if (_criterionId != null) return _buildIndicators();
+    if (_criterionId != null) {
+      if (_criterionId == CriterionBCatalog.criterionId) {
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Opening Teaching Materials & Programs…',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        );
+      }
+      return _buildIndicators();
+    }
     return _buildCriteria();
+  }
+
+  Widget _buildCriterionBIndicatorGroups() {
+    final criterion = _findCriterion(_criterionId);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        Text(
+          criterion?['name']?.toString() ?? 'Criterion B',
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 16,
+            color: AppColors.navy,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Use the guided flow to submit instructional materials or academic program work step by step.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
+        ),
+        const SizedBox(height: 12),
+        Material(
+          color: AppColors.mint.withOpacity(0.45),
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () {
+              Navigator.pushNamed(context, AppRoutes.criterionBHub);
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(Icons.route_outlined, color: AppColors.forestLight, size: 28),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'My accomplishments (guided)',
+                          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Start new or continue incomplete submissions',
+                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Instructional Materials',
+          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
+        ),
+        const SizedBox(height: 8),
+        for (final group in CriterionBCatalog.imGroups) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4, top: 8),
+            child: Text(group.label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+          ),
+          for (final indicatorId in group.indicatorIds)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: CompactFolderCard(
+                icon: Icons.description_outlined,
+                iconColor: AppColors.kra(widget.kra),
+                title: _findIndicator(indicatorId)?['name']?.toString() ?? indicatorId,
+                subtitle: _indicatorCountLabel(indicatorId),
+                onTap: () => _openIndicator(indicatorId),
+              ),
+            ),
+        ],
+        const SizedBox(height: 12),
+        const Text(
+          'Academic Programs',
+          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
+        ),
+        const SizedBox(height: 8),
+        for (final indicatorId in CriterionBCatalog.programGroup.indicatorIds)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: CompactFolderCard(
+              icon: Icons.school_outlined,
+              iconColor: AppColors.kra(widget.kra),
+              title: _findIndicator(indicatorId)?['name']?.toString() ?? indicatorId,
+              subtitle: _indicatorCountLabel(indicatorId),
+              onTap: () => _openIndicator(indicatorId),
+            ),
+          ),
+      ],
+    );
   }
 
   List<FacultyDocument> _criterionASourceDocuments() {
@@ -399,10 +542,15 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
 
   Widget _buildCriteria() {
     final criteria = (_kraNode!['criteria'] as List? ?? []).whereType<Map>().toList();
+    final kraId = _webKraId(widget.kra);
+    final kraMax = KraScoringDisplay.kraMaxPoints(kraId);
+    final kraSubtitle = kraMax != null
+        ? '${widget.kra.label}${KraScoringDisplay.formatMaxLabel(kraMax)}'
+        : widget.kra.label;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
-        _KraHeader(kra: widget.kra, subtitle: widget.kra.label),
+        _KraHeader(kra: widget.kra, subtitle: kraSubtitle),
         const SizedBox(height: 16),
         for (final criterion in criteria)
           Padding(
@@ -410,7 +558,7 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
             child: CompactFolderCard(
               icon: Icons.folder_outlined,
               iconColor: AppColors.kra(widget.kra),
-              title: criterion['name']?.toString() ?? 'Criterion',
+              title: _criterionTitle(criterion),
               subtitle: criterion['id']?.toString() == FacultyDocument.criterionAId
                   ? '${_docCountForCriterion(FacultyDocument.criterionAId)} supporting document${_docCountForCriterion(FacultyDocument.criterionAId) == 1 ? '' : 's'}'
                   : '${(criterion['indicators'] as List? ?? []).length} indicators · '
@@ -436,7 +584,7 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
         Text(
-          criterion['name']?.toString() ?? '',
+          _criterionTitle(criterion),
           style: const TextStyle(
             fontWeight: FontWeight.w800,
             fontSize: 16,
@@ -458,6 +606,17 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
           ),
       ],
     );
+  }
+
+  String _criterionTitle(Map criterion) {
+    final cid = criterion['id']?.toString() ?? '';
+    final fallback = criterion['name']?.toString() ?? 'Criterion';
+    final name = KraScoringDisplay.criterionDisplayName(cid, fallback: fallback) ?? fallback;
+    final max = KraScoringDisplay.criterionMaxPoints(cid);
+    if (max != null) {
+      return '$name${KraScoringDisplay.formatMaxLabel(max)}';
+    }
+    return name;
   }
 
   String _indicatorCountLabel(String indicatorId) {
@@ -503,7 +662,13 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
                 style: const TextStyle(color: AppColors.textSecondary, height: 1.45),
               ),
             ),
-          if (evidence is List && evidence.isNotEmpty) ...[
+          if (_criterionId == CriterionBCatalog.criterionId) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Open a primary claim to view the server evidence checklist and upload supporting documents.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
+            ),
+          ] else if (evidence is List && evidence.isNotEmpty) ...[
             const SizedBox(height: 16),
             const Text(
               'Required supporting evidence',

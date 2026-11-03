@@ -365,13 +365,18 @@ FL.kraConfig = {
       if (!el) return;
       const summary = FL.store.kraConfigurationPublishedSummary;
       const published = FL.store.kraConfigurationPublished;
+      const meta = FL.store.scoringConfigurationMetadata || {};
       const src = summary || (published && {
-        version: published.metadata && published.metadata.version,
+        version: (published.metadata && published.metadata.version) != null ? published.metadata.version : meta.version,
         publishedAt: published.publishedAt,
-        effectiveFrom: published.metadata && published.metadata.effectiveFrom,
+        effectiveFrom: (published.metadata && published.metadata.effectiveFrom) || meta.effectiveFrom,
         setSefFormulaVerified: published.metadata && published.metadata.setSefScoring
           && published.metadata.setSefScoring.officialFormulaVerified
-      });
+      }) || (meta.version != null || meta.effectiveFrom ? {
+        version: meta.version,
+        effectiveFrom: meta.effectiveFrom,
+        publishedAt: meta.publishedAt
+      } : null);
       if (!src) {
         el.textContent = editable
           ? "No configuration is published yet. Save a draft, then publish with an effective date. SET/SEF points use the verified JC 01 s. 2026 method when publish validation passes."

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from documents.scoring.section10 import CIRCULAR_AGGREGATION_METHOD
-from kra_configuration.service import get_published_row
 
 SET_INDICATOR = "kra1-a-student"
 SEF_INDICATOR = "kra1-a-supervisor"
@@ -12,7 +11,9 @@ CRITERION_A_MAX_KEY = "kra1-a"
 
 
 def published_configuration():
-    """Latest published row from PostgreSQL (not draft, not mock)."""
+    """Applicable published row from PostgreSQL (not draft, not mock)."""
+    from kra_configuration.service import get_published_row
+
     return get_published_row()
 
 

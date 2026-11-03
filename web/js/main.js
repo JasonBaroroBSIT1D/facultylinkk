@@ -266,6 +266,14 @@ FL.boot = function () {
       };
       const bootDocsThenRender = function () {
         const chain = [];
+        if (
+          FL.scoringConfiguration
+          && (FL.store.usesLiveReviewerApi() || FL.store.usesRealAdminApi())
+        ) {
+          chain.push(FL.scoringConfiguration.refresh({ source: "reviewer", force: false }).catch(function () {
+            return null;
+          }));
+        }
         if (session.role === "administrator" && bootDocuments) {
           chain.push(FL.store.loadAdminFaculty().catch(function () { return null; }));
         }

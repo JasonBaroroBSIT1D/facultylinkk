@@ -107,8 +107,8 @@ abstract final class FacultyApiMapper {
     final nextRaw = ((json['nextPossibleRank'] as String?) ?? '').trim();
     final estimatedTotal = (json['estimatedTotalKraPoints'] as num?)?.toDouble() ??
         (json['estimatedKraPoints'] as num?)?.toDouble() ??
-        (json['validatedKraPoints'] as num?)?.toDouble() ??
         0;
+    final validatedTotal = (json['validatedKraPoints'] as num?)?.toDouble() ?? 0;
     final weightedEstimated = (json['weightedEstimatedScore'] as num?)?.toDouble() ??
         (json['weightedValidatedScore'] as num?)?.toDouble() ??
         (json['weightedProvisionalScore'] as num?)?.toDouble();
@@ -121,7 +121,7 @@ abstract final class FacultyApiMapper {
       eligibilityLabel: (json['eligibilityLabel'] as String?) ?? 'Simulation snapshot',
       eligibilityStatus: (json['eligibilityStatus'] as String?) ?? 'under_assessment',
       estimatedKraPoints: estimatedTotal,
-      validatedKraPoints: estimatedTotal,
+      validatedKraPoints: validatedTotal,
       provisionalKraPoints: estimatedTotal,
       weightedEstimatedScore: weightedEstimated,
       weightedValidatedScore: weightedEstimated,

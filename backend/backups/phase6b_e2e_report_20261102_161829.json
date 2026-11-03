@@ -1,0 +1,162 @@
+{
+  "tag": "PHASE6B-E2E",
+  "startedAt": "2026-11-02T16:18:26.786225+00:00",
+  "adapterEnabled": false,
+  "recordsCreated": [
+    {
+      "role": "primary_im",
+      "publicId": "doc_e55b749ffb44"
+    },
+    {
+      "role": "supporting_im",
+      "slot": "imdc_evaluation_approval",
+      "publicId": "doc_f33cb22766b4",
+      "primaryPublicId": "doc_e55b749ffb44"
+    },
+    {
+      "role": "supporting_im",
+      "slot": "library_certification",
+      "publicId": "doc_157121340a91",
+      "primaryPublicId": "doc_e55b749ffb44"
+    },
+    {
+      "role": "supporting_im",
+      "slot": "complete_set_attestation",
+      "publicId": "doc_0d5c54476d3a",
+      "primaryPublicId": "doc_e55b749ffb44"
+    },
+    {
+      "role": "primary_program",
+      "publicId": "doc_cb30ad38fca3"
+    },
+    {
+      "role": "supporting_program",
+      "slot": "dean_contribution_certification",
+      "publicId": "doc_84fe86a4ff2a",
+      "primaryPublicId": "doc_cb30ad38fca3"
+    },
+    {
+      "role": "supporting_program",
+      "slot": "academic_council_resolution",
+      "publicId": "doc_786231d6fa68",
+      "primaryPublicId": "doc_cb30ad38fca3"
+    },
+    {
+      "role": "supporting_program",
+      "slot": "governing_board_resolution",
+      "publicId": "doc_d002569aeeb1",
+      "primaryPublicId": "doc_cb30ad38fca3"
+    },
+    {
+      "role": "supporting_program",
+      "slot": "implementation_evidence",
+      "publicId": "doc_2b5e68e5f78d",
+      "primaryPublicId": "doc_cb30ad38fca3"
+    },
+    {
+      "role": "supporting_program",
+      "slot": "feasibility_study",
+      "publicId": "doc_7e4ddcc16a55",
+      "primaryPublicId": "doc_cb30ad38fca3"
+    },
+    {
+      "role": "supporting_program",
+      "slot": "rrpa_or_copc",
+      "publicId": "doc_8fe1b01b0b8b",
+      "primaryPublicId": "doc_cb30ad38fca3"
+    }
+  ],
+  "steps": [
+    {
+      "step": "im_bundle_init",
+      "claimType": null,
+      "hasChecklist": true,
+      "validationStatus": "incomplete",
+      "readyForScoring": false
+    },
+    {
+      "step": "im_metadata_patch",
+      "validationStatus": "incomplete",
+      "flags": [
+        "missing_imdc_evaluation_approval",
+        "missing_approved_syllabus",
+        "missing_library_certification",
+        "missing_complete_set_attestation",
+        "imdc_approval_reviewer_required"
+      ]
+    },
+    {
+      "step": "im_supporting_linked",
+      "validationStatus": "incomplete",
+      "readyForScoring": false
+    },
+    {
+      "step": "im_reviewer_verify_slot",
+      "validationStatus": "incomplete"
+    },
+    {
+      "step": "program_rrpa_unknown",
+      "rrpaCopcApplicability": "unknown",
+      "readyForScoring": false,
+      "flags": [
+        "rrpa_copc_applicability_undetermined"
+      ]
+    },
+    {
+      "step": "program_rrpa_applicable_missing_doc",
+      "readyForScoring": false,
+      "flags": [
+        "missing_rrpa_or_copc"
+      ]
+    },
+    {
+      "step": "program_rrpa_applicable_verified",
+      "validationStatus": "valid",
+      "readyForScoring": true
+    },
+    {
+      "step": "program_rrpa_not_applicable",
+      "rrpaCopcApplicability": "not_applicable",
+      "readyForScoring": true
+    }
+  ],
+  "defects": [
+    "IM bundle failed to initialize."
+  ],
+  "knownDefects": [
+    "Primary bundle checklist slots may be cleared when inline OCR completes after supporting upload-with-link; relink step mitigates for this script only."
+  ],
+  "database": "facultylink",
+  "smtpEnabled": true,
+  "uploadFolder": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\backend\\uploads",
+  "testFacultyEmail": "jasonbaroro5@gmail.com",
+  "testReviewerEmail": "jaso.jary@gmail.com",
+  "rankSimulationBaseline": {
+    "estimatedTotalKraPoints": 55.22,
+    "kra1Estimated": 55.22,
+    "kra1-b": {
+      "estimatedPoints": null,
+      "maxPoints": 30.0
+    },
+    "configurationComplete": true
+  },
+  "publishedCaps": {
+    "kra1Max": 100.0,
+    "criterionBMax": 30.0
+  },
+  "rankSimulationAfter": {
+    "estimatedTotalKraPoints": 55.22,
+    "kra1Estimated": 55.22,
+    "kra1-b": {
+      "estimatedPoints": null,
+      "maxPoints": 30.0
+    },
+    "configurationComplete": true
+  },
+  "criterionAUnchanged": {
+    "setCombinedValidated": null,
+    "sefCombinedValidated": null
+  },
+  "finishedAt": "2026-11-02T16:18:29.641807+00:00",
+  "success": false
+}

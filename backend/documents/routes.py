@@ -49,6 +49,28 @@ def faculty_list_documents():
     return jsonify({"documents": rows, "stats": stats}), 200
 
 
+@faculty_docs_bp.get("/criterion-c/summary")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_criterion_c_summary():
+    from documents.criterion_c_evidence.service import criterion_c_summary_for_faculty
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify(criterion_c_summary_for_faculty(user.faculty_profile.id)), 200
+
+
+@faculty_docs_bp.get("/criterion-c/accomplishments")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_criterion_c_accomplishments():
+    from documents.criterion_c_evidence.service import list_faculty_accomplishments
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify({"accomplishments": list_faculty_accomplishments(user.faculty_profile.id)}), 200
+
+
 @faculty_docs_bp.post("")
 @perm.roles_required(ROLE_FACULTY)
 def faculty_upload_document():
@@ -67,6 +89,14 @@ def faculty_upload_document():
             criterion_id=(request.form.get("criterionId") or request.form.get("criterion_id") or "").strip(),
             indicator_id=(request.form.get("indicatorId") or request.form.get("indicator_id") or "").strip(),
             replaces_public_id=(request.form.get("replacesDocumentId") or "").strip() or None,
+            bundle_primary_public_id=(
+                request.form.get("bundlePrimaryId")
+                or request.form.get("bundle_primary_id")
+                or ""
+            ).strip()
+            or None,
+            evidence_slot=(request.form.get("evidenceSlot") or request.form.get("evidence_slot") or "").strip()
+            or None,
         )
     except ValueError as error:
         code = str(error)
@@ -84,6 +114,19 @@ def faculty_upload_document():
             "invalid_indicator": "Invalid indicator for this criterion.",
             "invalid_replace_target": "The document to replace was not found.",
             "not_replaceable": "This document cannot be replaced. Upload a new file only when revision is requested or OCR failed.",
+            "primary_not_found": "The primary instructional material claim was not found.",
+            "supporting_not_found": "The supporting document was not found.",
+            "bundle_not_initialized": "Initialize the primary instructional material upload first.",
+            "invalid_evidence_slot": "That evidence slot is not allowed for this Criterion B claim.",
+            "duplicate_supporting_slot": "This file is already linked to that evidence slot.",
+            "duplicate_primary_hash": "Supporting file cannot be identical to the primary material file.",
+            "faculty_mismatch": "Supporting evidence must belong to the same faculty member.",
+            "cannot_link_self": "A document cannot be linked to itself.",
+            "accomplishment_not_ready_for_decision": (
+                "Required evidence must be verified and policy flags resolved before approval."
+            ),
+            "review_rejection_remarks_required": "Provide reviewer remarks (at least 10 characters) when rejecting.",
+            "review_approval_remarks_required": "Provide reviewer remarks (at least 10 characters) when approving.",
         }
         return jsonify({"message": messages.get(code, "Upload failed.")}), 400
     payload = document_to_web(
@@ -207,6 +250,164 @@ def faculty_delete_document(public_id: str):
     return jsonify({"ok": True, "message": "Document removed from your active list."}), 200
 
 
+@faculty_docs_bp.get("/<public_id>/criterion-b/evidence-bundle")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_get_criterion_b_bundle(public_id: str):
+    from documents.criterion_b_evidence.service import bundle_api_payload
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    doc = doc_svc.get_owned_document(public_id, user) if user else None
+    if not doc:
+        return jsonify({"message": "Document was not found."}), 404
+    return jsonify(bundle_api_payload(doc)), 200
+
+
+@faculty_docs_bp.patch("/<public_id>/criterion-b/evidence-bundle")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_patch_criterion_b_bundle(public_id: str):
+    from documents.criterion_b_evidence.service import CriterionBEvidenceError, update_bundle_metadata
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    try:
+        doc, validation = update_bundle_metadata(user, public_id, body)
+    except CriterionBEvidenceError as error:
+        codes = {
+            "primary_not_found": (404, "Document was not found."),
+            "bundle_not_initialized": (400, "Evidence bundle is not initialized for this claim."),
+        }
+        status, msg = codes.get(error.code, (400, "Update failed."))
+        return jsonify({"message": msg}), status
+    return jsonify(
+        {
+            "document": document_to_web(doc, api_base=_file_api_base("faculty", doc.public_id)),
+            "validation": validation,
+        }
+    ), 200
+
+
+@faculty_docs_bp.post("/<public_id>/criterion-b/link-supporting")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_link_criterion_b_supporting(public_id: str):
+    from documents.criterion_b_evidence.service import CriterionBEvidenceError, link_existing_supporting_document
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    supporting_id = (body.get("supportingDocumentId") or body.get("supporting_document_id") or "").strip()
+    slot = (body.get("evidenceSlot") or body.get("evidence_slot") or "").strip()
+    if not supporting_id or not slot:
+        return jsonify({"message": "supportingDocumentId and evidenceSlot are required."}), 400
+    try:
+        primary, validation = link_existing_supporting_document(
+            user,
+            primary_public_id=public_id,
+            supporting_public_id=supporting_id,
+            evidence_slot=slot,
+        )
+    except CriterionBEvidenceError as error:
+        messages = {
+            "primary_not_found": "Primary claim was not found.",
+            "supporting_not_found": "Supporting document was not found.",
+            "duplicate_supporting_slot": "This file is already linked to that evidence slot.",
+            "duplicate_primary_hash": "Supporting file cannot be identical to the primary material file.",
+            "invalid_evidence_slot": "That evidence slot is not allowed for this Criterion B claim.",
+            "cannot_link_self": "A document cannot be linked to itself.",
+        }
+        return jsonify({"message": messages.get(error.code, "Link failed.")}), 400
+    return jsonify(
+        {
+            "document": document_to_web(primary, api_base=_file_api_base("faculty", primary.public_id)),
+            "validation": validation,
+        }
+    ), 200
+
+
+@faculty_docs_bp.get("/<public_id>/criterion-c/evidence-bundle")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_get_criterion_c_bundle(public_id: str):
+    from documents.criterion_c_evidence.service import bundle_api_payload
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    doc = doc_svc.get_owned_document(public_id, user) if user else None
+    if not doc:
+        return jsonify({"message": "Document was not found."}), 404
+    return jsonify(bundle_api_payload(doc)), 200
+
+
+@faculty_docs_bp.patch("/<public_id>/criterion-c/evidence-bundle")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_patch_criterion_c_bundle(public_id: str):
+    from documents.criterion_c_evidence.service import CriterionCEvidenceError, update_bundle_metadata
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    try:
+        doc, validation = update_bundle_metadata(user, public_id, body)
+    except CriterionCEvidenceError as error:
+        codes = {
+            "primary_not_found": (404, "Document was not found."),
+            "bundle_not_initialized": (400, "Evidence bundle is not initialized for this accomplishment."),
+        }
+        status, msg = codes.get(error.code, (400, "Update failed."))
+        return jsonify({"message": msg}), status
+    from documents.criterion_c_evidence.service import bundle_api_payload
+
+    payload = bundle_api_payload(doc)
+    return jsonify(
+        {
+            "document": document_to_web(doc, api_base=_file_api_base("faculty", doc.public_id)),
+            "validation": validation,
+            "bundle": payload.get("bundle"),
+            "scoring": payload.get("scoring"),
+            "ocrStatus": payload.get("ocrStatus"),
+            "ocrExtraction": payload.get("ocrExtraction"),
+        }
+    ), 200
+
+
+@faculty_docs_bp.post("/<public_id>/criterion-c/link-supporting")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_link_criterion_c_supporting(public_id: str):
+    from documents.criterion_c_evidence.service import CriterionCEvidenceError, link_existing_supporting_document
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    supporting_id = (body.get("supportingDocumentId") or body.get("supporting_document_id") or "").strip()
+    slot = (body.get("evidenceSlot") or body.get("evidence_slot") or "").strip()
+    if not supporting_id or not slot:
+        return jsonify({"message": "supportingDocumentId and evidenceSlot are required."}), 400
+    try:
+        primary, validation = link_existing_supporting_document(
+            user,
+            primary_public_id=public_id,
+            supporting_public_id=supporting_id,
+            evidence_slot=slot,
+        )
+    except CriterionCEvidenceError as error:
+        messages = {
+            "primary_not_found": "Primary accomplishment was not found.",
+            "supporting_not_found": "Supporting document was not found.",
+            "invalid_evidence_slot": "That evidence slot is not allowed for this Criterion C accomplishment.",
+            "duplicate_primary_hash": "Supporting file cannot be identical to the primary file.",
+            "cannot_link_self": "A document cannot be linked to itself.",
+        }
+        return jsonify({"message": messages.get(error.code, "Link failed.")}), 400
+    return jsonify(
+        {
+            "document": document_to_web(primary, api_base=_file_api_base("faculty", primary.public_id)),
+            "validation": validation,
+        }
+    ), 200
+
+
 def _directory_params():
     args = request.args
     page = int(args.get("page") or 1)
@@ -310,6 +511,314 @@ def reviewer_get_document(public_id: str):
             ocr_detail=True,
         )
     ), 200
+
+
+@reviewer_docs_bp.get("/documents/<public_id>/criterion-b/evidence-bundle")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_get_criterion_b_bundle(public_id: str):
+    from documents.criterion_b_evidence.service import bundle_api_payload
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    doc = doc_svc.get_document(public_id)
+    if not doc or not user or not doc_svc.reviewer_can_access(user, doc):
+        return jsonify({"message": "Document was not found."}), 404
+    return jsonify(bundle_api_payload(doc)), 200
+
+
+@reviewer_docs_bp.patch("/documents/<public_id>/criterion-b/evidence-bundle")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_patch_criterion_b_checklist(public_id: str):
+    from documents.criterion_b_evidence.service import CriterionBEvidenceError, reviewer_update_checklist_slot
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    body = request.get_json(silent=True) or {}
+    slot_id = (body.get("evidenceSlot") or body.get("evidence_slot") or body.get("slotId") or "").strip()
+    status = (body.get("status") or "").strip()
+    rrpa_applicability = body.get("rrpaCopcApplicability")
+    if rrpa_applicability is None:
+        rrpa_applicability = body.get("rrpa_copc_applicability")
+    disqualification = body.get("disqualificationConfirmed")
+    if disqualification is None:
+        disqualification = body.get("disqualification_confirmed")
+    has_assessment = "reviewerAssessmentPoints" in body or "reviewerAssessmentJustification" in body
+    has_remarks = bool(
+        (body.get("remarks") or body.get("reviewerRemarks") or "").strip()
+    )
+    has_bundle_metadata = (
+        "specializationAligned" in body
+        or "completeSetDeclared" in body
+        or disqualification is not None
+    )
+    confirm_contribution = body.get("confirmContributionPercentage") is True
+    contribution_clarify = body.get("contributionNeedsClarification") is True
+    if (
+        not slot_id
+        and rrpa_applicability is None
+        and not has_assessment
+        and not has_remarks
+        and not has_bundle_metadata
+        and not confirm_contribution
+        and not contribution_clarify
+    ):
+        return jsonify(
+            {
+                "message": (
+                    "evidenceSlot and status, rrpaCopcApplicability, reviewer remarks, "
+                    "bundle metadata (specializationAligned), or reviewerAssessmentPoints "
+                    "with justification is required."
+                )
+            }
+        ), 400
+    if has_assessment and "reviewerAssessmentPoints" not in body:
+        return jsonify({"message": "reviewerAssessmentPoints is required with your justification."}), 400
+    if slot_id and not status:
+        return jsonify({"message": "status is required when evidenceSlot is provided."}), 400
+    try:
+        doc, validation = reviewer_update_checklist_slot(
+            user,
+            public_id,
+            slot_id=slot_id or None,
+            status=status or None,
+            reviewer_note=(body.get("reviewerNote") or body.get("note") or ""),
+            remarks=(body.get("remarks") or body.get("reviewerRemarks") or ""),
+            disqualification_confirmed=disqualification if disqualification is not None else None,
+            rrpa_copc_applicability=rrpa_applicability,
+            rrpa_copc_applicability_note=(
+                body.get("rrpaCopcApplicabilityNote")
+                or body.get("rrpa_copc_applicability_note")
+                or ""
+            ),
+            reviewer_assessment_points=body.get("reviewerAssessmentPoints"),
+            reviewer_assessment_justification=(
+                body.get("reviewerAssessmentJustification")
+                or body.get("reviewer_assessment_justification")
+                or ""
+            ),
+            specialization_aligned=body.get("specializationAligned")
+            if "specializationAligned" in body
+            else None,
+            complete_set_declared=body.get("completeSetDeclared")
+            if "completeSetDeclared" in body
+            else None,
+            confirm_contribution_percentage=confirm_contribution,
+            confirmed_contribution_percent=body.get("confirmedContributionPercent"),
+            contribution_needs_clarification=contribution_clarify,
+            contribution_clarification_reason=(
+                body.get("contributionClarificationReason")
+                or body.get("contribution_clarification_reason")
+                or ""
+            ),
+        )
+    except CriterionBEvidenceError as error:
+        codes = {
+            "forbidden": (403, "You do not have access to this document."),
+            "bundle_not_initialized": (400, "Evidence bundle is not initialized."),
+            "cannot_verify_empty_slot": (400, "Cannot verify a slot with no linked document."),
+            "invalid_slot_status": (400, "Unknown checklist status."),
+            "invalid_rrpa_copc_applicability": (400, "Unknown RRPA/COPC applicability value."),
+            "rrpa_copc_exemption_note_required": (
+                400,
+                "A reviewer note is required when RRPA/COPC is marked not applicable.",
+            ),
+            "rrpa_applicability_program_only": (
+                400,
+                "RRPA/COPC applicability applies to academic program claims only.",
+            ),
+            "reviewer_assessment_justification_required": (
+                400,
+                "Please explain why you chose this assessment score (at least 10 characters).",
+            ),
+            "reviewer_assessment_points_invalid": (400, "Enter a valid assessment score (0 or higher)."),
+            "reviewer_assessment_points_exceeds_published_max": (
+                400,
+                "Assessment score exceeds the published maximum for this indicator.",
+            ),
+            "reviewer_assessment_points_required": (
+                400,
+                "reviewerAssessmentPoints is required when saving an assessment.",
+            ),
+            "reviewer_assessment_not_ready": (
+                400,
+                "Mandatory evidence is not complete or verified yet. Save document verifications first.",
+            ),
+            "contribution_confirmation_required": (
+                400,
+                "Confirm the contribution percentage against Annex C before finalizing the assessment.",
+            ),
+            "contribution_confirmation_required_for_assessment_change": (
+                400,
+                "Confirm the contribution percentage against Annex C before changing this assessment.",
+            ),
+            "contribution_percent_mismatch_unresolved": (
+                400,
+                "The recorded contribution percentage does not match the reviewed Annex C. Resolve the difference before finalizing the assessment.",
+            ),
+            "contribution_confirmation_incomplete": (
+                400,
+                "Contribution confirmation is incomplete.",
+            ),
+            "contribution_percent_required_on_claim": (
+                400,
+                "Recorded contribution percentage is required on this co-author claim.",
+            ),
+            "contribution_confirmation_percent_invalid": (
+                400,
+                "Enter a valid contribution percentage (0–100).",
+            ),
+            "annex_c_document_required": (
+                400,
+                "Link and verify the Annex C contribution document before confirming the percentage.",
+            ),
+            "contribution_mismatch_reason_required": (
+                400,
+                "Explain the mismatch between the recorded percentage and Annex C.",
+            ),
+            "contribution_clarification_reason_required": (
+                400,
+                "Provide a brief clarification (at least 10 characters).",
+            ),
+        }
+        status_code, msg = codes.get(error.code, (400, "Update failed."))
+        return jsonify({"message": msg}), status_code
+    from documents.criterion_b_evidence.service import bundle_api_payload
+
+    bundle_payload = bundle_api_payload(doc)
+    return jsonify(
+        {
+            "document": document_to_web(doc, api_base=_file_api_base("reviewer", doc.public_id), ocr_detail=True),
+            "validation": validation,
+            "contributionVerification": bundle_payload.get("contributionVerification"),
+            "scoring": bundle_payload.get("scoring"),
+            "crossKraWarnings": bundle_payload.get("crossKraWarnings") or [],
+        }
+    ), 200
+
+
+@reviewer_docs_bp.get("/documents/<public_id>/criterion-c/evidence-bundle")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_get_criterion_c_bundle(public_id: str):
+    from documents.criterion_c_evidence.service import bundle_api_payload
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    doc = doc_svc.get_document(public_id)
+    if not doc or not user or not doc_svc.reviewer_can_access(user, doc):
+        return jsonify({"message": "Document was not found."}), 404
+    return jsonify(bundle_api_payload(doc)), 200
+
+
+@reviewer_docs_bp.patch("/documents/<public_id>/criterion-c/evidence-bundle")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_patch_criterion_c_bundle(public_id: str):
+    from documents.criterion_c_evidence.service import CriterionCEvidenceError, reviewer_update_criterion_c
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    body = request.get_json(silent=True) or {}
+    slot_id = (body.get("evidenceSlot") or body.get("evidence_slot") or body.get("slotId") or "").strip()
+    status = (body.get("status") or "").strip()
+    review_status = (body.get("reviewStatus") or body.get("review_status") or "").strip() or None
+    has_remarks = bool((body.get("remarks") or body.get("reviewerRemarks") or "").strip())
+    metadata_keys = (
+        "projectTitle",
+        "studentNames",
+        "studentGroupLabel",
+        "academicYear",
+        "completionDate",
+    )
+    metadata_patch = {k: body[k] for k in metadata_keys if k in body}
+    has_metadata = bool(metadata_patch)
+    if not slot_id and not review_status and not has_remarks and not has_metadata:
+        return jsonify(
+            {
+                "message": (
+                    "evidenceSlot and status, reviewStatus (approved/rejected/pending), "
+                    "research metadata fields, or reviewer remarks is required."
+                )
+            }
+        ), 400
+    if slot_id and not status:
+        return jsonify({"message": "status is required when evidenceSlot is provided."}), 400
+    try:
+        doc, validation = reviewer_update_criterion_c(
+            user,
+            public_id,
+            slot_id=slot_id or None,
+            status=status or None,
+            reviewer_note=(body.get("reviewerNote") or body.get("note") or ""),
+            review_status=review_status,
+            remarks=(body.get("remarks") or body.get("reviewerRemarks") or ""),
+            assessed_points=body.get("assessedPoints") or body.get("assessed_points"),
+            metadata=metadata_patch if has_metadata else None,
+        )
+    except CriterionCEvidenceError as error:
+        codes = {
+            "forbidden": (403, "You do not have access to this document."),
+            "bundle_not_initialized": (400, "Evidence bundle is not initialized."),
+            "cannot_verify_empty_slot": (400, "Cannot verify a slot with no linked document."),
+            "invalid_slot_status": (400, "Unknown checklist status."),
+            "accomplishment_not_ready_for_decision": (
+                400,
+                "Verify all required evidence and resolve policy flags before approving.",
+            ),
+            "review_rejection_remarks_required": (
+                400,
+                "Provide reviewer remarks (at least 10 characters) when rejecting.",
+            ),
+            "review_approval_remarks_required": (
+                400,
+                "Provide reviewer remarks (at least 10 characters) when approving.",
+            ),
+            "assessed_points_invalid": (400, "Enter a valid assessed points value."),
+            "assessed_points_exceeds_annex_max": (
+                400,
+                "Assessed points exceed the published Annex A maximum for this indicator.",
+            ),
+        }
+        status_code, msg = codes.get(error.code, (400, "Update failed."))
+        return jsonify({"message": msg}), status_code
+    from documents.criterion_c_evidence.service import bundle_api_payload
+
+    return jsonify(
+        {
+            "document": document_to_web(doc, api_base=_file_api_base("reviewer", doc.public_id), ocr_detail=True),
+            "validation": validation,
+            "scoring": bundle_api_payload(doc).get("scoring"),
+        }
+    ), 200
+
+
+def _reviewer_faculty_profile_or_404(user, faculty_public_id: str) -> FacultyProfile | None:
+    profile = FacultyProfile.query.filter_by(public_id=faculty_public_id).first()
+    if not profile or not user or profile.reviewer_user_id != user.id:
+        return None
+    return profile
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/criterion-c/summary")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_criterion_c_summary(faculty_public_id: str):
+    from documents.criterion_c_evidence.service import criterion_c_summary_for_faculty
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = _reviewer_faculty_profile_or_404(user, faculty_public_id)
+    if not profile:
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    return jsonify(criterion_c_summary_for_faculty(profile.id)), 200
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/criterion-c/accomplishments")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_criterion_c_accomplishments(faculty_public_id: str):
+    from documents.criterion_c_evidence.service import list_faculty_accomplishments
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = _reviewer_faculty_profile_or_404(user, faculty_public_id)
+    if not profile:
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    return jsonify({"accomplishments": list_faculty_accomplishments(profile.id)}), 200
 
 
 @reviewer_docs_bp.post("/documents/<public_id>/ocr/retry")

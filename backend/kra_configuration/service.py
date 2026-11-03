@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from datetime import date, datetime, timezone
 from typing import Any
@@ -10,11 +11,9 @@ from config import Config
 from documents.scoring.section10 import default_evaluation_coverage
 from kra_configuration.verified_scoring import apply_verified_scoring_to_settings, assess_publish_readiness
 from extensions import db
-from models import KraConfiguration, User
+from models import AuditLog, KraConfiguration, User
 
-STATUS_DRAFT = "draft"
-STATUS_PUBLISHED = "published"
-STATUS_SUPERSEDED = "superseded"
+from kra_configuration.statuses import STATUS_DRAFT, STATUS_PUBLISHED, STATUS_SUPERSEDED
 
 
 def default_set_sef_scoring() -> dict[str, Any]:
@@ -102,7 +101,15 @@ def get_draft_row() -> KraConfiguration | None:
     return KraConfiguration.query.filter_by(status=STATUS_DRAFT).order_by(KraConfiguration.updated_at.desc()).first()
 
 
-def get_published_row() -> KraConfiguration | None:
+def get_published_row(*, as_of: date | None = None) -> KraConfiguration | None:
+    """Applicable official configuration for scoring (never draft; respects effective dates)."""
+    from kra_configuration.resolver import resolve_scoring_configuration
+
+    return resolve_scoring_configuration(as_of=as_of).row
+
+
+def get_latest_published_row_by_time() -> KraConfiguration | None:
+    """Most recently published row by timestamp (Admin display only — not for scoring)."""
     return (
         KraConfiguration.query.filter(
             KraConfiguration.status == STATUS_PUBLISHED,
@@ -171,6 +178,8 @@ def _rank_weights_from_settings(settings_json: dict) -> dict:
 
 def save_draft(_admin: User, body: dict) -> KraConfiguration:
     row = get_draft_row()
+    if row is not None and row.status != STATUS_DRAFT:
+        raise ValueError("draft_immutable_conflict")
     settings_json = _merge_settings_json(row.settings_json if row else None, body)
     rank_weights = _rank_weights_from_settings(settings_json)
     guideline = (body.get("guidelineLabel") or body.get("guideline_label") or Config.GUIDELINE_LABEL).strip()
@@ -284,7 +293,12 @@ def publish_draft(_admin: User, body: dict) -> KraConfiguration:
     ).strip()
 
     now = datetime.now(timezone.utc)
-    for prev in KraConfiguration.query.filter_by(status=STATUS_PUBLISHED).all():
+    previous_active = KraConfiguration.query.filter_by(status=STATUS_PUBLISHED).all()
+    previous_active_id = previous_active[0].id if len(previous_active) == 1 else None
+    if len(previous_active) > 1:
+        previous_active_id = max(previous_active, key=lambda r: r.published_at or datetime.min).id
+
+    for prev in previous_active:
         prev.status = STATUS_SUPERSEDED
 
     published = KraConfiguration(
@@ -295,6 +309,26 @@ def publish_draft(_admin: User, body: dict) -> KraConfiguration:
         settings_json=settings_json,
     )
     db.session.add(published)
+    db.session.flush()
+
+    detail = {
+        "configurationId": published.id,
+        "version": settings_json.get("version"),
+        "effectiveFrom": settings_json.get("effectiveFrom"),
+        "effectiveTo": settings_json.get("effectiveTo"),
+        "guidelineLabel": guideline,
+        "publishedAt": now.isoformat(),
+        "previousActiveConfigurationId": previous_active_id,
+        "action": "official_scoring_configuration_published",
+    }
+    db.session.add(
+        AuditLog(
+            actor_user_id=_admin.id,
+            action="Official scoring configuration published",
+            target_id=str(published.id),
+            detail=json.dumps(detail, ensure_ascii=False)[:8000],
+        )
+    )
     db.session.commit()
     return published
 

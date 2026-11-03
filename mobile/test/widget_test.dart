@@ -196,10 +196,9 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.track_changes_outlined));
     await tester.pumpAndSettle();
-    expect(find.text('Instructor I'), findsWidgets);
-    expect(find.text('Instructor II'), findsWidgets);
-    expect(find.text('Simulation Result'), findsWidgets);
-    expect(find.text('Readiness'), findsWidgets);
+    expect(find.text('Rank simulation'), findsOneWidget);
+    expect(find.text('Faculty Rank Upgrade Simulation'), findsOneWidget);
+    expect(find.text('KRA I–IV score breakdown'), findsOneWidget);
 
     await tester.tap(
       find.descendant(

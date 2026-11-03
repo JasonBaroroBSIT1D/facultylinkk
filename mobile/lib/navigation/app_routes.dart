@@ -9,6 +9,8 @@ abstract final class AppRoutes {
   static const documentDetails = '/document-details';
   static const uploadDocument = '/upload-document';
   static const kraExplorer = '/kra-explorer';
+  static const criterionBHub = '/criterion-b-hub';
+  static const criterionCHub = '/criterion-c-hub';
   static const requirementDetails = '/requirement-details';
   static const improvementOpportunities = '/improvement-opportunities';
   static const editProfile = '/edit-profile';

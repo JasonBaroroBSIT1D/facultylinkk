@@ -25,11 +25,19 @@ def my_assigned_faculty():
 @reviewer_bp.get("/kra-configuration")
 @perm.roles_required(ROLE_REVIEWER)
 def reviewer_get_published_kra_configuration():
-    row = kra_svc.get_published_row()
-    if not row:
-        return jsonify({"published": None, "message": "No published configuration."}), 200
-    payload = kra_svc.configuration_to_api(row)
-    return jsonify({"published": payload, "kraSettings": payload["kraSettings"]}), 200
+    from kra_configuration.read_api import applicable_scoring_configuration_payload
+
+    payload = applicable_scoring_configuration_payload()
+    if not payload.get("configuration"):
+        return jsonify({"published": None, "message": "No published configuration.", **payload}), 200
+    return jsonify(
+        {
+            "published": payload["configuration"],
+            "kraSettings": payload["kraSettings"],
+            "metadata": payload.get("metadata"),
+            "rankWeightsPolicy": payload.get("rankWeightsPolicy"),
+        }
+    ), 200
 
 
 @reviewer_bp.get("/evaluation-periods")

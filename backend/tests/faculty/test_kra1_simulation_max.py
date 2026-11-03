@@ -13,7 +13,7 @@ def _profile():
 
 
 @patch("faculty.rank_simulation_engine.aggregate_criterion_documents")
-@patch("faculty.rank_simulation_engine.published_settings_blob")
+@patch("faculty.rank_simulation_engine._published_settings")
 @patch("faculty.rank_simulation_engine.published_kra_max_points", return_value=100.0)
 @patch("faculty.rank_simulation_engine.published_criterion_max_points")
 @patch("faculty.rank_simulation_engine.criteria_entries_for_kra")
@@ -24,13 +24,14 @@ def test_kra1_block_uses_100_max(
     mock_settings,
     mock_crit_docs,
 ):
-    mock_settings.return_value = {
+    settings = {
         "criteria": {
             "kra1-a": {"maxPoints": 60},
             "kra1-b": {"maxPoints": 30},
             "kra1-c": {"maxPoints": 10},
         }
     }
+    mock_settings.return_value = (settings, SimpleNamespace(row=SimpleNamespace(id=1), has_applicable_row=True))
     mock_entries.return_value = [
         {"criterionId": "kra1-a", "maxPoints": 60},
         {"criterionId": "kra1-b", "maxPoints": 30},

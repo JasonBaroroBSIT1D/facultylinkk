@@ -1347,3 +1347,510 @@ body.ca-tev-drawer-open {
   .evidence-search { max-width: none; margin-left: 0; width: 100%; }
   .evidence-person-text strong { max-width: none; white-space: normal; }
 }
+
+/* Criterion B evidence workspace */
+.cb-indicator-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fl-space-4);
+}
+.cb-ind-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fl-space-3);
+}
+.cb-ind-group {
+  padding: var(--fl-space-3);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-surface-raised, #fff);
+}
+.cb-ind-group-title {
+  margin: 0 0 var(--fl-space-2);
+  font-size: 0.95rem;
+}
+.cb-evidence-panel .cb-subhead {
+  margin: var(--fl-space-3) 0 var(--fl-space-2);
+  font-size: 0.95rem;
+}
+.cb-checklist-table select,
+.cb-checklist-table input {
+  width: 100%;
+  max-width: 220px;
+}
+.cb-flag-list,
+.cb-cross-kra-list,
+.cb-supporting-list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.cb-remarks textarea {
+  width: 100%;
+  margin-top: var(--fl-space-2);
+}
+.cb-disqualify {
+  display: block;
+  margin-top: var(--fl-space-3);
+  font-size: 0.9rem;
+}
+.cb-evidence-actions {
+  margin-top: var(--fl-space-3);
+}
+
+.cb-evidence-panel .cb-eyebrow {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fl-text-muted, #64748b);
+  font-weight: 700;
+}
+
+.cb-review-next {
+  margin: var(--fl-space-2) 0;
+}
+
+.cb-review-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--fl-space-4);
+}
+
+@media (min-width: 960px) {
+  .cb-review-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    align-items: start;
+  }
+}
+
+.cb-checklist-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fl-space-3);
+}
+
+.cb-checklist-card {
+  padding: var(--fl-space-3);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-surface-raised, #fff);
+}
+
+.cb-checklist-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fl-space-2);
+  margin-bottom: var(--fl-space-2);
+}
+
+.cb-checklist-card-head h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.cb-checklist-actions {
+  margin-top: var(--fl-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--fl-space-2);
+}
+
+.cb-checklist-action-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--fl-text-muted, #64748b);
+}
+
+.cb-checklist-actions select,
+.cb-checklist-actions input {
+  width: 100%;
+  max-width: 100%;
+}
+
+.cb-ocr-details {
+  margin-top: var(--fl-space-3);
+  font-size: 0.85rem;
+}
+
+.cb-simple-review .cb-simple-head h1 {
+  margin: 0.5rem 0 0;
+  font-size: 1.35rem;
+}
+
+.cb-simple-preview {
+  min-height: 280px;
+  margin: var(--fl-space-3) 0;
+}
+
+.cb-simple-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2);
+  margin: var(--fl-space-3) 0;
+}
+
+.cb-simple-choices .btn {
+  min-height: 48px;
+  font-size: 1rem;
+}
+
+.cb-simple-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--fl-space-2);
+  margin-top: var(--fl-space-4);
+}
+
+.cb-correction-note.is-hidden {
+  display: none;
+}
+
+.cb-review-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2);
+  margin-top: var(--fl-space-3);
+  font-size: 0.9rem;
+}
+
+.cb-review-step {
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: var(--fl-surface-muted, #eef1f5);
+  color: var(--fl-text-muted, #5a6472);
+}
+
+.cb-review-step.is-active {
+  background: var(--fl-navy, #1a2b4a);
+  color: #fff;
+  font-weight: 600;
+}
+
+.cb-score-refs {
+  display: grid;
+  gap: var(--fl-space-2);
+  margin: 0 0 var(--fl-space-3);
+}
+
+.cb-score-refs dt {
+  font-size: 0.85rem;
+  color: var(--fl-text-muted, #5a6472);
+}
+
+.cb-score-refs dd {
+  margin: 0 0 var(--fl-space-2);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.cb-accomplishment-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fl-space-4);
+  margin-top: var(--fl-space-3);
+}
+
+.cb-accomplishment-card {
+  padding: var(--fl-space-4);
+}
+
+.cb-accomplishment-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--fl-space-3);
+  margin-bottom: var(--fl-space-3);
+}
+
+.cb-accomplishment-head h3 {
+  margin: 0.25rem 0 0;
+  font-size: 1.2rem;
+}
+
+.cb-accomplishment-main {
+  margin: 0 0 var(--fl-space-3);
+}
+
+.cb-accomplishment-files {
+  list-style: none;
+  margin: 0 0 var(--fl-space-3);
+  padding: 0;
+}
+
+.cb-accomplishment-files li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fl-space-2);
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--fl-divider, #e4e7ec);
+}
+
+.cb-accomplishment-file-label {
+  font-weight: 600;
+  min-width: 8rem;
+  font-size: 0.9rem;
+}
+
+.cb-accomplishment-file-name {
+  flex: 1;
+  font-size: 0.9rem;
+}
+
+.cb-accomplishment-scoring p {
+  margin: 0.25rem 0;
+}
+
+.cb-accomplishment-actions {
+  margin-top: var(--fl-space-3);
+}
+
+.cb-needs-linking {
+  margin-top: var(--fl-space-5);
+}
+
+.cb-needs-linking-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cb-needs-linking-item {
+  padding: var(--fl-space-3);
+  margin-bottom: var(--fl-space-2);
+  background: var(--fl-surface-muted, #eef2f6);
+  border-radius: 12px;
+}
+
+.btn-large {
+  min-height: 52px;
+  font-size: 1.05rem;
+  width: 100%;
+}
+
+/* —— Criterion C reviewer workspace (Phase C3) —— */
+.cc-workspace-head {
+  margin-bottom: var(--fl-space-3);
+}
+
+.cc-workspace-faculty {
+  margin-bottom: var(--fl-space-1);
+}
+
+.cc-scoring-context {
+  margin: var(--fl-space-2) 0;
+}
+
+.cc-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--fl-space-3);
+  margin: var(--fl-space-3) 0;
+}
+
+.cc-summary-grid--compact {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.cc-stat-card {
+  background: var(--fl-surface-muted, rgba(0, 0, 0, 0.03));
+  border-radius: var(--fl-radius-md, 8px);
+  padding: var(--fl-space-2) var(--fl-space-3);
+}
+
+.cc-stat-card--muted {
+  opacity: 0.92;
+}
+
+.cc-stat-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--fl-text-muted, #64748b);
+  margin-bottom: 0.25rem;
+}
+
+.cc-accomplishment-card--draft {
+  border-style: dashed;
+}
+
+.cc-draft-section {
+  margin-top: var(--fl-space-4);
+  padding-top: var(--fl-space-3);
+  border-top: 1px solid var(--fl-border, #e2e8f0);
+}
+
+.cc-slot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2);
+  align-items: center;
+  margin-top: var(--fl-space-2);
+}
+
+.cc-save-indicator {
+  font-size: 0.9rem;
+  color: var(--fl-text-muted, #64748b);
+  min-width: 8rem;
+}
+
+.cc-save-indicator--saving {
+  font-style: italic;
+}
+
+.cc-save-indicator--saved {
+  color: var(--fl-success, #15803d);
+  font-weight: 600;
+}
+
+.cc-save-indicator--error {
+  color: var(--fl-danger, #b91c1c);
+}
+
+.cc-guided-review .cb-review-steps {
+  margin: var(--fl-space-3) 0;
+}
+
+.cc-evidence-summary-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.cc-guided-review .cb-simple-file {
+  max-width: 960px;
+}
+
+.cc-accomplishment-list {
+  display: grid;
+  gap: var(--fl-space-3);
+  margin-top: var(--fl-space-3);
+}
+
+.cc-review-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.2fr) minmax(260px, 1fr);
+  gap: var(--fl-space-3);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .cc-review-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cc-panel h2 {
+  font-size: 1rem;
+  margin-top: 0;
+}
+
+.cc-evidence-slot {
+  margin-bottom: var(--fl-space-2);
+}
+
+.cc-flag-list li.warn {
+  color: var(--fl-warning, #b45309);
+  font-weight: 600;
+}
+
+.cc-decision-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2);
+  margin-top: var(--fl-space-2);
+}
+
+.cc-compact-review {
+  max-width: 880px;
+}
+
+.cc-compact-review .cc-compact-head h1 {
+  font-size: 1.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.cc-research-details .cc-research-fields {
+  display: grid;
+  gap: var(--fl-space-2);
+  margin-top: var(--fl-space-2);
+}
+
+@media (min-width: 640px) {
+  .cc-research-details .cc-research-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cc-research-details .cc-field-students,
+  .cc-research-details .field-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.cc-inline-warn {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--fl-warning, #b45309);
+  margin-top: 0.25rem;
+}
+
+.cc-ocr-details {
+  margin-top: var(--fl-space-3);
+  font-size: 0.92rem;
+}
+
+.cc-ocr-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--fl-navy, #0f2744);
+}
+
+.cc-ocr-details-body {
+  margin-top: var(--fl-space-2);
+  padding-top: var(--fl-space-2);
+  border-top: 1px solid var(--fl-border, #e5e7eb);
+}
+
+.cc-evidence-checklist-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.cc-evidence-checklist-table th,
+.cc-evidence-checklist-table td {
+  padding: 0.5rem 0.35rem;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--fl-border, #e5e7eb);
+}
+
+.cc-evidence-checklist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cc-evidence-checklist-actions select {
+  max-width: 11rem;
+}
+
+.cc-decision-compact .cc-decision-meta {
+  margin: 0 0 var(--fl-space-2);
+  font-size: 0.92rem;
+}
+
+.cc-decision-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fl-space-2);
+  margin-top: var(--fl-space-2);
+}
+
+.cc-decision-row .cc-approve-blocker {
+  flex: 1 1 100%;
+  margin: 0;
+}

@@ -211,6 +211,14 @@ def assess_publish_readiness(
             }
         )
 
+    from kra_configuration.publish_integrity import validate_scoring_integrity
+
+    integrity_checks, integrity_errors = validate_scoring_integrity(settings)
+    checks.extend(integrity_checks)
+    for code in integrity_errors:
+        if code not in errors:
+            errors.append(code)
+
     checks.append(
         {
             "id": "verified_method",

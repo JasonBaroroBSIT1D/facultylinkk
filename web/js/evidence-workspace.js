@@ -1498,6 +1498,11 @@ FL.evidence = {
     };
 
     const jobs = [FL.evidence._loadStats(session, isAdmin)];
+    if (FL.scoringConfiguration && (FL.store.usesLiveReviewerApi() || FL.store.usesRealAdminApi())) {
+      jobs.push(FL.scoringConfiguration.refresh({ source: "reviewer", force: false }).catch(function () {
+        return null;
+      }));
+    }
     if (!state.facultyId && state.docFilter === "all") {
       jobs.push(FL.evidence._loadDirectory(session, state, isAdmin));
     } else {
@@ -1888,7 +1893,7 @@ FL.evidence = {
       <div class="table-wrap">
         <table class="data evidence-directory">
           <thead><tr>
-            <th>Faculty</th><th>Department</th><th>Assigned reviewer</th><th>Source PDFs</th><th>Semester evaluations</th><th>PDF document review</th><th>Last activity</th><th>Actions</th>
+            <th>Faculty</th><th>Department</th><th>Assigned reviewer</th><th>Source PDFs</th><th>Semester evaluations</th><th title="Counts source PDFs still in pending/reviewer-required workflow. Criterion C PDFs become approved when the reviewer saves accomplishment approval.">PDF document review</th><th>Last activity</th><th>Actions</th>
           </tr></thead>
           <tbody>
             ${rows.map(function (row) {
@@ -1905,7 +1910,7 @@ FL.evidence = {
                    <div class="sub">${semPending ? FL.esc(String(semPending)) + " pending" : "0 pending"}</div>`
                 : `<span class="sub">—</span>`;
               const pdfCell = pdfPending
-                ? FL.ui.badge("pending", String(pdfPending) + " pending")
+                ? `<button type="button" class="btn btn-ghost btn-small evidence-pdf-pending-open" data-open-faculty="${FL.esc(row.id)}" title="Open faculty evidence workspace to review pending source PDFs">${FL.ui.badge("pending", String(pdfPending) + " pending")}</button>`
                 : FL.ui.badge("valid", "None pending");
               return `<tr>
                 <td><div class="evidence-person"><span class="evidence-avatar">${FL.esc(FL.evidence.initials(row.name))}</span>
@@ -2034,10 +2039,15 @@ FL.evidence = {
     if (!state.criterionId) {
       host.innerHTML = `<h2 class="evidence-section-title">${FL.esc(kra.code)} — Select criterion</h2><div class="evidence-criterion-grid">${kra.criteria.map(function (criterion) {
         const count = docs.filter(function (d) { return d.criterionId === criterion.id; }).length;
+        let maxLabel = "";
+        if (FL.scoringConfiguration) {
+          const cap = FL.scoringConfiguration.criterionMax(criterion.id);
+          if (cap != null) maxLabel = " · max " + cap + " pts";
+        }
         return `<article class="evidence-criterion-card">
           <button type="button" class="evidence-criterion-open" data-criterion="${FL.esc(criterion.id)}">
             <div>
-              <h3>${FL.esc(FL.rules.criterionUserLabel(criterion.id, criterion.name))}</h3>
+              <h3>${FL.esc(FL.rules.criterionUserLabel(criterion.id, criterion.name))}${FL.esc(maxLabel)}</h3>
               <p class="sub">${count} document${count === 1 ? "" : "s"}</p>
             </div>
             <span class="evidence-kra-arrow">${FL.evidence.chevronIcon()}</span>
@@ -2055,6 +2065,30 @@ FL.evidence = {
     }
     const criterion = kra.criteria.find(function (c) { return c.id === state.criterionId; });
     if (!criterion) return;
+    if (state.criterionId === "kra1-b") {
+      if (state.indicatorId) {
+        state.indicatorId = "";
+        FL.evidence.pushLocation(state);
+      }
+      if (FL.criterionBSimpleReview && FL.criterionBSimpleReview.mountAccomplishmentListInWorkspace) {
+        FL.criterionBSimpleReview.mountAccomplishmentListInWorkspace(session, state, isAdmin, host, criterion);
+      } else {
+        host.innerHTML = FL.ui.empty("Criterion B unavailable", "Reload the page to open faculty accomplishments.");
+      }
+      return;
+    }
+    if (state.criterionId === "kra1-c") {
+      if (state.indicatorId) {
+        state.indicatorId = "";
+        FL.evidence.pushLocation(state);
+      }
+      if (FL.criterionCReview && FL.criterionCReview.mountAccomplishmentListInWorkspace) {
+        FL.criterionCReview.mountAccomplishmentListInWorkspace(session, state, isAdmin, host, criterion);
+      } else {
+        host.innerHTML = FL.ui.empty("Criterion C unavailable", "Reload the page to open faculty accomplishments.");
+      }
+      return;
+    }
     if (state.criterionId === "kra1-a" && FL.store.usesLiveDocuments()) {
       const loadFaculty = state.facultyId;
       const loadCriterion = state.criterionId;
@@ -2171,6 +2205,12 @@ FL.evidence = {
   },
 
   _paintIndicatorDocs: function (session, state, isAdmin) {
+    if (state.criterionId === "kra1-b") {
+      state.indicatorId = "";
+      FL.evidence.pushLocation(state);
+      FL.evidence._paintCriteria(session, state, isAdmin);
+      return;
+    }
     if (state.criterionId === "kra1-a" && FL.evidence.isSetSefIndicator(state.indicatorId)) {
       state.indicatorId = "";
       FL.evidence.pushLocation(state);
@@ -2185,6 +2225,11 @@ FL.evidence = {
     const hit = FL.rules.findIndicator(state.indicatorId);
     const docs = FL.evidence._facultyDocs(session, state.facultyId).filter(function (d) {
       return d.kraId === state.kraId && d.criterionId === state.criterionId && d.indicatorId === state.indicatorId;
+    });
+    const primaryDocs = docs.filter(function (d) {
+      return FL.criterionBWorkspaceUi && FL.criterionBWorkspaceUi.isPrimaryClaimDocument
+        ? FL.criterionBWorkspaceUi.isPrimaryClaimDocument(d)
+        : true;
     });
     const reviewBase = isAdmin ? "document-view.html" : "document-review.html";
     const isSetSef = FL.evidence.isSetSefIndicator(state.indicatorId);
@@ -2223,10 +2268,12 @@ FL.evidence = {
       return;
     }
 
+    const docList = state.criterionId === "kra1-b" ? primaryDocs : docs;
     host.innerHTML = `
       ${hit ? `<div class="evidence-indicator-head"><h2>${FL.esc(hit.indicator.name)}</h2>
         ${hit.indicator.evidence && hit.indicator.evidence.length ? `<p class="sub">Required: ${FL.esc(hit.indicator.evidence.join("; "))}</p>` : ""}</div>` : ""}
-      <div class="evidence-file-grid">${docs.map(function (doc) {
+      ${state.criterionId === "kra1-b" ? `<p class="note">Open a <strong>primary claim</strong> to review its evidence bundle. Supporting uploads are linked inside the claim review.</p>` : ""}
+      <div class="evidence-file-grid">${docList.map(function (doc) {
         return FL.evidence.documentCardHtml(doc, {
           reviewBase: reviewBase,
           actionLabel: isAdmin ? "Monitor document" : "Review document",

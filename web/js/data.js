@@ -337,6 +337,9 @@ FL.store = {
     if (copy.ocr.status === "complete") copy.ocr.status = "completed";
     if (!copy.ocr.content && copy.ocr.contentPreview) copy.ocr.content = copy.ocr.contentPreview;
     if (!copy.dateSubmitted && copy.submittedAt) copy.dateSubmitted = copy.submittedAt;
+    if (copy.criterionBEvidence && typeof copy.criterionBEvidence === "object") {
+      copy.criterionBEvidence = Object.assign({}, copy.criterionBEvidence);
+    }
     return copy;
   },
 
@@ -800,8 +803,9 @@ FL.store = {
     });
   },
 
-  loadPublishedKraConfiguration: function () {
+  loadPublishedKraConfiguration: function (options) {
     const store = this;
+    const opts = options || {};
     if (store.usesRealAdminApi()) {
       return FL.apiClient.adminRequest("GET", "/api/admin/kra-configuration/published").then(function (data) {
         if (data.kraSettings) {
@@ -812,17 +816,28 @@ FL.store = {
         return data;
       });
     }
-    if (store.usesLiveReviewerApi()) {
-      return FL.apiClient.adminRequest("GET", "/api/reviewer/kra-configuration").then(function (data) {
-        if (data.kraSettings) {
-          store.kraSettings = data.kraSettings;
-          FL.rules.applySettings(data.kraSettings);
-        }
-        store.kraConfigurationPublished = data.published || null;
-        return data;
+    if (store.usesLiveReviewerApi() && FL.scoringConfiguration) {
+      return FL.scoringConfiguration.refresh({
+        source: "reviewer",
+        force: !!opts.force
+      }).then(function (state) {
+        return {
+          published: state && state.configuration,
+          kraSettings: state && state.kraSettings,
+          metadata: state && state.metadata,
+          rankWeightsPolicy: state && state.rankWeightsPolicy,
+          message: state && state.message
+        };
       });
     }
     return Promise.resolve(null);
+  },
+
+  refreshScoringConfiguration: function (options) {
+    if (!FL.scoringConfiguration || !this.usesLiveReviewerApi()) {
+      return Promise.resolve(null);
+    }
+    return FL.scoringConfiguration.refresh(Object.assign({ source: "reviewer" }, options || {}));
   },
 
   loadKraConfigurationVersions: function () {

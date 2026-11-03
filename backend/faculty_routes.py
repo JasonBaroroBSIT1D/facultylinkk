@@ -42,6 +42,17 @@ def faculty_dashboard():
     return jsonify(faculty_dashboard_payload(user, profile)), 200
 
 
+@faculty_bp.get("/me/scoring-configuration")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_scoring_configuration():
+    from kra_configuration.read_api import applicable_scoring_configuration_payload
+
+    payload = applicable_scoring_configuration_payload()
+    resp = jsonify(payload)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
 @faculty_bp.get("/me/rank-simulation")
 @perm.roles_required(ROLE_FACULTY)
 def faculty_rank_simulation():

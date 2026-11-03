@@ -35,6 +35,15 @@ Future<http.Response> apiDelete(
   return _guard(client.delete(uri, headers: headers));
 }
 
+Future<http.Response> apiPatch(
+  http.Client client,
+  Uri uri, {
+  Map<String, String>? headers,
+  Object? body,
+}) {
+  return _guard(client.patch(uri, headers: headers, body: body));
+}
+
 Future<http.StreamedResponse> apiSend(
   http.Client client,
   http.BaseRequest request,

@@ -107,6 +107,20 @@ def recover_stale_jobs() -> int:
 
 
 def _apply_success(doc: Document, result, job: DocumentOcrJob) -> None:
+    from documents.criterion_b_evidence.extracted_info_merge import (
+        preserve_criterion_b_extracted_info,
+        snapshot_criterion_b_extracted_fields,
+    )
+    from documents.criterion_c_evidence.metadata_merge import (
+        preserve_criterion_c_extracted_info,
+        snapshot_criterion_c_extracted_fields,
+    )
+    from documents.criterion_c_evidence.ocr_research import apply_criterion_c_research_ocr
+
+    db.session.refresh(doc)
+    criterion_b_before = snapshot_criterion_b_extracted_fields(doc.extracted_info or {})
+    criterion_c_before = snapshot_criterion_c_extracted_fields(doc.extracted_info or {})
+
     text = (result.text or "").strip()
     excerpt_cap = ocr_excerpt_max_chars()
     excerpt = text[:excerpt_cap] if text else ""
@@ -125,12 +139,19 @@ def _apply_success(doc: Document, result, job: DocumentOcrJob) -> None:
         info["OCR warnings"] = "; ".join(result.warnings)
     doc.extracted_text = text or None
     doc.ocr_confidence = result.confidence
-    doc.extracted_info = apply_set_sef_to_extracted_info(
+    info = apply_set_sef_to_extracted_info(
         info,
         text=text,
         indicator_id=doc.indicator_id,
         criterion_id=doc.criterion_id,
         extraction_method=result.method,
+    )
+    info = preserve_criterion_b_extracted_info(before=criterion_b_before, after=info)
+    doc.extracted_info = info
+    apply_criterion_c_research_ocr(doc, text=text)
+    doc.extracted_info = preserve_criterion_c_extracted_info(
+        before=criterion_c_before,
+        after=dict(doc.extracted_info or {}),
     )
     sync_teaching_evaluations_for_document(
         doc,
@@ -138,11 +159,26 @@ def _apply_success(doc: Document, result, job: DocumentOcrJob) -> None:
         ocr_confidence=result.confidence,
         extraction_method=result.method,
     )
+    doc.extracted_info = preserve_criterion_b_extracted_info(
+        before=criterion_b_before,
+        after=dict(doc.extracted_info or {}),
+    )
+    doc.extracted_info = preserve_criterion_c_extracted_info(
+        before=criterion_c_before,
+        after=dict(doc.extracted_info or {}),
+    )
     try:
         from documents.document_ownership_verification import apply_ownership_to_extracted_info
         from documents.ownership_notifications import notify_ownership_issue_if_needed
 
-        doc.extracted_info = apply_ownership_to_extracted_info(doc, doc.faculty_profile)
+        doc.extracted_info = preserve_criterion_b_extracted_info(
+            before=criterion_b_before,
+            after=apply_ownership_to_extracted_info(doc, doc.faculty_profile),
+        )
+        doc.extracted_info = preserve_criterion_c_extracted_info(
+            before=criterion_c_before,
+            after=dict(doc.extracted_info or {}),
+        )
         notify_ownership_issue_if_needed(doc)
     except Exception:  # noqa: BLE001
         current_app.logger.exception(
@@ -164,16 +200,24 @@ def _apply_success(doc: Document, result, job: DocumentOcrJob) -> None:
 
 
 def _apply_failure(doc: Document, job: DocumentOcrJob, *, code: str, message: str) -> None:
+    from documents.criterion_b_evidence.extracted_info_merge import (
+        preserve_criterion_b_extracted_info,
+        snapshot_criterion_b_extracted_fields,
+    )
+
+    db.session.refresh(doc)
+    criterion_b_before = snapshot_criterion_b_extracted_fields(doc.extracted_info or {})
     info = dict(doc.extracted_info or {})
     info["OCR error"] = message
     info["OCR failed at"] = utcnow().isoformat()
     info["Extraction mode"] = "OCR failed"
-    doc.extracted_info = mark_set_sef_processing_failed(
+    info = mark_set_sef_processing_failed(
         info,
         indicator_id=doc.indicator_id,
         criterion_id=doc.criterion_id,
         message=message,
     )
+    doc.extracted_info = preserve_criterion_b_extracted_info(before=criterion_b_before, after=info)
     doc.extracted_text = doc.extracted_text
     doc.ocr_confidence = None
     doc.ocr_status = "failed"

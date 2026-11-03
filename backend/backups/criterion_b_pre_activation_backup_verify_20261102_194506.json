@@ -1,0 +1,389 @@
+{
+  "tag": "CRITERION-B-PRE-ACTIVATION-BACKUP-VERIFY",
+  "startedAt": "2026-11-02T19:45:06.082411+00:00",
+  "adapterEnabled": false,
+  "sections": {
+    "existingBackups": {
+      "status": "PASS",
+      "items": [
+        {
+          "name": "facultylink_pre_criterion_b_activation_20261102_194442.dump",
+          "sizeBytes": 82597,
+          "sizeMb": 0.079,
+          "modifiedUtc": "2026-11-02T19:44:44.910146+00:00",
+          "toc": {
+            "ok": true,
+            "exitCode": 0,
+            "header": [
+              ";",
+              "; Archive created at 2026-11-03 03:44:44",
+              ";     dbname: facultylink",
+              ";     TOC Entries: 167",
+              ";     Compression: gzip",
+              ";     Dump Version: 1.16-0",
+              ";     Format: CUSTOM",
+              ";     Integer: 4 bytes",
+              ";     Offset: 8 bytes",
+              ";     Dumped from database version: 18.3",
+              ";     Dumped by pg_dump version: 18.3",
+              ";",
+              ";",
+              "; Selected TOC Entries:",
+              ";"
+            ],
+            "tableCount": 34,
+            "tablesSample": [
+              "245; 1259 157934 TABLE public account_activation_tokens postgres",
+              "219; 1259 147338 TABLE public alembic_version postgres",
+              "231; 1259 157767 TABLE public audit_logs postgres",
+              "247; 1259 157952 TABLE public auth_rate_limit_events postgres",
+              "249; 1259 157973 TABLE public document_ocr_jobs postgres",
+              "251; 1259 158000 TABLE public document_teaching_evaluations postgres",
+              "233; 1259 157788 TABLE public documents postgres",
+              "227; 1259 157711 TABLE public evaluation_periods postgres",
+              "229; 1259 157729 TABLE public faculty_profiles postgres",
+              "225; 1259 157695 TABLE public kra_configuration postgres",
+              "235; 1259 157823 TABLE public kra_scores postgres",
+              "223; 1259 157678 TABLE public kra_scoring_rules postgres",
+              "239; 1259 157871 TABLE public notifications postgres",
+              "243; 1259 157911 TABLE public password_reset_requests postgres",
+              "237; 1259 157847 TABLE public rank_simulations postgres",
+              "241; 1259 157896 TABLE public revoked_tokens postgres",
+              "221; 1259 157653 TABLE public users postgres",
+              "5229; 0 157934 TABLE DATA public account_activation_tokens postgres",
+              "5203; 0 147338 TABLE DATA public alembic_version postgres",
+              "5215; 0 157767 TABLE DATA public audit_logs postgres",
+              "5231; 0 157952 TABLE DATA public auth_rate_limit_events postgres",
+              "5233; 0 157973 TABLE DATA public document_ocr_jobs postgres",
+              "5235; 0 158000 TABLE DATA public document_teaching_evaluations postgres",
+              "5217; 0 157788 TABLE DATA public documents postgres",
+              "5211; 0 157711 TABLE DATA public evaluation_periods postgres"
+            ],
+            "stderr": ""
+          }
+        },
+        {
+          "name": "facultylink_phase6b2_20261103_003750.dump",
+          "sizeBytes": 91897,
+          "sizeMb": 0.088,
+          "modifiedUtc": "2026-11-02T16:37:50.997502+00:00",
+          "toc": {
+            "ok": true,
+            "exitCode": 0,
+            "header": [
+              ";",
+              "; Archive created at 2026-11-03 00:37:50",
+              ";     dbname: facultylink",
+              ";     TOC Entries: 167",
+              ";     Compression: gzip",
+              ";     Dump Version: 1.16-0",
+              ";     Format: CUSTOM",
+              ";     Integer: 4 bytes",
+              ";     Offset: 8 bytes",
+              ";     Dumped from database version: 18.3",
+              ";     Dumped by pg_dump version: 18.3",
+              ";",
+              ";",
+              "; Selected TOC Entries:",
+              ";"
+            ],
+            "tableCount": 34,
+            "tablesSample": [
+              "245; 1259 157934 TABLE public account_activation_tokens postgres",
+              "219; 1259 147338 TABLE public alembic_version postgres",
+              "231; 1259 157767 TABLE public audit_logs postgres",
+              "247; 1259 157952 TABLE public auth_rate_limit_events postgres",
+              "249; 1259 157973 TABLE public document_ocr_jobs postgres",
+              "251; 1259 158000 TABLE public document_teaching_evaluations postgres",
+              "233; 1259 157788 TABLE public documents postgres",
+              "227; 1259 157711 TABLE public evaluation_periods postgres",
+              "229; 1259 157729 TABLE public faculty_profiles postgres",
+              "225; 1259 157695 TABLE public kra_configuration postgres",
+              "235; 1259 157823 TABLE public kra_scores postgres",
+              "223; 1259 157678 TABLE public kra_scoring_rules postgres",
+              "239; 1259 157871 TABLE public notifications postgres",
+              "243; 1259 157911 TABLE public password_reset_requests postgres",
+              "237; 1259 157847 TABLE public rank_simulations postgres",
+              "241; 1259 157896 TABLE public revoked_tokens postgres",
+              "221; 1259 157653 TABLE public users postgres",
+              "5229; 0 157934 TABLE DATA public account_activation_tokens postgres",
+              "5203; 0 147338 TABLE DATA public alembic_version postgres",
+              "5215; 0 157767 TABLE DATA public audit_logs postgres",
+              "5231; 0 157952 TABLE DATA public auth_rate_limit_events postgres",
+              "5233; 0 157973 TABLE DATA public document_ocr_jobs postgres",
+              "5235; 0 158000 TABLE DATA public document_teaching_evaluations postgres",
+              "5217; 0 157788 TABLE DATA public documents postgres",
+              "5211; 0 157711 TABLE DATA public evaluation_periods postgres"
+            ],
+            "stderr": ""
+          }
+        },
+        {
+          "name": "facultylink_phase6b_20261103_001359.dump",
+          "sizeBytes": 81675,
+          "sizeMb": 0.078,
+          "modifiedUtc": "2026-11-02T16:14:00.058398+00:00",
+          "toc": {
+            "ok": true,
+            "exitCode": 0,
+            "header": [
+              ";",
+              "; Archive created at 2026-11-03 00:13:59",
+              ";     dbname: facultylink",
+              ";     TOC Entries: 167",
+              ";     Compression: gzip",
+              ";     Dump Version: 1.16-0",
+              ";     Format: CUSTOM",
+              ";     Integer: 4 bytes",
+              ";     Offset: 8 bytes",
+              ";     Dumped from database version: 18.3",
+              ";     Dumped by pg_dump version: 18.3",
+              ";",
+              ";",
+              "; Selected TOC Entries:",
+              ";"
+            ],
+            "tableCount": 34,
+            "tablesSample": [
+              "245; 1259 157934 TABLE public account_activation_tokens postgres",
+              "219; 1259 147338 TABLE public alembic_version postgres",
+              "231; 1259 157767 TABLE public audit_logs postgres",
+              "247; 1259 157952 TABLE public auth_rate_limit_events postgres",
+              "249; 1259 157973 TABLE public document_ocr_jobs postgres",
+              "251; 1259 158000 TABLE public document_teaching_evaluations postgres",
+              "233; 1259 157788 TABLE public documents postgres",
+              "227; 1259 157711 TABLE public evaluation_periods postgres",
+              "229; 1259 157729 TABLE public faculty_profiles postgres",
+              "225; 1259 157695 TABLE public kra_configuration postgres",
+              "235; 1259 157823 TABLE public kra_scores postgres",
+              "223; 1259 157678 TABLE public kra_scoring_rules postgres",
+              "239; 1259 157871 TABLE public notifications postgres",
+              "243; 1259 157911 TABLE public password_reset_requests postgres",
+              "237; 1259 157847 TABLE public rank_simulations postgres",
+              "241; 1259 157896 TABLE public revoked_tokens postgres",
+              "221; 1259 157653 TABLE public users postgres",
+              "5229; 0 157934 TABLE DATA public account_activation_tokens postgres",
+              "5203; 0 147338 TABLE DATA public alembic_version postgres",
+              "5215; 0 157767 TABLE DATA public audit_logs postgres",
+              "5231; 0 157952 TABLE DATA public auth_rate_limit_events postgres",
+              "5233; 0 157973 TABLE DATA public document_ocr_jobs postgres",
+              "5235; 0 158000 TABLE DATA public document_teaching_evaluations postgres",
+              "5217; 0 157788 TABLE DATA public documents postgres",
+              "5211; 0 157711 TABLE DATA public evaluation_periods postgres"
+            ],
+            "stderr": ""
+          }
+        },
+        {
+          "name": "facultylink_20261030T042745Z.sql",
+          "sizeBytes": 1352,
+          "sizeMb": 0.001,
+          "modifiedUtc": "2026-10-30T04:27:46.339718+00:00"
+        }
+      ]
+    },
+    "freshBackup": {
+      "status": "PASS",
+      "filename": "facultylink_pre_criterion_b_activation_20261102_194506.dump",
+      "sizeBytes": 82597,
+      "sizeMb": 0.079,
+      "sha256": "b7534f6947370f936122bcc2152b60656b737cdc46719380d35e029a92865eb8",
+      "toc": {
+        "ok": true,
+        "exitCode": 0,
+        "header": [
+          ";",
+          "; Archive created at 2026-11-03 03:45:07",
+          ";     dbname: facultylink",
+          ";     TOC Entries: 167",
+          ";     Compression: gzip",
+          ";     Dump Version: 1.16-0",
+          ";     Format: CUSTOM",
+          ";     Integer: 4 bytes",
+          ";     Offset: 8 bytes",
+          ";     Dumped from database version: 18.3",
+          ";     Dumped by pg_dump version: 18.3",
+          ";",
+          ";",
+          "; Selected TOC Entries:",
+          ";"
+        ],
+        "tableCount": 34,
+        "tablesSample": [
+          "245; 1259 157934 TABLE public account_activation_tokens postgres",
+          "219; 1259 147338 TABLE public alembic_version postgres",
+          "231; 1259 157767 TABLE public audit_logs postgres",
+          "247; 1259 157952 TABLE public auth_rate_limit_events postgres",
+          "249; 1259 157973 TABLE public document_ocr_jobs postgres",
+          "251; 1259 158000 TABLE public document_teaching_evaluations postgres",
+          "233; 1259 157788 TABLE public documents postgres",
+          "227; 1259 157711 TABLE public evaluation_periods postgres",
+          "229; 1259 157729 TABLE public faculty_profiles postgres",
+          "225; 1259 157695 TABLE public kra_configuration postgres",
+          "235; 1259 157823 TABLE public kra_scores postgres",
+          "223; 1259 157678 TABLE public kra_scoring_rules postgres",
+          "239; 1259 157871 TABLE public notifications postgres",
+          "243; 1259 157911 TABLE public password_reset_requests postgres",
+          "237; 1259 157847 TABLE public rank_simulations postgres",
+          "241; 1259 157896 TABLE public revoked_tokens postgres",
+          "221; 1259 157653 TABLE public users postgres",
+          "5229; 0 157934 TABLE DATA public account_activation_tokens postgres",
+          "5203; 0 147338 TABLE DATA public alembic_version postgres",
+          "5215; 0 157767 TABLE DATA public audit_logs postgres",
+          "5231; 0 157952 TABLE DATA public auth_rate_limit_events postgres",
+          "5233; 0 157973 TABLE DATA public document_ocr_jobs postgres",
+          "5235; 0 158000 TABLE DATA public document_teaching_evaluations postgres",
+          "5217; 0 157788 TABLE DATA public documents postgres",
+          "5211; 0 157711 TABLE DATA public evaluation_periods postgres"
+        ],
+        "stderr": ""
+      }
+    },
+    "liveDatabase": {
+      "status": "PASS",
+      "inventory": {
+        "tables": {
+          "users": 3,
+          "faculty_profiles": 1,
+          "documents": 5,
+          "document_ocr_jobs": 5,
+          "document_teaching_evaluations": 0,
+          "kra_scores": 1,
+          "rank_simulations": 0,
+          "kra_configuration": 6,
+          "kra_scoring_rules": 0,
+          "evaluation_periods": 1,
+          "notifications": 69,
+          "audit_logs": 262,
+          "alembic_version": 1
+        },
+        "jason": {
+          "documents": [
+            {
+              "public_id": "doc_4561c33e9ce6",
+              "title": "04 Library Certification",
+              "status": "pending_review",
+              "criterion_id": "kra1-b",
+              "file_path": "faculty/1/3137063f8468474ea1f06be510e5dcad.pdf",
+              "ocr_status": "completed",
+              "file_size": 2478,
+              "deleted": false
+            },
+            {
+              "public_id": "doc_5149570d90a2",
+              "title": "06 Coauthorship And Contribution",
+              "status": "pending_review",
+              "criterion_id": "kra1-b",
+              "file_path": "faculty/1/cfd29f3c96a547a0b4b2ca63bfb78acd.pdf",
+              "ocr_status": "completed",
+              "file_size": 2520,
+              "deleted": false
+            },
+            {
+              "public_id": "doc_64d33454ab0f",
+              "title": "01 Primary Textbook",
+              "status": "pending_review",
+              "criterion_id": "kra1-b",
+              "file_path": "faculty/1/eb1d2a83515247838f9dd95ff1cd566f.pdf",
+              "ocr_status": "completed",
+              "file_size": 2840,
+              "deleted": false
+            },
+            {
+              "public_id": "doc_946122d0bb49",
+              "title": "03 Approved Course Syllabus",
+              "status": "pending_review",
+              "criterion_id": "kra1-b",
+              "file_path": "faculty/1/5f73bee13f6146aa992bc2127992c650.pdf",
+              "ocr_status": "completed",
+              "file_size": 2640,
+              "deleted": false
+            },
+            {
+              "public_id": "doc_e527d4d69609",
+              "title": "02 IMDC Evaluation And Approval",
+              "status": "pending_review",
+              "criterion_id": "kra1-b",
+              "file_path": "faculty/1/c1630c7ba94b46349380155edcc37910.pdf",
+              "ocr_status": "completed",
+              "file_size": 2554,
+              "deleted": false
+            }
+          ],
+          "primary": {
+            "documentId": "doc_64d33454ab0f",
+            "title": "01 Primary Textbook",
+            "status": "pending_review",
+            "reviewerPoints": 14.0,
+            "hasJustification": true,
+            "readyBundle": true
+          },
+          "supportingLinked": [
+            {
+              "documentId": "doc_4561c33e9ce6",
+              "title": "04 Library Certification",
+              "slot": "library_certification"
+            },
+            {
+              "documentId": "doc_5149570d90a2",
+              "title": "06 Coauthorship And Contribution",
+              "slot": "annex_c_contribution"
+            },
+            {
+              "documentId": "doc_946122d0bb49",
+              "title": "03 Approved Course Syllabus",
+              "slot": "approved_syllabus"
+            },
+            {
+              "documentId": "doc_e527d4d69609",
+              "title": "02 IMDC Evaluation And Approval",
+              "slot": "imdc_evaluation_approval"
+            }
+          ]
+        },
+        "alembic": "20261030_teach_eval"
+      }
+    },
+    "uploadedFiles": {
+      "status": "PASS",
+      "manifestPath": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\backend\\backups\\uploads_pre_criterion_b_activation_20261102_194506\\uploads_manifest.json",
+      "backupCopyDir": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\backend\\backups\\uploads_pre_criterion_b_activation_20261102_194506\\files",
+      "filesCopied": 5,
+      "missingOnDiskCount": 0,
+      "missingSample": []
+    },
+    "restoreTest": {
+      "tempDatabase": "facultylink_restore_verify_20261102194509",
+      "status": "PASS",
+      "steps": [
+        {
+          "create": 0,
+          "stderr": ""
+        },
+        {
+          "restoreExitCode": 0,
+          "restoreStderr": ""
+        },
+        {
+          "counts": "     t     | count \n-----------+-------\n documents |     5\n users     |     3\n(2 rows)\n\n",
+          "countsErr": ""
+        },
+        {
+          "jasonSample": "    public_id     |              title               | pts  \n------------------+----------------------------------+------\n doc_4561c33e9ce6 | 04 Library Certification         | \n doc_946122d0bb49 | 03 Approved Course Syllabus      | \n doc_e527d4d69609 | 02 IMDC Evaluation And Approval  | \n doc_5149570d90a2 | 06 Coauthorship And Contribution | \n doc_64d33454ab0f | 01 Primary Textbook              | 14.0\n(5 rows)\n\n"
+        },
+        {
+          "drop": 0
+        }
+      ]
+    },
+    "activationPreflight": {
+      "status": "PASS",
+      "stdout": "{\n  \"ready\": true,\n  \"report\": \"C:\\\\Users\\\\gumat\\\\OneDrive\\\\Desktop\\\\facultylinkk\\\\backend\\\\backups\\\\criterion_b_activation_preflight_20261102_194517.json\"\n}\n"
+    }
+  },
+  "summary": {
+    "recommendation": "GO",
+    "failures": [],
+    "note": "Adapter not activated; await explicit user approval."
+  }
+}

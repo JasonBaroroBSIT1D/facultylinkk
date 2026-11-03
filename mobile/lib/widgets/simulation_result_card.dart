@@ -92,7 +92,7 @@ class _SimulationResultCardState extends State<SimulationResultCard>
       );
     }
     final readiness = (sim.progress * 100).round();
-    final kraTotal = sim.currentPoints.toDouble();
+    final kraTotal = sim.estimatedKraPoints ?? sim.currentPoints.toDouble();
     final pad = widget.compact ? 16.0 : 20.0;
 
     return AnimatedBuilder(
@@ -243,7 +243,7 @@ class _SimulationResultCardState extends State<SimulationResultCard>
                 children: [
                   _StatBlock(
                     value: (kraTotal * t).toStringAsFixed(1),
-                    label: 'KRA Total',
+                    label: 'Estimated KRA Total',
                   ),
                   _StatBlock(
                     value: '${(readiness * t).round()}%',

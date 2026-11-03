@@ -178,5 +178,10 @@ def save_admin_periods(periods_payload: list[dict]) -> list[dict]:
     if period.review_close is None:
         period.review_close = end
 
+    if published:
+        from kra_configuration.version_lock import bind_evaluation_period_configuration
+
+        bind_evaluation_period_configuration(period)
+
     db.session.commit()
     return [period_to_admin_api(period)]

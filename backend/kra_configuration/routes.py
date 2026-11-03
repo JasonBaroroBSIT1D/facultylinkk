@@ -50,6 +50,10 @@ def admin_save_draft():
         return jsonify({"message": "kraSettings payload is required."}), 400
     try:
         row = kra_svc.save_draft(admin, body)
+    except ValueError as error:
+        if str(error) == "draft_immutable_conflict":
+            return jsonify({"message": "Published configurations cannot be edited. Save changes to the draft."}), 400
+        return jsonify({"message": "Draft configuration was not saved."}), 400
     except Exception:
         return jsonify({"message": "Draft configuration was not saved."}), 500
     payload = kra_svc.configuration_to_api(row)
@@ -91,6 +95,11 @@ def admin_publish():
                 "Criterion A maximum points cannot be less than the combined SET and SEF maxima."
             ),
             "publish_validation_failed": "Configuration did not pass publish validation.",
+            "criterion_c_max_missing": "Criterion C maximum points must be configured before publishing.",
+            "criterion_c_indicators_incomplete": "Criterion C service indicators must have point values before publishing.",
+            "criterion_c_indicator_exceeds_max": "A Criterion C indicator exceeds the configured criterion maximum.",
+            "indicator_values_invalid": "One or more indicator point values are invalid.",
+            "draft_immutable_conflict": "Draft could not be saved because the configuration row is not editable.",
         }
         return jsonify({"message": messages.get(code, "Configuration was not published.")}), 400
     except Exception:
