@@ -79,6 +79,14 @@ def record_configuration_in_kra2_bundle(
     _record_configuration_in_evidence_bundle(bundle, resolution=resolution)
 
 
+def record_configuration_in_kra3_bundle(
+    bundle: dict[str, Any],
+    *,
+    resolution: ScoringConfigurationResolution,
+) -> None:
+    _record_configuration_in_evidence_bundle(bundle, resolution=resolution)
+
+
 def _record_configuration_in_evidence_bundle(
     bundle: dict[str, Any],
     *,

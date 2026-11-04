@@ -4,9 +4,13 @@ import '../../data/app_state.dart';
 import '../../data/criterion_b_catalog.dart';
 import '../../data/criterion_c_catalog.dart';
 import '../../data/kra2_catalog.dart';
+import '../../data/kra3_catalog.dart';
 import '../kra2/kra2_criterion_hub_screen.dart';
 import '../kra2/kra2_main_hub_screen.dart';
 import '../kra2/kra2_wizard_screen.dart';
+import '../kra3/kra3_criterion_hub_screen.dart';
+import '../kra3/kra3_main_hub_screen.dart';
+import '../kra3/kra3_wizard_screen.dart';
 import '../../data/kra_scoring_display.dart';
 import '../../data/mock_kra_catalog.dart';
 import '../../data/teaching_effectiveness_mapper.dart';
@@ -114,6 +118,34 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
         }
       });
     }
+    if (_criterionId == Kra3Catalog.criterionA ||
+        _criterionId == Kra3Catalog.criterionB ||
+        _criterionId == Kra3Catalog.criterionC ||
+        _criterionId == Kra3Catalog.criterionD) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final cid = _criterionId ?? '';
+        final ind = (_indicatorId ?? '').trim();
+        if (ind.isNotEmpty) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => Kra3WizardScreen(
+                criterionId: cid,
+                initialIndicatorId: ind,
+              ),
+            ),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => Kra3CriterionHubScreen(criterionId: cid),
+            ),
+          );
+        }
+      });
+    }
     if (widget.kra == KraType.research &&
         (widget.initialCriterionId == null || widget.initialCriterionId!.isEmpty) &&
         (widget.initialIndicatorId == null || widget.initialIndicatorId!.isEmpty) &&
@@ -124,6 +156,19 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const Kra2MainHubScreen()),
+        );
+      });
+    }
+    if (widget.kra == KraType.extension &&
+        (widget.initialCriterionId == null || widget.initialCriterionId!.isEmpty) &&
+        (widget.initialIndicatorId == null || widget.initialIndicatorId!.isEmpty) &&
+        (_criterionId == null || _criterionId!.isEmpty) &&
+        (_indicatorId == null || _indicatorId!.isEmpty)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const Kra3MainHubScreen()),
         );
       });
     }

@@ -1,0 +1,122 @@
+{
+  "runId": "20261104T060311Z",
+  "startedAt": "2026-11-04T06:03:11.018686+00:00",
+  "indicators": {
+    "kra3-a-linkage": {
+      "indicatorId": "kra3-a-linkage",
+      "criterionId": "kra3-a",
+      "checks": {
+        "bundle_initialized": true,
+        "required_slots": true,
+        "metadata_saved": true,
+        "submit_ready": true,
+        "submitted_status": true,
+        "reviewer_list_visible": true,
+        "api_required_slots": true,
+        "estimated_points_present": true,
+        "approved_persisted": true
+      },
+      "status": "PASS",
+      "documentId": "doc_4ea23a0b34bc",
+      "estimatedPoints": 5.0,
+      "officialBasePoints": 5.0,
+      "approvedPoints": 5.0
+    },
+    "kra3-a-income-lead-100k": {
+      "indicatorId": "kra3-a-income-lead-100k",
+      "criterionId": "kra3-a",
+      "checks": {
+        "bundle_initialized": true,
+        "required_slots": true,
+        "metadata_saved": true,
+        "submit_ready": true,
+        "submitted_status": true,
+        "reviewer_list_visible": true,
+        "api_required_slots": true,
+        "estimated_points_present": true,
+        "approved_persisted": true
+      },
+      "status": "PASS",
+      "documentId": "doc_b05c0c718f96",
+      "estimatedPoints": 2.0,
+      "officialBasePoints": 2.0,
+      "approvedPoints": 2.0
+    },
+    "kra3-b-train-local": {
+      "indicatorId": "kra3-b-train-local",
+      "criterionId": "kra3-b",
+      "checks": {
+        "bundle_initialized": true,
+        "required_slots": true,
+        "metadata_saved": true,
+        "submit_ready": true,
+        "submitted_status": true,
+        "reviewer_list_visible": true,
+        "api_required_slots": true,
+        "estimated_points_present": true,
+        "approved_persisted": true
+      },
+      "status": "PASS",
+      "documentId": "doc_2cf1c49ba54e",
+      "estimatedPoints": 4.0,
+      "officialBasePoints": 2.0,
+      "approvedPoints": 4.0
+    },
+    "kra3-c-satisfaction": {
+      "indicatorId": "kra3-c-satisfaction",
+      "criterionId": "kra3-c",
+      "checks": {
+        "bundle_initialized": true,
+        "required_slots": true,
+        "metadata_saved": true,
+        "submit_ready": true,
+        "submitted_status": true,
+        "reviewer_list_visible": true,
+        "api_required_slots": true,
+        "estimated_points_present": true,
+        "approved_persisted": true
+      },
+      "status": "PASS",
+      "documentId": "doc_576aa269e911",
+      "estimatedPoints": 17.0,
+      "officialBasePoints": null,
+      "approvedPoints": 17.0
+    },
+    "kra3-d-president": {
+      "indicatorId": "kra3-d-president",
+      "criterionId": "kra3-d",
+      "checks": {
+        "bundle_initialized": true,
+        "required_slots": true,
+        "metadata_saved": true,
+        "submit_ready": true,
+        "submitted_status": true,
+        "reviewer_list_visible": true,
+        "api_required_slots": true,
+        "designation_scoring_policy": true,
+        "approved_persisted": true
+      },
+      "status": "PASS",
+      "documentId": "doc_a78c3336eb82",
+      "estimatedPoints": 20.0,
+      "officialBasePoints": 20.0,
+      "approvedPoints": 20.0
+    }
+  },
+  "environment": {
+    "database": "facultylink (app DATABASE_URL)",
+    "api": "http://127.0.0.1:5000"
+  },
+  "facultyRole": "faculty",
+  "reviewerRole": "reviewer",
+  "facultyPublicId": "fac_6047265f5ce9",
+  "rankSimulation": {
+    "status": "PASS",
+    "estimatedPoints": null,
+    "validatedPoints": 0.0,
+    "maxPoints": 100.0,
+    "cap_ok": true
+  },
+  "finishedAt": "2026-11-04T06:03:15.406701+00:00",
+  "overallStatus": "PASS"
+}

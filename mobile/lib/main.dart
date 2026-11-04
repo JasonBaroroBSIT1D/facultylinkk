@@ -16,6 +16,7 @@ import 'screens/documents/kra_explorer_screen.dart';
 import 'screens/criterion_b/criterion_b_hub_screen.dart';
 import 'screens/criterion_c/criterion_c_hub_screen.dart';
 import 'data/kra2_catalog.dart';
+import 'data/kra3_catalog.dart';
 import 'screens/kra2/kra2_criterion_hub_screen.dart';
 import 'screens/kra2/kra2_main_hub_screen.dart';
 import 'screens/documents/upload_document_screen.dart';
@@ -28,6 +29,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiConfig.initialize();
   await Kra2Catalog.preload();
+  await Kra3Catalog.preload();
   runApp(const FacultyLinkApp());
 }
 

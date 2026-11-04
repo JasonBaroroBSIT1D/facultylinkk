@@ -202,6 +202,7 @@ FL.apiClient = {
             (payload && (payload.message || payload.msg)) || "Request failed."
           );
           err.status = response.status;
+          if (payload && payload.code) err.code = payload.code;
           throw err;
         }
         return payload;

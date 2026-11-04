@@ -6,6 +6,9 @@ window.FL = window.FL || {};
 FL.kra2Evidence = {
   bundlePath: function (session, docId) {
     if (!docId) return "";
+    if (session && session.role === "administrator") {
+      return "/api/admin/documents/" + encodeURIComponent(docId) + "/kra2/evidence-bundle";
+    }
     if (session && session.role === "reviewer") {
       return "/api/reviewer/documents/" + encodeURIComponent(docId) + "/kra2/evidence-bundle";
     }

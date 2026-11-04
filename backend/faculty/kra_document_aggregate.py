@@ -21,6 +21,10 @@ CRITERION_C_ID = "kra1-c"
 KRA2_CRITERION_A_ID = "kra2-a"
 KRA2_CRITERION_B_ID = "kra2-b"
 KRA2_CRITERION_C_ID = "kra2-c"
+KRA3_CRITERION_A_ID = "kra3-a"
+KRA3_CRITERION_B_ID = "kra3-b"
+KRA3_CRITERION_C_ID = "kra3-c"
+KRA3_CRITERION_D_ID = "kra3-d"
 
 
 def _legacy_aggregate_criterion_from_documents(
@@ -150,6 +154,43 @@ def aggregate_criterion_documents_from_list(
             )
             if preview is not None
             else None,
+        }
+
+    if criterion_id in (
+        KRA3_CRITERION_A_ID,
+        KRA3_CRITERION_B_ID,
+        KRA3_CRITERION_C_ID,
+        KRA3_CRITERION_D_ID,
+    ):
+        from documents.scoring.kra3_simulation_adapter import (
+            KRA3_SIMULATION_ADAPTER_ENABLED,
+            aggregate_kra3_criterion_simulation_from_documents,
+        )
+        from kra_configuration.version_lock import resolve_settings_for_faculty_simulation
+
+        if settings is not None:
+            blob = settings
+            applicable = bool(settings.get("criteria"))
+        else:
+            blob, resolution = resolve_settings_for_faculty_simulation()
+            applicable = resolution.has_applicable_row
+        block = aggregate_kra3_criterion_simulation_from_documents(
+            docs,
+            criterion_id=criterion_id,
+            settings=blob,
+            applicable_config_present=applicable or bool(blob and blob.get("criteria")),
+        )
+        return {
+            "criterionId": criterion_id,
+            "estimatedPoints": block.get("estimatedPoints"),
+            "validatedPoints": block.get("validatedPoints"),
+            "maxPoints": float(block.get("maxPoints") or max_pts),
+            "assessed": bool(block.get("assessed")),
+            "documentCount": int(block.get("documentCount") or len(docs)),
+            "scoringSource": block.get("scoringSource"),
+            "aggregationPolicy": block.get("aggregationPolicy"),
+            "simulationAdapterEnabled": KRA3_SIMULATION_ADAPTER_ENABLED,
+            "accomplishments": block.get("accomplishments") or [],
         }
 
     if criterion_id in (KRA2_CRITERION_A_ID, KRA2_CRITERION_B_ID, KRA2_CRITERION_C_ID):
@@ -300,6 +341,25 @@ def aggregate_documents_for_kra(profile: FacultyProfile, kra_key: str) -> dict[s
         block["label"] = _KRA_LABELS[kra_key]
         block["statusLabel"] = (
             "Estimated from KRA II accomplishments (criteria sum capped at KRA max)"
+            if block.get("assessed")
+            else "Not yet assessed"
+        )
+        block["breakdown"] = []
+        return block
+
+    if kra_key == "kra3":
+        from documents.scoring.kra3_simulation_adapter import aggregate_kra3_simulation_from_documents
+        from kra_configuration.version_lock import resolve_settings_for_faculty_simulation
+
+        settings_blob, resolution = resolve_settings_for_faculty_simulation()
+        block = aggregate_kra3_simulation_from_documents(
+            docs,
+            settings=settings_blob,
+            applicable_config_present=resolution.has_applicable_row,
+        )
+        block["label"] = _KRA_LABELS[kra_key]
+        block["statusLabel"] = (
+            "Estimated from KRA III accomplishments (A+B+C plus bonus D, capped at 100)"
             if block.get("assessed")
             else "Not yet assessed"
         )

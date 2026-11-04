@@ -2164,6 +2164,23 @@ FL.evidence = {
       }
       return;
     }
+    if (
+      state.criterionId === "kra3-a" ||
+      state.criterionId === "kra3-b" ||
+      state.criterionId === "kra3-c" ||
+      state.criterionId === "kra3-d"
+    ) {
+      if (state.indicatorId) {
+        state.indicatorId = "";
+        FL.evidence.pushLocation(state);
+      }
+      if (FL.kra2AReview && FL.kra2AReview.mountAccomplishmentListInWorkspace) {
+        FL.kra2AReview.mountAccomplishmentListInWorkspace(session, state, isAdmin, host, criterion);
+      } else {
+        host.innerHTML = FL.ui.empty("KRA III unavailable", "Reload the page to open accomplishments.");
+      }
+      return;
+    }
     if (state.criterionId === "kra1-a" && FL.store.usesLiveDocuments()) {
       const loadFaculty = state.facultyId;
       const loadCriterion = state.criterionId;

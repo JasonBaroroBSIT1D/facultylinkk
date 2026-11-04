@@ -1,0 +1,710 @@
+{
+  "version": "1.0",
+  "source": "web/js/rules.js",
+  "pdfVerified": false,
+  "indicatorCount": 46,
+  "indicators": [
+    {
+      "id": "kra3-a-linkage",
+      "criterionId": "kra3-a",
+      "name": "Successful linkage, networking, or partnership activity",
+      "points": 5.0,
+      "maxPoints": 5.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Board/President/Chancellor approval authorizing the partnership",
+        "Notarized MOA/MOU (or project proposal if activities are not in the MOA)",
+        "Implementation or terminal report acknowledging successful implementation",
+        "Certification from the President or concerned Vice President that the partnership was initiated through the faculty’s initiative"
+      ]
+    },
+    {
+      "id": "kra3-a-income-lead-100k",
+      "criterionId": "kra3-a",
+      "name": "Income generation — Lead — ₱100,000 and below",
+      "points": 2.0,
+      "maxPoints": 2.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Financial reports / Sub-ARO or equivalent",
+        "Finance Division certification of contribution"
+      ]
+    },
+    {
+      "id": "kra3-a-income-lead-500k",
+      "criterionId": "kra3-a",
+      "name": "Income generation — Lead — ₱100,001 to ₱500,000",
+      "points": 4.0,
+      "maxPoints": 4.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Financial reports / Sub-ARO or equivalent",
+        "Finance Division certification of contribution"
+      ]
+    },
+    {
+      "id": "kra3-a-income-lead-6m",
+      "criterionId": "kra3-a",
+      "name": "Income generation — Lead — ₱500,001 to ₱6,000,000",
+      "points": 6.0,
+      "maxPoints": 6.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Financial reports / Sub-ARO or equivalent",
+        "Finance Division certification of contribution"
+      ]
+    },
+    {
+      "id": "kra3-a-income-lead-12m",
+      "criterionId": "kra3-a",
+      "name": "Income generation — Lead — ₱6,000,001 to ₱12,000,000",
+      "points": 12.0,
+      "maxPoints": 12.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Financial reports / Sub-ARO or equivalent",
+        "Finance Division certification of contribution"
+      ]
+    },
+    {
+      "id": "kra3-a-income-lead-over",
+      "criterionId": "kra3-a",
+      "name": "Income generation — Lead — Above ₱12,000,000",
+      "points": 18.0,
+      "maxPoints": 18.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Financial reports / Sub-ARO or equivalent",
+        "Finance Division certification of contribution"
+      ]
+    },
+    {
+      "id": "kra3-a-income-co-100k",
+      "criterionId": "kra3-a",
+      "name": "Income generation — Contributor — ₱100,000 and below",
+      "points": 1.0,
+      "maxPoints": 1.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Financial reports / Sub-ARO or equivalent",
+        "Finance Division certification of contribution"
+      ]
+    },
+    {
+      "id": "kra3-a-income-co-500k",
+      "criterionId": "kra3-a",
+      "name": "Income generation — Contributor — ₱100,001 to ₱500,000",
+      "points": 2.0,
+      "maxPoints": 2.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Financial reports / Sub-ARO or equivalent",
+        "Finance Division certification of contribution"
+      ]
+    },
+    {
+      "id": "kra3-a-income-co-6m",
+      "criterionId": "kra3-a",
+      "name": "Income generation — Contributor — ₱500,001 to ₱6,000,000",
+      "points": 3.0,
+      "maxPoints": 3.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Financial reports / Sub-ARO or equivalent",
+        "Finance Division certification of contribution"
+      ]
+    },
+    {
+      "id": "kra3-a-income-co-12m",
+      "criterionId": "kra3-a",
+      "name": "Income generation — Contributor — ₱6,000,001 to ₱12,000,000",
+      "points": 6.0,
+      "maxPoints": 6.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Financial reports / Sub-ARO or equivalent",
+        "Finance Division certification of contribution"
+      ]
+    },
+    {
+      "id": "kra3-a-income-co-over",
+      "criterionId": "kra3-a",
+      "name": "Income generation — Contributor — Above ₱12,000,000",
+      "points": 9.0,
+      "maxPoints": 9.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Financial reports / Sub-ARO or equivalent",
+        "Finance Division certification of contribution"
+      ]
+    },
+    {
+      "id": "kra3-b-qa-local",
+      "criterionId": "kra3-b",
+      "name": "Accreditation, evaluation, or assessment — Local",
+      "points": 8.0,
+      "maxPoints": 8.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Official appointment/designation",
+        "Proof of actual engagement",
+        "SUC President authorization"
+      ]
+    },
+    {
+      "id": "kra3-b-qa-intl",
+      "criterionId": "kra3-b",
+      "name": "Accreditation, evaluation, or assessment — International",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Official appointment/designation",
+        "Proof of actual engagement",
+        "SUC President authorization"
+      ]
+    },
+    {
+      "id": "kra3-b-judge-research",
+      "criterionId": "kra3-b",
+      "name": "Judge or examiner — Research awards",
+      "points": 2.0,
+      "maxPoints": 2.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Official invitation",
+        "Proof of award/competition",
+        "Proof of engagement",
+        "President/VP authorization"
+      ]
+    },
+    {
+      "id": "kra3-b-judge-academic",
+      "criterionId": "kra3-b",
+      "name": "Judge or examiner — Academic competitions",
+      "points": 1.0,
+      "maxPoints": 1.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Official invitation",
+        "Proof of competition",
+        "Proof of engagement",
+        "President/VP authorization"
+      ]
+    },
+    {
+      "id": "kra3-b-consult-local",
+      "criterionId": "kra3-b",
+      "name": "Short-term consultant or expert — Local",
+      "points": 8.0,
+      "maxPoints": 8.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Written agreement/contract/invitation with acceptance",
+        "Evidence of engagement",
+        "President/Chancellor/VP authorization"
+      ]
+    },
+    {
+      "id": "kra3-b-consult-intl",
+      "criterionId": "kra3-b",
+      "name": "Short-term consultant or expert — International",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Written agreement/contract/invitation with acceptance",
+        "Evidence of engagement",
+        "President/Chancellor/VP authorization"
+      ]
+    },
+    {
+      "id": "kra3-b-column-occasional",
+      "criterionId": "kra3-b",
+      "name": "Writer of an occasional newspaper column",
+      "points": 2.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": "kra3-b-column-occasional",
+      "groupMax": 10.0,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Compiled newspaper articles",
+        "Corresponding front pages showing publication name and date"
+      ]
+    },
+    {
+      "id": "kra3-b-column-regular",
+      "criterionId": "kra3-b",
+      "name": "Writer of a regular newspaper column",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Compiled articles of the regular column",
+        "Corresponding front pages"
+      ]
+    },
+    {
+      "id": "kra3-b-host",
+      "criterionId": "kra3-b",
+      "name": "Host of a television or radio program",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Contract, invitation, or similar document",
+        "On-air schedule"
+      ]
+    },
+    {
+      "id": "kra3-b-guest",
+      "criterionId": "kra3-b",
+      "name": "Guesting as a technical expert",
+      "points": 1.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": "kra3-b-guest",
+      "groupMax": 10.0,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Invitation letter"
+      ]
+    },
+    {
+      "id": "kra3-b-train-local",
+      "criterionId": "kra3-b",
+      "name": "Resource person, convenor, facilitator, moderator, or speaker — Local, per hour",
+      "points": 2.0,
+      "maxPoints": 2.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Invitation letter",
+        "Program",
+        "Certificate of appreciation or similar"
+      ]
+    },
+    {
+      "id": "kra3-b-train-intl",
+      "criterionId": "kra3-b",
+      "name": "Resource person, convenor, facilitator, moderator, or speaker — International, per hour",
+      "points": 3.0,
+      "maxPoints": 3.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Invitation letter",
+        "Program",
+        "Certificate of appreciation or similar"
+      ]
+    },
+    {
+      "id": "kra3-b-ext-head",
+      "criterionId": "kra3-b",
+      "name": "Head of an extension or production / ISR project",
+      "points": 5.0,
+      "maxPoints": 30.0,
+      "contribution": "not-applicable",
+      "group": "kra3-b-ext-head",
+      "groupMax": 30.0,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Approval for the activity",
+        "Appointment or designation as head",
+        "Extension or production activity report"
+      ]
+    },
+    {
+      "id": "kra3-b-ext-participant",
+      "criterionId": "kra3-b",
+      "name": "Participant in an extension or production / ISR project",
+      "points": 2.0,
+      "maxPoints": 30.0,
+      "contribution": "not-applicable",
+      "group": "kra3-b-ext-participant",
+      "groupMax": 30.0,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Approval for the activity",
+        "Extension or production activity report"
+      ]
+    },
+    {
+      "id": "kra3-c-satisfaction",
+      "criterionId": "kra3-c",
+      "name": "Client satisfaction rating for outreach and extension projects",
+      "points": null,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": true,
+      "evidenceHints": [
+        "Summary of client satisfaction / CSR ratings for the evaluation period using the prescribed instrument"
+      ],
+      "formulaMultiplier": 20.0
+    },
+    {
+      "id": "kra3-d-president",
+      "criterionId": "kra3-d",
+      "name": "President or OIC President",
+      "points": 20.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-vp",
+      "criterionId": "kra3-d",
+      "name": "Vice-President",
+      "points": 15.0,
+      "maxPoints": 15.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-chancellor",
+      "criterionId": "kra3-d",
+      "name": "Chancellor",
+      "points": 10.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-vc",
+      "criterionId": "kra3-d",
+      "name": "Vice-Chancellor",
+      "points": 8.0,
+      "maxPoints": 8.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-campus",
+      "criterionId": "kra3-d",
+      "name": "Campus Director or Administrator",
+      "points": 8.0,
+      "maxPoints": 8.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-regent",
+      "criterionId": "kra3-d",
+      "name": "Faculty Trustee or Regent",
+      "points": 8.0,
+      "maxPoints": 8.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Annual report of the faculty association"
+      ]
+    },
+    {
+      "id": "kra3-d-director",
+      "criterionId": "kra3-d",
+      "name": "Office Director",
+      "points": 6.0,
+      "maxPoints": 6.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-usec",
+      "criterionId": "kra3-d",
+      "name": "University or College Secretary",
+      "points": 6.0,
+      "maxPoints": 6.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-project",
+      "criterionId": "kra3-d",
+      "name": "Project Head (institution level)",
+      "points": 4.0,
+      "maxPoints": 4.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-inst-chair",
+      "criterionId": "kra3-d",
+      "name": "Institution-level committee — Chair",
+      "points": 3.0,
+      "maxPoints": 3.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-inst-member",
+      "criterionId": "kra3-d",
+      "name": "Institution-level committee — Member",
+      "points": 2.0,
+      "maxPoints": 2.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-inst-coord",
+      "criterionId": "kra3-d",
+      "name": "Coordinator (institution level)",
+      "points": 2.0,
+      "maxPoints": 2.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-dean",
+      "criterionId": "kra3-d",
+      "name": "Dean",
+      "points": 6.0,
+      "maxPoints": 6.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-adean",
+      "criterionId": "kra3-d",
+      "name": "Associate Dean",
+      "points": 5.0,
+      "maxPoints": 5.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-csec",
+      "criterionId": "kra3-d",
+      "name": "College Secretary",
+      "points": 3.0,
+      "maxPoints": 3.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-dept",
+      "criterionId": "kra3-d",
+      "name": "Department Head",
+      "points": 4.0,
+      "maxPoints": 4.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-chair",
+      "criterionId": "kra3-d",
+      "name": "Program Chair or Project Head (department level)",
+      "points": 3.0,
+      "maxPoints": 3.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-dept-chair",
+      "criterionId": "kra3-d",
+      "name": "Department-level committee — Chair",
+      "points": 2.0,
+      "maxPoints": 2.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-dept-member",
+      "criterionId": "kra3-d",
+      "name": "Department-level committee — Member",
+      "points": 1.0,
+      "maxPoints": 1.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    },
+    {
+      "id": "kra3-d-dept-coord",
+      "criterionId": "kra3-d",
+      "name": "Coordinator (college/department level)",
+      "points": 1.0,
+      "maxPoints": 1.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "formulaRating": false,
+      "evidenceHints": [
+        "Appointment or designation with effectivity period",
+        "Accomplishment report"
+      ]
+    }
+  ]
+}

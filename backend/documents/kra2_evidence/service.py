@@ -379,20 +379,115 @@ def reviewer_update_kra2(
     assessed_points: float | int | str | None = None,
     score_adjustment_reason: str = "",
     metadata: dict[str, Any] | None = None,
+    reassessment_action: str | None = None,
+    reassessment_reason: str = "",
+    confirm_reassessment: bool = False,
+    actor_is_administrator: bool = False,
 ) -> tuple[Document, dict[str, Any]]:
     from documents.service import reviewer_can_access
 
     primary = get_document(primary_public_id)
-    if not primary or not reviewer_can_access(reviewer_user, primary):
+    assigned = reviewer_can_access(reviewer_user, primary)
+    if not primary or (not assigned and not actor_is_administrator):
         raise Kra2EvidenceError("forbidden")
     bundle = bundle_from_document(primary)
     if not bundle:
         raise Kra2EvidenceError("bundle_not_initialized")
     indicator_id = _indicator_for_doc(primary)
-    if (slot_id or review_status) and not accomplishment_submitted(bundle):
+
+    if reassessment_action:
+        from documents.accomplishment_reassessment import process_reassessment_action
+        from kra_configuration.version_lock import (
+            maybe_lock_document_scoring_configuration,
+            record_configuration_in_kra2_bundle,
+            resolve_settings_for_faculty_simulation,
+        )
+
+        score_settings, score_resolution = resolve_settings_for_faculty_simulation()
+        try:
+            process_reassessment_action(
+                bundle,
+                action=reassessment_action,
+                reopen_reason=reassessment_reason,
+                confirm=confirm_reassessment,
+                remarks=remarks,
+                assessed_points=assessed_points,
+                score_adjustment_reason=score_adjustment_reason,
+                actor_user_id=int(reviewer_user.id),
+                actor_display_name=getattr(reviewer_user, "full_name", "") or "",
+                is_administrator=actor_is_administrator,
+                is_assigned_reviewer=assigned,
+                indicator_id=indicator_id,
+                settings=score_settings,
+                kra="kra2",
+            )
+        except ValueError as error:
+            code = str(error)
+            _REASSESS_ERRORS = {
+                "reassessment_not_authorized",
+                "reassessment_finalize_requires_administrator",
+                "reassessment_requires_approved",
+                "reassessment_reason_required",
+                "reassessment_already_open",
+                "reassessment_not_active",
+                "reassessment_confirmation_required",
+                "invalid_reassessment_action",
+                "review_approval_remarks_required",
+                "assessed_points_invalid",
+                "assessed_points_exceeds_indicator_max",
+                "assessed_points_exceeds_eligible",
+                "assessed_points_not_adjustable",
+                "score_adjustment_reason_required",
+                "indicator_points_unknown",
+            }
+            if code in _REASSESS_ERRORS:
+                raise Kra2EvidenceError(code) from error
+            raise
+        if (reassessment_action or "").strip().lower() == "finalize":
+            record_configuration_in_kra2_bundle(bundle, resolution=score_resolution)
+            sc = bundle.get("scoringConfiguration")
+            ra = bundle.get("reviewerAssessment")
+            if isinstance(sc, dict) and isinstance(ra, dict):
+                ra["scoringConfigurationId"] = sc.get("configurationId")
+                ra["scoringConfigurationVersion"] = sc.get("version")
+            maybe_lock_document_scoring_configuration(primary)
+        import json
+
+        db.session.add(
+            AuditLog(
+                actor_user_id=int(reviewer_user.id),
+                action="KRA II accomplishment reassessment",
+                target_id=primary.public_id,
+                detail=json.dumps(
+                    {
+                        "documentId": primary.public_id,
+                        "action": reassessment_action,
+                        "assessedPoints": bundle.get("reviewerAssessment", {}).get("assessedPoints"),
+                    },
+                    ensure_ascii=False,
+                )[:4000],
+            )
+        )
+        validation = _apply_validation_to_bundle(
+            bundle,
+            indicator_id=indicator_id,
+            faculty_profile_id=primary.faculty_profile_id,
+            public_id=primary.public_id,
+        )
+        persist_bundle(primary, bundle)
+        db.session.commit()
+        return primary, validation
+    assessment_fields = (
+        assessed_points is not None
+        or bool((remarks or "").strip())
+        or bool((score_adjustment_reason or "").strip())
+    )
+    if (slot_id or review_status or assessment_fields) and not accomplishment_submitted(bundle):
         raise Kra2EvidenceError("accomplishment_not_submitted")
     prior_review = (bundle.get("reviewStatus") or "").strip().lower()
     if prior_review == "approved" and review_status:
+        raise Kra2EvidenceError("accomplishment_already_finalized")
+    if prior_review == "rejected" and review_status:
         raise Kra2EvidenceError("accomplishment_already_finalized")
 
     from documents.kra2_evidence.ocr_extraction import (
@@ -510,8 +605,53 @@ def reviewer_update_kra2(
                 )[:4000],
             )
         )
-    elif remarks:
-        bundle["reviewerRemarks"] = remarks.strip()
+    elif assessment_fields and not slot_id and not metadata:
+        from documents.kra2_evidence.reviewer_assessment import save_reviewer_assessment_draft
+        from kra_configuration.version_lock import resolve_settings_for_faculty_simulation
+
+        score_settings, _score_resolution = resolve_settings_for_faculty_simulation()
+        try:
+            save_reviewer_assessment_draft(
+                bundle,
+                reviewer_user_id=int(reviewer_user.id),
+                reviewer_display_name=getattr(reviewer_user, "full_name", "") or "",
+                remarks=remarks,
+                assessed_points=assessed_points,
+                score_adjustment_reason=score_adjustment_reason,
+                indicator_id=indicator_id,
+                settings=score_settings,
+            )
+        except ValueError as error:
+            code = str(error)
+            if code in (
+                "accomplishment_already_finalized",
+                "assessed_points_invalid",
+                "assessed_points_exceeds_indicator_max",
+                "assessed_points_exceeds_eligible",
+                "assessed_points_not_adjustable",
+                "score_adjustment_reason_required",
+                "indicator_points_unknown",
+            ):
+                raise Kra2EvidenceError(code) from error
+            raise
+
+        import json
+
+        db.session.add(
+            AuditLog(
+                actor_user_id=int(reviewer_user.id),
+                action="KRA II reviewer assessment draft",
+                target_id=primary.public_id,
+                detail=json.dumps(
+                    {
+                        "documentId": primary.public_id,
+                        "indicatorId": primary.indicator_id,
+                        "assessedPoints": bundle.get("reviewerAssessment", {}).get("assessedPoints"),
+                    },
+                    ensure_ascii=False,
+                )[:4000],
+            )
+        )
 
     validation = _apply_validation_to_bundle(
         bundle,
@@ -532,7 +672,11 @@ def reviewer_update_kra2(
     return primary, validation
 
 
-def bundle_api_payload(doc: Document) -> dict[str, Any]:
+def bundle_api_payload(doc: Document, *, viewer_user=None) -> dict[str, Any]:
+    from documents.accomplishment_reassessment import (
+        reassessment_capabilities_for_viewer,
+        reassessment_server_flags,
+    )
     from documents.kra2_evidence.ocr_extraction import (
         OCR_EXTRACTION_KEY,
         ensure_publication_ocr_extraction,
@@ -602,11 +746,30 @@ def bundle_api_payload(doc: Document) -> dict[str, Any]:
             system_calc = est
     assessed = None
     score_adjustment_reason = None
+    draft_assessed = None
+    draft_remarks = None
+    draft_adjustment = None
+    finalized_remarks = None
+    assessment_revision_saved_at = None
+    review_norm = (
+        (bundle.get("reviewStatus") or "").strip().lower() if isinstance(bundle, dict) else ""
+    )
     if isinstance(bundle, dict):
         ra = bundle.get("reviewerAssessment")
         if isinstance(ra, dict):
-            assessed = ra.get("assessedPoints")
-            score_adjustment_reason = ra.get("scoreAdjustmentReason")
+            draft_assessed = ra.get("draftAssessedPoints")
+            draft_remarks = ra.get("draftRemarks")
+            draft_adjustment = ra.get("draftScoreAdjustmentReason")
+            finalized_remarks = ra.get("remarks")
+            assessment_revision_saved_at = ra.get("draftSavedAt")
+            if review_norm in ("approved", "rejected"):
+                assessed = (
+                    draft_assessed if draft_assessed is not None else ra.get("assessedPoints")
+                )
+                score_adjustment_reason = draft_adjustment or ra.get("scoreAdjustmentReason")
+            else:
+                assessed = ra.get("assessedPoints")
+                score_adjustment_reason = ra.get("scoreAdjustmentReason")
     info = dict(getattr(doc, "extracted_info", None) or {})
     ocr_extraction = info.get(OCR_EXTRACTION_KEY)
     review_flags = ocr_review_flags_for_document(doc, bundle if isinstance(bundle, dict) else None)
@@ -638,7 +801,9 @@ def bundle_api_payload(doc: Document) -> dict[str, Any]:
     ra = (bundle or {}).get("reviewerAssessment") if isinstance(bundle, dict) else None
     approved_pts = ra.get("approvedPoints") if isinstance(ra, dict) else None
     if approved_pts is None and isinstance(ra, dict):
-        approved_pts = ra.get("assessedPoints")
+        ra_status = (ra.get("reviewStatus") or (bundle or {}).get("reviewStatus") or "").strip().lower()
+        if ra_status == "approved":
+            approved_pts = ra.get("assessedPoints")
     req_slots = list(required_slots(indicator_id=indicator_id))
     slot_labels = {slot: slot_label(slot, indicator_id=indicator_id) for slot in req_slots}
     return {
@@ -658,6 +823,16 @@ def bundle_api_payload(doc: Document) -> dict[str, Any]:
             "criterionId": crit_id or None,
             "reviewerAssessedPoints": assessed,
             "approvedPoints": approved_pts,
+            "draftAssessedPoints": float(draft_assessed) if draft_assessed is not None else None,
+            "draftReviewerRemarks": draft_remarks,
+            "finalizedReviewerRemarks": finalized_remarks
+            or (
+                (bundle.get("reviewerRemarks") or "").strip()
+                if isinstance(bundle, dict)
+                else None
+            )
+            or None,
+            "assessmentRevisionSavedAt": assessment_revision_saved_at,
             "scoreAdjustmentReason": score_adjustment_reason,
             "scoringMethod": controls["scoringMethod"],
             "scoringMethodLabel": controls["scoringMethodLabel"],
@@ -674,6 +849,10 @@ def bundle_api_payload(doc: Document) -> dict[str, Any]:
         "ocrStatus": (getattr(doc, "ocr_status", None) or "pending").strip().lower(),
         "ocrExtraction": ocr_extraction,
         "ocrReviewFlags": review_flags,
+        "reassessmentServerFlags": reassessment_server_flags(),
+        "reassessmentCapabilities": reassessment_capabilities_for_viewer(viewer_user, doc),
+        "reassessmentSession": (bundle or {}).get("reassessmentSession") if isinstance(bundle, dict) else None,
+        "reassessmentHistory": (bundle or {}).get("reassessmentHistory") if isinstance(bundle, dict) else None,
     }
 
 

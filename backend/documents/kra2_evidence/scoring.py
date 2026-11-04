@@ -150,7 +150,9 @@ def score_accomplishment_document(
             reasons=("review_not_approved",),
         )
 
-    assessed = assessment.get("assessedPoints")
+    assessed = assessment.get("approvedPoints")
+    if assessed is None:
+        assessed = assessment.get("assessedPoints")
     try:
         counted = round(float(assessed), 2) if assessed is not None else round(float(eligible), 2)
     except (TypeError, ValueError):

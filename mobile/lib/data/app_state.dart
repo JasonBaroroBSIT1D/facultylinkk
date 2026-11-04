@@ -13,6 +13,7 @@ import 'faculty_session_defaults.dart';
 import 'mock_auth.dart';
 import 'mock_data.dart';
 import 'kra2_criterion_remote.dart';
+import 'kra3_criterion_remote.dart';
 import 'scoring_configuration.dart';
 
 /// App-wide faculty state backed by Flask JWT APIs when signed in.
@@ -638,6 +639,25 @@ class AppState extends ChangeNotifier {
     return result;
   }
 
+  Future<Map<String, dynamic>> fetchKra3EvidenceBundle(String documentId) async {
+    if (_useMockAuthForTests || !isSignedIn) {
+      throw StateError('KRA III evidence requires a live API session.');
+    }
+    return _api.fetchKra3EvidenceBundle(documentId);
+  }
+
+  Future<Map<String, dynamic>> patchKra3EvidenceBundle(
+    String documentId,
+    Map<String, dynamic> body,
+  ) async {
+    if (_useMockAuthForTests || !isSignedIn) {
+      throw StateError('KRA III updates require a live API session.');
+    }
+    final result = await _api.patchKra3EvidenceBundle(documentId, body);
+    await refreshFacultyDocument(documentId, quiet: true);
+    return result;
+  }
+
   Future<FacultyDocument?> refreshFacultyDocument(String documentId, {bool quiet = false}) async {
     if (_useMockAuthForTests || !isSignedIn) return documentById(documentId);
     try {
@@ -705,6 +725,20 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> pollKra3OcrInBackground(
+    String documentId, {
+    void Function(String? ocrStatus)? onUpdate,
+    int maxAttempts = 24,
+    Duration interval = const Duration(seconds: 3),
+  }) async {
+    await pollKra2OcrInBackground(
+      documentId,
+      onUpdate: onUpdate,
+      maxAttempts: maxAttempts,
+      interval: interval,
+    );
+  }
+
   Future<void> refreshRankSimulationFromApi({bool quiet = false}) async {
     if (_useMockAuthForTests || !isSignedIn) return;
     try {
@@ -732,6 +766,7 @@ class AppState extends ChangeNotifier {
 
   void _clearLiveSessionData() {
     Kra2CriterionRemote.invalidate();
+    Kra3CriterionRemote.invalidate();
     faculty = FacultySessionDefaults.faculty;
     documents = const [];
     notifications = const [];

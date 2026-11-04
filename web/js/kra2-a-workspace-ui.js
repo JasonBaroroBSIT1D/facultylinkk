@@ -207,7 +207,7 @@ FL.kra2AWorkspaceUi = {
   },
 
   facultyStatusMeta: function (bundle) {
-    var rs = ((bundle && bundle.reviewStatus) || "pending").toLowerCase();
+    var rs = FL.kra2AWorkspaceUi.normalizeReviewStatus({ bundle: bundle });
     var submitted = !!(bundle && bundle.submittedForReviewAt);
     if (rs === "approved") {
       return { key: "approved", label: "Approved", hint: "Reviewer verified this accomplishment." };
@@ -219,6 +219,322 @@ FL.kra2AWorkspaceUi = {
       return { key: "under-review", label: "Under Review", hint: "Waiting for reviewer verification." };
     }
     return { key: "draft", label: "Draft", hint: "Faculty has not submitted for review yet." };
+  },
+
+  /** Authoritative review status from API bundle (not stale validation labels). */
+  normalizeReviewStatus: function (state) {
+    var bundle = (state && state.bundle) || {};
+    var validation = (state && state.validation) || {};
+    var ra = bundle.reviewerAssessment || {};
+    var candidates = [
+      bundle.reviewStatus,
+      ra.reviewStatus,
+      validation.reviewStatus,
+      state && state.doc && state.doc.reviewStatus
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      var raw = (candidates[i] || "").toString().trim().toLowerCase();
+      if (raw === "approved" || raw === "rejected" || raw === "pending") return raw;
+    }
+    if (bundle.submittedForReviewAt) return "pending";
+    return "pending";
+  },
+
+  isAccomplishmentApproved: function (state) {
+    return FL.kra2AWorkspaceUi.normalizeReviewStatus(state) === "approved";
+  },
+
+  isAccomplishmentRejected: function (state) {
+    return FL.kra2AWorkspaceUi.normalizeReviewStatus(state) === "rejected";
+  },
+
+  isReviewDecisionLocked: function (state) {
+    return FL.kra2AWorkspaceUi.isAccomplishmentApproved(state);
+  },
+
+  reassessmentCapabilitiesFor: function (state) {
+    return (
+      state.reassessmentCapabilities ||
+      (state.payload && state.payload.reassessmentCapabilities) ||
+      {}
+    );
+  },
+
+  reassessmentSessionFor: function (state) {
+    var bundle = state.bundle || {};
+    return bundle.reassessmentSession || (state.payload && state.payload.reassessmentSession) || null;
+  },
+
+  isReassessmentSessionActive: function (state) {
+    var session = FL.kra2AWorkspaceUi.reassessmentSessionFor(state);
+    return !!(session && session.active);
+  },
+
+  isPendingSubmittedReview: function (state) {
+    var bundle = (state && state.bundle) || {};
+    if (!bundle.submittedForReviewAt) return false;
+    if (FL.kra2AWorkspaceUi.isAccomplishmentApproved(state)) return false;
+    if (FL.kra2AWorkspaceUi.isAccomplishmentRejected(state)) return false;
+    return true;
+  },
+
+  canEditReviewerAssessment: function (state) {
+    var bundle = (state && state.bundle) || {};
+    if (!bundle.submittedForReviewAt || !state.canDecide) return false;
+    if (FL.kra2AWorkspaceUi.isReassessmentSessionActive(state)) return false;
+    return true;
+  },
+
+  pendingApprovalBlockersHtml: function (state) {
+    var esc = FL.esc;
+    var v = state.validation || {};
+    var blockers = FL.kra2AWorkspaceUi.mergeValidationMessages(v);
+    if (!blockers.length) return "";
+    var indicatorId = FL.kra2AWorkspaceUi.resolveIndicatorId(state.bundle, state.payload, state.doc);
+    var rows = blockers.map(function (b) {
+      var slotMatch = (b || "").match(/Verify supporting evidence:\s*(.+)\./i);
+      if (slotMatch && slotMatch[1]) {
+        var label = slotMatch[1].trim();
+        var slotId = null;
+        var labels = (state.payload && state.payload.slotLabels) || {};
+        Object.keys(labels).forEach(function (sid) {
+          if (labels[sid] === label) slotId = sid;
+        });
+        if (slotId) {
+          return (
+            '<li class="kra2-checklist-blocker">' +
+            esc(b) +
+            ' <button type="button" class="btn btn-ghost btn-small kra2-goto-slot" data-slot="' +
+            esc(slotId) +
+            '">Go to evidence</button></li>'
+          );
+        }
+      }
+      return '<li class="kra2-checklist-blocker">' + esc(b) + "</li>";
+    });
+    return (
+      '<div class="kra2-pending-blockers">' +
+      "<h3 class=\"kra2-subheading\">Before you can approve</h3>" +
+      '<p class="muted">You can still save your assessed points and feedback while these items are outstanding.</p>' +
+      '<ul class="cc-blocker-list">' +
+      rows.join("") +
+      "</ul></div>"
+    );
+  },
+
+  authoritativeEligiblePoints: function (scoring) {
+    scoring = scoring || {};
+    if (scoring.reviewerEligiblePoints != null) return scoring.reviewerEligiblePoints;
+    if (scoring.maxAssessedPoints != null) return scoring.maxAssessedPoints;
+    if (scoring.eligiblePoints != null) return scoring.eligiblePoints;
+    if (scoring.systemCalculatedPoints != null) return scoring.systemCalculatedPoints;
+    return scoring.estimatedPoints;
+  },
+
+  unifiedReviewerAssessmentHtml: function (state) {
+    var esc = FL.esc;
+    var scoring = state.scoring || {};
+    var bundle = state.bundle || {};
+    var ra = bundle.reviewerAssessment || {};
+    var status = FL.kra2AWorkspaceUi.normalizeReviewStatus(state);
+    var statusLabel =
+      status === "approved" ? "Approved" : status === "rejected" ? "Rejected" : "Pending review";
+    var showApproveActions = FL.kra2AWorkspaceUi.isPendingSubmittedReview(state);
+    var systemPts = FL.kra2AWorkspaceUi.authoritativeEligiblePoints(scoring);
+    var formulaPts =
+      scoring.formulaCalculatedPoints != null
+        ? scoring.formulaCalculatedPoints
+        : scoring.systemCalculatedPoints != null &&
+            systemPts != null &&
+            Math.abs(parseFloat(scoring.systemCalculatedPoints, 10) - parseFloat(systemPts, 10)) > 0.001
+          ? scoring.systemCalculatedPoints
+          : null;
+    var approvedPts = scoring.approvedPoints != null ? scoring.approvedPoints : ra.approvedPoints;
+    var assessed = scoring.reviewerAssessedPoints;
+    if (assessed == null && ra.draftAssessedPoints != null) assessed = ra.draftAssessedPoints;
+    if (assessed == null && status === "approved" && approvedPts != null) assessed = approvedPts;
+    if (assessed == null && ra.assessedPoints != null) assessed = ra.assessedPoints;
+    var finalPts = assessed != null ? assessed : systemPts;
+    var numericBlocked = !!scoring.numericScoringBlocked;
+    var pointsEditable = !numericBlocked && systemPts != null;
+    var assessableMax =
+      scoring.maxAssessedPoints != null
+        ? scoring.maxAssessedPoints
+        : scoring.indicatorMaxPoints != null
+          ? scoring.indicatorMaxPoints
+          : systemPts;
+    var adjustmentReason = (
+      scoring.scoreAdjustmentReason ||
+      ra.draftScoreAdjustmentReason ||
+      ra.scoreAdjustmentReason ||
+      ""
+    ).toString();
+    var feedbackText =
+      scoring.draftReviewerRemarks != null && String(scoring.draftReviewerRemarks).trim()
+        ? scoring.draftReviewerRemarks
+        : state.remarks ||
+          scoring.finalizedReviewerRemarks ||
+          bundle.reviewerRemarks ||
+          ra.draftRemarks ||
+          ra.remarks ||
+          "";
+
+    var assessedInput =
+      '<label class="kra2-scoring-label kra2-scoring-label--primary" for="kra2-assessed-points">' +
+      "Reviewer-assessed points" +
+      (assessableMax != null && pointsEditable
+        ? ' <span class="muted">(max ' + esc(String(assessableMax)) + ")</span>"
+        : "") +
+      '<input type="number" id="kra2-assessed-points" class="kra2-scoring-input"' +
+      (pointsEditable ? "" : ' readonly="readonly"') +
+      ' min="0"' +
+      (assessableMax != null ? ' max="' + esc(String(assessableMax)) + '"' : "") +
+      ' step="0.01" value="' +
+      esc(finalPts != null && finalPts !== "" ? String(finalPts) : "") +
+      '"></label>';
+    if (numericBlocked) {
+      assessedInput +=
+        '<p class="muted kra2-scoring-fixed-note">' +
+        esc(
+          scoring.numericScoringBlockerMessage ||
+            "Numeric score approval is blocked until published designation scoring is verified."
+        ) +
+        "</p>";
+    }
+
+    var finalizedNote = "";
+    if (status === "approved") {
+      finalizedNote =
+        '<p class="muted kra2-assessment-finalized-note" id="kra2-assessment-finalized-note">' +
+        "Saved assessment changes do not change approved points until a correction is finalized through reassessment." +
+        "</p>";
+    } else if (status === "rejected") {
+      finalizedNote =
+        '<p class="muted kra2-assessment-finalized-note">' +
+        "Saving updates your assessment draft only. Rejection status and faculty resubmission rules are unchanged." +
+        "</p>";
+    }
+
+    var decisionActions =
+      '<div class="cc-decision-actions kra2-decision-actions">' +
+      '<button type="button" class="btn btn-ghost" id="kra2-save-assessment">Save Assessment</button>' +
+      '<span class="cc-save-indicator" id="kra2-save-assessment-indicator"></span>';
+    if (showApproveActions) {
+      decisionActions +=
+        '<button type="button" class="btn btn-primary" id="kra2-approve">Approve</button>' +
+        '<p class="muted kra2-approve-hint" id="kra2-approve-hint"></p>' +
+        '<button type="button" class="btn btn-ghost" id="kra2-reject">Reject</button>';
+    }
+    decisionActions += "</div>";
+
+    return (
+      '<div class="kra2-unified-assessment">' +
+      '<div class="kra2-scoring-row"><span>Status</span><strong>' + esc(statusLabel) + "</strong></div>" +
+      (approvedPts != null
+        ? '<div class="kra2-scoring-row kra2-scoring-row--approved"><span>Current approved points</span><strong>' +
+          esc(String(approvedPts)) +
+          "</strong></div>"
+        : "") +
+      (numericBlocked && scoring.numericScoringBlockerMessage
+        ? '<div class="kra2-scoring-blocker-banner" role="status">' +
+          esc(scoring.numericScoringBlockerMessage) +
+          "</div>"
+        : "") +
+      '<div class="kra2-scoring-row kra2-scoring-row--highlight">' +
+      "<span>System-calculated eligible points</span>" +
+      "<strong class=\"kra2-system-points\" id=\"kra2-system-points-display\">" +
+      esc(systemPts != null ? String(systemPts) : "—") +
+      "</strong></div>" +
+      (formulaPts != null
+        ? '<p class="muted">Formula output before official cap: ' + esc(String(formulaPts)) + " pts</p>"
+        : "") +
+      '<strong class="kra2-final-points sr-only" id="kra2-final-points-display">' +
+      esc(finalPts != null ? String(finalPts) : "—") +
+      "</strong>" +
+      assessedInput +
+      '<label class="kra2-scoring-label" for="kra2-score-adjustment-reason">Reason for score adjustment' +
+      '<span class="muted"> (required when assessed points differ from eligible amount)</span>' +
+      '<textarea id="kra2-score-adjustment-reason" rows="2" class="kra2-scoring-textarea">' +
+      esc(adjustmentReason) +
+      "</textarea></label>" +
+      '<label class="kra2-remarks-label" for="kra2-remarks">Reviewer feedback' +
+      '<textarea id="kra2-remarks" rows="4" class="kra2-remarks-input" placeholder="Explain acceptance, required corrections, or general assessment remarks.">' +
+      esc(feedbackText) +
+      "</textarea></label>" +
+      finalizedNote +
+      decisionActions +
+      "</div>"
+    );
+  },
+
+  unifiedPendingReviewerAssessmentHtml: function (state) {
+    return FL.kra2AWorkspaceUi.unifiedReviewerAssessmentHtml(state);
+  },
+
+  reassessmentRequestSupplementHtml: function (state) {
+    if (!FL.kra2AWorkspaceUi.isAccomplishmentApproved(state)) return "";
+    if (FL.kra2AWorkspaceUi.isReassessmentSessionActive(state)) return "";
+    var esc = FL.esc;
+    var reopen = FL.kra2AWorkspaceUi.canOpenReassessment(state);
+    if (reopen.allowed) {
+      var actionLabel = reopen.actionLabel || "Request Reassessment";
+      return (
+        '<div class="kra2-reassessment-open kra2-scoring-panel">' +
+        "<h3 class=\"kra2-subheading\">Finalize a score correction</h3>" +
+        '<p class="muted">Use reassessment when a saved assessment revision should replace approved points on record.</p>' +
+        '<label class="kra2-remarks-label" for="kra2-reassessment-reason">Reason for reassessment (required, at least 20 characters)' +
+        '<textarea id="kra2-reassessment-reason" rows="3" class="kra2-remarks-input" placeholder="Explain why the approved score or feedback must be corrected."></textarea></label>' +
+        '<button type="button" class="btn btn-primary" id="kra2-start-reassessment">' +
+        esc(actionLabel) +
+        "</button>" +
+        (reopen.canFinalize
+          ? ""
+          : '<p class="muted">An administrator must finalize reassessment unless your role can finalize directly.</p>') +
+        "</div>"
+      );
+    }
+    if (reopen.message) {
+      return '<p class="muted kra2-reassessment-hint">' + esc(reopen.message) + "</p>";
+    }
+    return "";
+  },
+
+  canOpenReassessment: function (state) {
+    if (!FL.kra2AWorkspaceUi.isAccomplishmentApproved(state)) {
+      return { allowed: false, message: "Reassessment applies only after approval." };
+    }
+    if (FL.kra2AWorkspaceUi.isReassessmentSessionActive(state)) {
+      return { allowed: false, message: "A reassessment session is already open." };
+    }
+    var caps = FL.kra2AWorkspaceUi.reassessmentCapabilitiesFor(state);
+    if (!caps.canRequestReassessment) {
+      return {
+        allowed: false,
+        message: "You are not assigned to review this accomplishment."
+      };
+    }
+    return {
+      allowed: true,
+      message: "",
+      actionLabel: caps.actionLabel || "Request Reassessment",
+      canFinalize: !!caps.canFinalizeReassessment
+    };
+  },
+
+  syncReviewStatusFields: function (state) {
+    if (!state) return;
+    var rs = FL.kra2AWorkspaceUi.normalizeReviewStatus(state);
+    if (state.bundle && typeof state.bundle === "object") state.bundle.reviewStatus = rs;
+    if (state.validation && typeof state.validation === "object") state.validation.reviewStatus = rs;
+  },
+
+  kraReviewPageTitle: function (state) {
+    var crit =
+      (state && state.doc && state.doc.criterionId) ||
+      (state && state.bundle && state.bundle.criterionId) ||
+      "";
+    if (String(crit).indexOf("kra3-") === 0) return "KRA III accomplishment review";
+    return "KRA II accomplishment review";
   },
 
   resolveIndicatorId: function (bundle, payload, doc) {
@@ -413,9 +729,19 @@ FL.kra2AWorkspaceUi = {
   },
 
   kra2SummaryLineHtml: function (summary) {
-    var validated = summary && summary.validatedPoints != null ? summary.validatedPoints : 0;
-    var max = summary && summary.maxPoints != null ? summary.maxPoints : 100;
-    return "Verified " + String(validated) + " / " + String(max) + " pts (criterion cap)";
+    summary = summary || {};
+    var validated = summary.validatedPoints != null ? summary.validatedPoints : 0;
+    var estimated = summary.estimatedPoints != null ? summary.estimatedPoints : "—";
+    var max = summary.maxPoints != null ? summary.maxPoints : 100;
+    return (
+      "Estimated " +
+      String(estimated) +
+      " · Verified " +
+      String(validated) +
+      " / " +
+      String(max) +
+      " pts (criterion cap)"
+    );
   },
 
   accomplishmentListHtml: function (params) {
@@ -432,9 +758,15 @@ FL.kra2AWorkspaceUi = {
             var est = row.estimatedPoints != null ? row.estimatedPoints : "—";
             var assessed =
               row.reviewerAssessedPoints != null ? row.reviewerAssessedPoints : "—";
-            var title = row.outputTitle || row.title || "Accomplishment";
+            var title = row.activityTitle || row.outputTitle || row.title || "Accomplishment";
             var submitted = FL.kra2AWorkspaceUi.formatSubmittedDate(row);
             var href = params.reviewHref(row);
+            var verified =
+              row.validatedPoints != null
+                ? row.validatedPoints
+                : row.reviewStatus === "approved" && row.reviewerAssessedPoints != null
+                  ? row.reviewerAssessedPoints
+                  : "—";
             return (
               '<article class="evidence-accomplishment-card">' +
               '<div class="evidence-accomplishment-head">' +
@@ -450,6 +782,7 @@ FL.kra2AWorkspaceUi = {
               FL.documents.kvRow("Faculty", esc(facultyName)) +
               FL.documents.kvRow("Submitted", esc(submitted)) +
               FL.documents.kvRow("Estimated points", esc(String(est))) +
+              FL.documents.kvRow("Verified points", esc(String(verified))) +
               FL.documents.kvRow("Reviewer-assessed", esc(String(assessed))) +
               "</dl>" +
               '<p class="evidence-accomplishment-actions">' +
@@ -516,10 +849,12 @@ FL.kra2AWorkspaceUi = {
   },
 
   compactReviewPageHtml: function (state) {
+    FL.kra2AWorkspaceUi.syncReviewStatusFields(state);
     var esc = FL.esc;
     var bundle = state.bundle || {};
     var doc = state.doc || {};
     var scoring = state.scoring || {};
+    var statusMeta = FL.kra2AWorkspaceUi.facultyStatusMeta(bundle);
     var indicatorId = FL.kra2AWorkspaceUi.resolveIndicatorId(bundle, state.payload, doc);
     var indLabel = FL.kra2AWorkspaceUi.indicatorLabel(indicatorId, bundle);
     var venueLabel = FL.kra2AWorkspaceUi.venueFieldLabel(indicatorId);
@@ -586,11 +921,19 @@ FL.kra2AWorkspaceUi = {
       '">' +
       esc(state.backLabel) +
       "</a>" +
-      "<h1>KRA II accomplishment review</h1>" +
+      "<h1>" +
+      esc(FL.kra2AWorkspaceUi.kraReviewPageTitle(state)) +
+      "</h1>" +
       '<p class="sub">' +
       esc(state.facultyName || "Faculty") +
       " · " +
       esc(indLabel) +
+      '</p><p class="kra2-review-status kra2-review-status--' +
+      esc(statusMeta.key) +
+      '"><strong>Status:</strong> ' +
+      esc(statusMeta.label) +
+      " — " +
+      esc(statusMeta.hint) +
       "</p></header>" +
       details +
       FL.kra2AWorkspaceUi.reviewerMetadataPanelHtml(state) +
@@ -934,6 +1277,9 @@ FL.kra2AWorkspaceUi = {
   },
 
   computeApprovalBlockers: function (state, remarksText) {
+    if (FL.kra2AWorkspaceUi.isReviewDecisionLocked(state)) {
+      return [];
+    }
     var v = state.validation || {};
     var items = [];
     var seen = {};
@@ -967,12 +1313,21 @@ FL.kra2AWorkspaceUi = {
     if (!state.canDecide) {
       add("You do not have permission to approve this accomplishment.");
     }
+    var bundle = state.bundle || {};
+    if (!bundle.submittedForReviewAt) {
+      add("Faculty has not submitted this accomplishment for review.");
+    }
     var scoring = state.scoring || {};
-    if (scoring.allowsPointAdjustment && typeof document !== "undefined") {
+    if (scoring.numericScoringBlocked) {
+      add(
+        scoring.numericScoringBlockerMessage ||
+          "Numeric score approval is blocked until published designation scoring is verified."
+      );
+    }
+    if (typeof document !== "undefined") {
       var assessedEl = document.getElementById("kra2-assessed-points");
       var reasonEl = document.getElementById("kra2-score-adjustment-reason");
-      var systemPts =
-        scoring.systemCalculatedPoints != null ? scoring.systemCalculatedPoints : scoring.estimatedPoints;
+      var systemPts = FL.kra2AWorkspaceUi.authoritativeEligiblePoints(scoring);
       if (assessedEl && systemPts != null && assessedEl.value !== "") {
         var assessedVal = parseFloat(assessedEl.value, 10);
         if (
@@ -1041,7 +1396,13 @@ FL.kra2AWorkspaceUi = {
 
   reviewerMetadataPanelHtml: function (state) {
     var esc = FL.esc;
-    if (!state.canDecide || !FL.kra2AWorkspaceUi.metadataPanelNeeded(state)) return "";
+    if (
+      !state.canDecide ||
+      FL.kra2AWorkspaceUi.isReviewDecisionLocked(state) ||
+      !FL.kra2AWorkspaceUi.metadataPanelNeeded(state)
+    ) {
+      return "";
+    }
     var bundle = state.bundle || {};
     var payload = state.payload || {};
     var indicatorId = bundle.indicatorId || (state.doc && state.doc.indicatorId) || "";
@@ -1086,7 +1447,7 @@ FL.kra2AWorkspaceUi = {
 
   evidenceCardsHtml: function (state) {
     var esc = FL.esc;
-    var canDecide = !!state.canDecide;
+    var canDecide = !!state.canDecide && !FL.kra2AWorkspaceUi.isReviewDecisionLocked(state);
     var items = state.evidenceItems || [];
     var cards = items
       .map(function (item, idx) {
@@ -1148,7 +1509,220 @@ FL.kra2AWorkspaceUi = {
     return '<div class="kra2-evidence-checklist"><h3 class="kra2-subheading">Evidence verification</h3>' + cards + "</div>";
   },
 
+  approvedDecisionSectionHtml: function (state) {
+    var esc = FL.esc;
+    var bundle = state.bundle || {};
+    var scoring = state.scoring || {};
+    var payload = state.payload || {};
+    var ra = bundle.reviewerAssessment || {};
+    var approvedPts =
+      ra.approvedPoints != null
+        ? ra.approvedPoints
+        : ra.assessedPoints != null
+          ? ra.assessedPoints
+          : scoring.reviewerAssessedPoints;
+    var version =
+      payload.scoringVersion != null
+        ? payload.scoringVersion
+        : scoring.scoringConfigurationVersion != null
+          ? scoring.scoringConfigurationVersion
+          : bundle.scoringVersion;
+    var remarks = (bundle.reviewerRemarks || ra.remarks || state.remarks || "").trim();
+    var assessedAt = ra.assessedAt || "";
+    var reviewerName = ra.reviewerDisplayName || "";
+    var systemPts =
+      scoring.systemCalculatedPoints != null
+        ? scoring.systemCalculatedPoints
+        : scoring.estimatedPoints;
+
+    var mismatchNote = "";
+    if (
+      approvedPts != null &&
+      systemPts != null &&
+      Math.abs(parseFloat(approvedPts, 10) - parseFloat(systemPts, 10)) > 0.001
+    ) {
+      mismatchNote =
+        '<p class="muted kra2-score-mismatch-note">Approved points differ from the current system-calculated eligible amount. ' +
+        "This may reflect an intentional reviewer adjustment or a legacy scoring calculation. " +
+        "Use authorized reassessment to correct the approved record without losing audit history.</p>";
+    }
+    var reopen = FL.kra2AWorkspaceUi.canOpenReassessment(state);
+    var reassessControls = "";
+    if (FL.kra2AWorkspaceUi.isReassessmentSessionActive(state)) {
+      reassessControls = FL.kra2AWorkspaceUi.reassessmentActivePanelHtml(state);
+    } else if (reopen.allowed) {
+      var actionLabel = reopen.actionLabel || "Request Reassessment";
+      reassessControls =
+        '<div class="kra2-reassessment-open">' +
+        '<p class="muted">The approved score stays on record until a reassessment is finalized.</p>' +
+        '<label class="kra2-remarks-label" for="kra2-reassessment-reason">Reason for reassessment (required, at least 20 characters)' +
+        '<textarea id="kra2-reassessment-reason" rows="3" class="kra2-remarks-input" placeholder="Explain why the approved score or feedback must be corrected."></textarea></label>' +
+        '<button type="button" class="btn btn-primary" id="kra2-start-reassessment">' +
+        esc(actionLabel) +
+        "</button>" +
+        (reopen.canFinalize
+          ? ""
+          : '<p class="muted">After you enter a corrected score, an administrator must finalize the reassessment.</p>') +
+        "</div>";
+    } else if (!reopen.allowed && FL.kra2AWorkspaceUi.isAccomplishmentApproved(state)) {
+      reassessControls =
+        '<p class="muted kra2-reassessment-hint">' + esc(reopen.message || "") + "</p>";
+    }
+
+    return (
+      '<section class="card cc-compact-section cc-decision-section kra2-complete-review kra2-complete-review--approved">' +
+      "<h2>Review decision</h2>" +
+      '<div class="kra2-approved-banner" role="status">' +
+      '<p class="kra2-approved-banner__title">Approved</p>' +
+      '<p class="muted">This accomplishment is finalized. Use reassessment only when an authorized correction is required.</p>' +
+      "</div>" +
+      '<dl class="kv-grid kv-grid--compact kra2-approved-summary">' +
+      FL.documents.kvRow("Status", "Approved") +
+      FL.documents.kvRow(
+        "Approved points",
+        approvedPts != null ? esc(String(approvedPts)) : "—"
+      ) +
+      FL.documents.kvRow(
+        "System-calculated eligible points",
+        systemPts != null ? esc(String(systemPts)) : "—"
+      ) +
+      FL.documents.kvRow(
+        "Published scoring version",
+        version != null && version !== "" ? esc(String(version)) : "—"
+      ) +
+      FL.documents.kvRow("Reviewer feedback", remarks ? esc(remarks) : "—") +
+      (ra.scoreAdjustmentReason
+        ? FL.documents.kvRow("Score adjustment reason", esc(String(ra.scoreAdjustmentReason)))
+        : "") +
+      (reviewerName ? FL.documents.kvRow("Reviewed by", esc(reviewerName)) : "") +
+      (assessedAt ? FL.documents.kvRow("Approved on", esc(assessedAt)) : "") +
+      "</dl>" +
+      mismatchNote +
+      reassessControls +
+      "</section>"
+    );
+  },
+
+  reassessmentActivePanelHtml: function (state) {
+    var esc = FL.esc;
+    var scoring = state.scoring || {};
+    var session = FL.kra2AWorkspaceUi.reassessmentSessionFor(state) || {};
+    var prior = session.priorApproval || {};
+    var systemPts =
+      scoring.systemCalculatedPoints != null
+        ? scoring.systemCalculatedPoints
+        : prior.systemCalculatedPoints != null
+          ? prior.systemCalculatedPoints
+          : scoring.estimatedPoints;
+    var draftPts =
+      session.draftAssessedPoints != null ? session.draftAssessedPoints : prior.approvedPoints;
+    var draftRemarks = session.draftRemarks != null ? session.draftRemarks : state.remarks || "";
+    var draftReason = session.draftScoreAdjustmentReason || "";
+    var allowsAdjust = !!scoring.allowsPointAdjustment;
+    var assessableMax = scoring.maxAssessedPoints != null ? scoring.maxAssessedPoints : systemPts;
+    var caps = FL.kra2AWorkspaceUi.reassessmentCapabilitiesFor(state);
+    var canFinalize = !!caps.canFinalizeReassessment;
+    var summaryHtml =
+      '<div class="kra2-reassessment-summary" id="kra2-reassessment-summary">' +
+      "<h4 class=\"kra2-subheading\">Confirmation summary</h4>" +
+      "<ul class=\"cc-blocker-list\">" +
+      "<li>Original approved points: <strong>" +
+      esc(prior.approvedPoints != null ? String(prior.approvedPoints) : "—") +
+      "</strong></li>" +
+      "<li>Corrected points: <strong id=\"kra2-reassess-summary-points\">" +
+      esc(draftPts != null ? String(draftPts) : "—") +
+      "</strong></li>" +
+      "<li>System-calculated eligible: <strong>" +
+      esc(systemPts != null ? String(systemPts) : "—") +
+      "</strong></li>" +
+      "</ul></div>";
+
+    return (
+      '<div class="kra2-reassessment-panel">' +
+      '<h3 class="kra2-subheading">Authorized reassessment</h3>' +
+      '<p class="muted">Original approval is preserved in history until you finalize this correction.</p>' +
+      '<dl class="kv-grid kv-grid--compact">' +
+      FL.documents.kvRow("Reason for reopening", esc(session.openReason || "—")) +
+      FL.documents.kvRow(
+        "Original approved points",
+        prior.approvedPoints != null ? esc(String(prior.approvedPoints)) : "—"
+      ) +
+      FL.documents.kvRow(
+        "Original approved on",
+        prior.assessedAt ? esc(String(prior.assessedAt)) : "—"
+      ) +
+      "</dl>" +
+      '<div class="kra2-scoring-row kra2-scoring-row--highlight"><span>System-calculated eligible points</span><strong>' +
+      esc(systemPts != null ? String(systemPts) : "—") +
+      "</strong></div>" +
+      (allowsAdjust
+        ? '<label class="kra2-scoring-label" for="kra2-reassess-points">Corrected assessed points' +
+          '<input type="number" id="kra2-reassess-points" class="kra2-scoring-input" min="0" max="' +
+          esc(assessableMax != null ? String(assessableMax) : "") +
+          '" step="0.01" value="' +
+          esc(draftPts != null ? String(draftPts) : "") +
+          '"></label>' +
+          '<label class="kra2-scoring-label" for="kra2-reassess-adjustment-reason">Reason for score adjustment' +
+          '<textarea id="kra2-reassess-adjustment-reason" rows="2" class="kra2-scoring-textarea">' +
+          esc(draftReason) +
+          "</textarea></label>"
+        : '<input type="hidden" id="kra2-reassess-points" value="' +
+          esc(systemPts != null ? String(systemPts) : "") +
+          '">') +
+      '<label class="kra2-remarks-label" for="kra2-reassess-remarks">Updated reviewer feedback' +
+      '<textarea id="kra2-reassess-remarks" rows="4" class="kra2-remarks-input">' +
+      esc(draftRemarks) +
+      "</textarea></label>" +
+      summaryHtml +
+      (canFinalize
+        ? '<label class="kra2-confirm-label"><input type="checkbox" id="kra2-reassess-confirm"> I confirm this reassessment should replace the approved score.</label>'
+        : '<p class="muted">Save your corrected score and feedback. An administrator must finalize this reassessment.</p>') +
+      '<div class="cc-decision-actions kra2-decision-actions">' +
+      '<button type="button" class="btn btn-ghost" id="kra2-reassess-save">Save reassessment draft</button>' +
+      (canFinalize
+        ? '<button type="button" class="btn btn-primary" id="kra2-reassess-finalize">Finalize reassessment</button>'
+        : "") +
+      '<button type="button" class="btn btn-ghost" id="kra2-reassess-cancel">Cancel reassessment</button>' +
+      "</div></div>"
+    );
+  },
+
+  rejectedDecisionSectionHtml: function (state) {
+    var esc = FL.esc;
+    var bundle = state.bundle || {};
+    var ra = bundle.reviewerAssessment || {};
+    var scoring = state.scoring || {};
+    var remarks = (bundle.reviewerRemarks || ra.remarks || state.remarks || "").trim();
+    var systemPts =
+      scoring.systemCalculatedPoints != null
+        ? scoring.systemCalculatedPoints
+        : ra.systemCalculatedPoints != null
+          ? ra.systemCalculatedPoints
+          : scoring.estimatedPoints;
+
+    return (
+      '<section class="card cc-compact-section cc-decision-section kra2-complete-review kra2-complete-review--rejected">' +
+      "<h2>Review decision</h2>" +
+      '<div class="kra2-rejected-banner" role="status">' +
+      '<p class="kra2-rejected-banner__title">Needs changes</p>' +
+      '<p class="muted">The faculty member may revise and resubmit. Final approval actions are unavailable until then.</p>' +
+      "</div>" +
+      '<dl class="kv-grid kv-grid--compact kra2-rejected-summary">' +
+      FL.documents.kvRow("Status", "Rejected") +
+      FL.documents.kvRow(
+        "System-calculated eligible points",
+        systemPts != null ? esc(String(systemPts)) : "—"
+      ) +
+      FL.documents.kvRow("Reviewer feedback", remarks ? esc(remarks) : "—") +
+      (ra.scoreAdjustmentReason
+        ? FL.documents.kvRow("Score adjustment reason", esc(String(ra.scoreAdjustmentReason)))
+        : "") +
+      "</dl></section>"
+    );
+  },
+
   decisionSectionHtml: function (state) {
+    FL.kra2AWorkspaceUi.syncReviewStatusFields(state);
     var esc = FL.esc;
     var validation = state.validation || {};
     var scoring = state.scoring || {};
@@ -1164,16 +1738,27 @@ FL.kra2AWorkspaceUi = {
     var bundle = state.bundle || {};
     var finalPts = assessed != null ? assessed : systemPts;
     var canDecide = !!state.canDecide;
+    var canEditAssessment = FL.kra2AWorkspaceUi.canEditReviewerAssessment(state);
+    var showApproveActions = FL.kra2AWorkspaceUi.isPendingSubmittedReview(state);
     var checklistHtml = FL.kra2AWorkspaceUi.approvalChecklistHtml(state, "");
 
-    var assessedField = "";
     var methodHelp = "";
     var indicatorMax = scoring.indicatorMaxPoints != null ? scoring.indicatorMaxPoints : scoring.eligiblePoints;
-    var assessableMax = scoring.maxAssessedPoints != null ? scoring.maxAssessedPoints : systemPts;
     var officialBase = scoring.officialBasePoints;
     var verifiedPct = scoring.verifiedContributionPercent;
     var groupMax = scoring.groupMaxPoints;
     var criterionCap = scoring.criterionMaxPoints;
+    var critId = (scoring.criterionId || (state.doc && state.doc.criterionId) || "").trim();
+    var criterionLabel =
+      critId === "kra3-a" || critId === "kra2-a"
+        ? "Criterion A maximum (subtotal cap)"
+        : critId === "kra3-b"
+          ? "Criterion B maximum (subtotal cap)"
+          : critId === "kra3-c"
+            ? "Criterion C maximum (subtotal cap)"
+            : critId === "kra3-d"
+              ? "Criterion D maximum (subtotal cap)"
+              : "Criterion maximum (subtotal cap)";
 
     var governingRule = (scoring.adjustmentGoverningRule || "").trim();
     if (governingRule) {
@@ -1189,48 +1774,20 @@ FL.kra2AWorkspaceUi = {
         "Official fixed points for this indicator. Confirm eligibility or reject; arbitrary partial scores are not permitted.";
     }
 
-    if (canDecide) {
-      if (allowsContribution) {
-        assessedField =
-          '<label class="kra2-scoring-label" for="kra2-contribution-percent">Verified contribution (%)' +
-          '<input type="number" id="kra2-contribution-percent" class="kra2-scoring-input" min="1" max="100" step="0.01" value="' +
-          esc(String(bundle.declaredContributionPercent != null ? bundle.declaredContributionPercent : "")) +
-          '"></label>' +
-          '<button type="button" class="btn btn-ghost btn-small" id="kra2-recalc-contribution">Recalculate points</button>' +
-          '<span class="cc-save-indicator" id="kra2-save-contribution-indicator"></span>';
-      }
-      if (allowsAdjust) {
-        assessedField +=
-          '<label class="kra2-scoring-label" for="kra2-assessed-points">Your assessed points' +
-          (indicatorMax != null
-            ? ' <span class="muted">(0–' + esc(String(assessableMax)) + ", official max " + esc(String(indicatorMax)) + ")</span>"
-            : "") +
-          '<input type="number" id="kra2-assessed-points" class="kra2-scoring-input" min="0" max="' +
-          esc(assessableMax != null ? String(assessableMax) : "") +
-          '" step="0.01" value="' +
-          esc(finalPts != null ? String(finalPts) : "") +
-          '"></label>' +
-          '<label class="kra2-scoring-label kra2-adjustment-reason" for="kra2-score-adjustment-reason">' +
-          "Reason for score adjustment (required when assessed differs from system-calculated)" +
-          '<textarea id="kra2-score-adjustment-reason" rows="2" class="kra2-scoring-textarea">' +
-          esc((scoring.scoreAdjustmentReason || "").toString()) +
-          "</textarea></label>";
-      } else {
-        assessedField +=
-          '<p class="muted kra2-scoring-fixed-note">Fixed scoring — reviewer-assessed points match the official eligible amount when you approve.</p>' +
-          '<input type="hidden" id="kra2-assessed-points" value="' +
-          esc(systemPts != null ? String(systemPts) : "") +
-          '">';
-      }
+    var contributionField = "";
+    if (canDecide && allowsContribution) {
+      contributionField =
+        '<label class="kra2-scoring-label" for="kra2-contribution-percent">Verified contribution (%)' +
+        '<input type="number" id="kra2-contribution-percent" class="kra2-scoring-input" min="1" max="100" step="0.01" value="' +
+        esc(String(bundle.declaredContributionPercent != null ? bundle.declaredContributionPercent : "")) +
+        '"></label>' +
+        '<button type="button" class="btn btn-ghost btn-small" id="kra2-recalc-contribution">Recalculate points</button>' +
+        '<span class="cc-save-indicator" id="kra2-save-contribution-indicator"></span>';
     }
-    var showAssessedSummaryRow = !canDecide || allowsAdjust;
 
-    return (
-      '<section class="card cc-compact-section cc-decision-section kra2-complete-review">' +
-      "<h2>Complete review</h2>" +
-      checklistHtml +
+    var scoringContextHtml =
       '<div class="kra2-scoring-panel">' +
-      "<h3 class=\"kra2-subheading\">Scoring</h3>" +
+      "<h3 class=\"kra2-subheading\">Scoring context</h3>" +
       '<p class="muted kra2-scoring-method">Scoring method: <strong>' +
       esc(methodLabel) +
       "</strong></p>" +
@@ -1252,8 +1809,10 @@ FL.kra2AWorkspaceUi = {
           esc(String(groupMax)) +
           " pts max</strong></div>"
         : "") +
-      (criterionCap != null && (scoring.criterionId || "") === "kra2-a"
-        ? '<div class="kra2-scoring-row"><span>Criterion A maximum (subtotal cap)</span><strong>' +
+      (criterionCap != null && /^kra[23]-/.test(critId)
+        ? '<div class="kra2-scoring-row"><span>' +
+          esc(criterionLabel) +
+          "</span><strong>" +
           esc(String(criterionCap)) +
           " pts</strong></div>"
         : "") +
@@ -1262,40 +1821,53 @@ FL.kra2AWorkspaceUi = {
       "<strong>" +
       esc(indicatorMax != null ? String(indicatorMax) + " pts" : "—") +
       "</strong></div>" +
-      '<div class="kra2-scoring-row kra2-scoring-row--highlight">' +
-      "<span>Official eligible points</span>" +
-      "<strong class=\"kra2-system-points\" id=\"kra2-system-points-display\">" +
-      esc(systemPts != null ? String(systemPts) : "—") +
-      "</strong></div>" +
-      (showAssessedSummaryRow
-        ? '<div class="kra2-scoring-row">' +
+      (canEditAssessment
+        ? '<strong class="kra2-final-points sr-only" id="kra2-final-points-display">' +
+          esc(finalPts != null ? String(finalPts) : "—") +
+          "</strong>"
+        : '<div class="kra2-scoring-row kra2-scoring-row--highlight">' +
+          "<span>System-calculated eligible points</span>" +
+          "<strong class=\"kra2-system-points\" id=\"kra2-system-points-display\">" +
+          esc(systemPts != null ? String(systemPts) : "—") +
+          "</strong></div>" +
+          '<div class="kra2-scoring-row">' +
           "<span>Reviewer-assessed points</span>" +
           "<strong class=\"kra2-final-points\" id=\"kra2-final-points-display\">" +
           esc(finalPts != null ? String(finalPts) : "—") +
-          "</strong></div>"
-        : '<strong class="kra2-final-points sr-only" id="kra2-final-points-display">' +
-          esc(finalPts != null ? String(finalPts) : "—") +
-          "</strong>") +
+          "</strong></div>") +
       (scoring.scoringConfigurationVersion
         ? '<p class="muted kra2-scoring-version">Published scoring version: ' +
           esc(String(scoring.scoringConfigurationVersion)) +
           "</p>"
         : "") +
-      assessedField +
-      "</div>" +
-      (canDecide
-        ? '<label class="kra2-remarks-label" for="kra2-remarks">Reviewer remarks (workflow notes; not a score)' +
-          '<textarea id="kra2-remarks" rows="4" class="kra2-remarks-input">' +
-          esc(state.remarks || "") +
-          "</textarea></label>" +
-          '<div class="cc-decision-actions kra2-decision-actions">' +
-          '<button type="button" class="btn btn-primary" id="kra2-approve"' +
-          (!canDecide ? " disabled" : "") +
-          ">Approve</button>" +
-          '<p class="muted kra2-approve-hint" id="kra2-approve-hint"></p>' +
-          '<button type="button" class="btn btn-ghost" id="kra2-reject">Reject</button>' +
-          "</div>"
-        : "") +
+      contributionField +
+      "</div>";
+
+    var assessmentWorkflowHtml = "";
+    if (FL.kra2AWorkspaceUi.isReassessmentSessionActive(state)) {
+      assessmentWorkflowHtml =
+        '<div class="kra2-scoring-panel kra2-scoring-panel--assessment">' +
+        FL.kra2AWorkspaceUi.reassessmentActivePanelHtml(state) +
+        "</div>";
+    } else if (canEditAssessment) {
+      assessmentWorkflowHtml =
+        '<div class="kra2-scoring-panel kra2-scoring-panel--assessment">' +
+        "<h3 class=\"kra2-subheading\">Reviewer assessment</h3>" +
+        (showApproveActions ? FL.kra2AWorkspaceUi.pendingApprovalBlockersHtml(state) : "") +
+        FL.kra2AWorkspaceUi.unifiedReviewerAssessmentHtml(state) +
+        FL.kra2AWorkspaceUi.reassessmentRequestSupplementHtml(state) +
+        "</div>";
+    } else if (canDecide && bundle.submittedForReviewAt) {
+      assessmentWorkflowHtml =
+        '<p class="muted">You do not have permission to assess or decide on this accomplishment.</p>';
+    }
+
+    return (
+      '<section class="card cc-compact-section cc-decision-section kra2-complete-review">' +
+      "<h2>Complete review</h2>" +
+      checklistHtml +
+      scoringContextHtml +
+      assessmentWorkflowHtml +
       "</section>"
     );
   },

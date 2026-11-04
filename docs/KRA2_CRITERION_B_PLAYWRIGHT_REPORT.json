@@ -4,7 +4,7 @@
       "C:\\Program Files\\nodejs\\node.exe",
       "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\node_modules\\@playwright\\test\\cli.js",
       "test",
-      "kra2-b-reviewer.spec.js"
+      "kra3-reviewer.spec.js"
     ],
     "configFile": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\playwright.config.js",
     "rootDir": "C:/Users/gumat/OneDrive/Desktop/facultylinkk/web/e2e",
@@ -92,20 +92,20 @@
   },
   "suites": [
     {
-      "title": "kra2-b-reviewer.spec.js",
-      "file": "kra2-b-reviewer.spec.js",
+      "title": "kra3-reviewer.spec.js",
+      "file": "kra3-reviewer.spec.js",
       "column": 0,
       "line": 0,
       "specs": [],
       "suites": [
         {
-          "title": "KRA II Criterion B reviewer web",
-          "file": "kra2-b-reviewer.spec.js",
+          "title": "KRA III reviewer web",
+          "file": "kra3-reviewer.spec.js",
           "line": 29,
           "column": 6,
           "specs": [
             {
-              "title": "API: evidence bundle lists all required slots",
+              "title": "API: KRA III evidence bundle + criterion lists",
               "ok": true,
               "tags": [],
               "tests": [
@@ -114,9 +114,9 @@
                   "annotations": [
                     {
                       "type": "skip",
-                      "description": "Set QA_REVIEWER_EMAIL + QA_REVIEWER_PASSWORD in env or backend/.env",
+                      "description": "Set QA_REVIEWER_EMAIL + QA_REVIEWER_PASSWORD",
                       "location": {
-                        "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra2-b-reviewer.spec.js",
+                        "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra3-reviewer.spec.js",
                         "line": 38,
                         "column": 10
                       }
@@ -135,13 +135,13 @@
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-11-04T04:19:19.657Z",
+                      "startTime": "2026-11-04T06:04:20.681Z",
                       "annotations": [
                         {
                           "type": "skip",
-                          "description": "Set QA_REVIEWER_EMAIL + QA_REVIEWER_PASSWORD in env or backend/.env",
+                          "description": "Set QA_REVIEWER_EMAIL + QA_REVIEWER_PASSWORD",
                           "location": {
-                            "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra2-b-reviewer.spec.js",
+                            "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra3-reviewer.spec.js",
                             "line": 38,
                             "column": 10
                           }
@@ -153,13 +153,13 @@
                   "status": "skipped"
                 }
               ],
-              "id": "c1c7846b0e99f9c38a91-c4f5e92cceafcad17144",
-              "file": "kra2-b-reviewer.spec.js",
+              "id": "6e91584e54bc898ba44c-9de501b3b2b059912153",
+              "file": "kra3-reviewer.spec.js",
               "line": 34,
               "column": 3
             },
             {
-              "title": "API: preview each family primary/supporting PDF (no login HTML)",
+              "title": "API: inline PDF preview for QA accomplishment",
               "ok": true,
               "tags": [],
               "tests": [
@@ -170,8 +170,8 @@
                       "type": "skip",
                       "description": "Reviewer credentials not configured",
                       "location": {
-                        "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra2-b-reviewer.spec.js",
-                        "line": 55,
+                        "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra3-reviewer.spec.js",
+                        "line": 70,
                         "column": 10
                       }
                     }
@@ -189,14 +189,14 @@
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-11-04T04:19:19.721Z",
+                      "startTime": "2026-11-04T06:04:20.742Z",
                       "annotations": [
                         {
                           "type": "skip",
                           "description": "Reviewer credentials not configured",
                           "location": {
-                            "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra2-b-reviewer.spec.js",
-                            "line": 55,
+                            "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra3-reviewer.spec.js",
+                            "line": 70,
                             "column": 10
                           }
                         }
@@ -207,117 +207,9 @@
                   "status": "skipped"
                 }
               ],
-              "id": "c1c7846b0e99f9c38a91-ac316b4c1a3cea359ae9",
-              "file": "kra2-b-reviewer.spec.js",
-              "line": 51,
-              "column": 3
-            },
-            {
-              "title": "UI: login and open KRA II B accomplishment review",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 120000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "description": "Reviewer credentials not configured",
-                      "location": {
-                        "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra2-b-reviewer.spec.js",
-                        "line": 74,
-                        "column": 10
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
-                  "projectId": "",
-                  "projectName": "",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 151,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-11-04T04:19:19.736Z",
-                      "annotations": [
-                        {
-                          "type": "skip",
-                          "description": "Reviewer credentials not configured",
-                          "location": {
-                            "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra2-b-reviewer.spec.js",
-                            "line": 74,
-                            "column": 10
-                          }
-                        }
-                      ],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "skipped"
-                }
-              ],
-              "id": "c1c7846b0e99f9c38a91-bb1f8cc0d6084651508f",
-              "file": "kra2-b-reviewer.spec.js",
-              "line": 69,
-              "column": 3
-            },
-            {
-              "title": "API: submitted-only accomplishments include QA patent row",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 120000,
-                  "annotations": [
-                    {
-                      "type": "skip",
-                      "description": "Reviewer credentials not configured",
-                      "location": {
-                        "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra2-b-reviewer.spec.js",
-                        "line": 104,
-                        "column": 10
-                      }
-                    }
-                  ],
-                  "expectedStatus": "skipped",
-                  "projectId": "",
-                  "projectName": "",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "skipped",
-                      "duration": 8,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-11-04T04:19:19.994Z",
-                      "annotations": [
-                        {
-                          "type": "skip",
-                          "description": "Reviewer credentials not configured",
-                          "location": {
-                            "file": "C:\\Users\\gumat\\OneDrive\\Desktop\\facultylinkk\\web\\e2e\\kra2-b-reviewer.spec.js",
-                            "line": 104,
-                            "column": 10
-                          }
-                        }
-                      ],
-                      "attachments": []
-                    }
-                  ],
-                  "status": "skipped"
-                }
-              ],
-              "id": "c1c7846b0e99f9c38a91-83903fe5f0065fbbcb09",
-              "file": "kra2-b-reviewer.spec.js",
-              "line": 100,
+              "id": "6e91584e54bc898ba44c-a6cb91cec28361947656",
+              "file": "kra3-reviewer.spec.js",
+              "line": 66,
               "column": 3
             }
           ]
@@ -327,10 +219,10 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-11-04T04:19:19.151Z",
-    "duration": 942.5099999999999,
+    "startTime": "2026-11-04T06:04:20.199Z",
+    "duration": 583.967,
     "expected": 0,
-    "skipped": 4,
+    "skipped": 2,
     "unexpected": 0,
     "flaky": 0
   }

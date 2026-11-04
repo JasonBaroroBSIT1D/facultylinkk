@@ -98,6 +98,213 @@ def _default_assessed_points(
     return round(float(base_points) * (pct / 100.0), 2)
 
 
+def propose_assessed_points(
+    bundle: dict[str, Any],
+    *,
+    assessed_points: float | int | str | None = None,
+    score_adjustment_reason: str = "",
+    default_points: float | None = None,
+    fallback_assessed_from: dict[str, Any] | None = None,
+    indicator_id: str,
+    settings: dict[str, Any] | None = None,
+) -> tuple[float, str]:
+    eligible = published_kra2_indicator_points(
+        indicator_id,
+        settings,
+        allow_annex_fallback=settings is None,
+    )
+    if eligible is None:
+        raise ValueError("indicator_points_unknown")
+    official_max = official_indicator_max_points(indicator_id, settings)
+    indicator_cap = round(float(official_max if official_max is not None else eligible), 2)
+    system_points = round(float(_default_assessed_points(bundle, base_points=float(eligible))), 2)
+    partial_ok = allows_reviewer_point_adjustment(indicator_id=indicator_id)
+    prior_ra = fallback_assessed_from if isinstance(fallback_assessed_from, dict) else {}
+    if not prior_ra:
+        ra = bundle.get("reviewerAssessment")
+        prior_ra = ra if isinstance(ra, dict) else {}
+
+    if assessed_points is not None:
+        try:
+            points = round(float(assessed_points), 2)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("assessed_points_invalid") from exc
+    elif default_points is not None:
+        points = round(float(default_points), 2)
+    elif prior_ra.get("assessedPoints") is not None:
+        points = round(float(prior_ra["assessedPoints"]), 2)
+    else:
+        points = system_points
+
+    if points < 0 or points > indicator_cap:
+        raise ValueError("assessed_points_exceeds_indicator_max")
+    if points > system_points + 0.001:
+        raise ValueError("assessed_points_exceeds_eligible")
+    if not partial_ok and abs(points - system_points) > 0.001:
+        raise ValueError("assessed_points_not_adjustable")
+
+    adjustment_reason = (score_adjustment_reason or "").strip()
+    if not adjustment_reason:
+        adjustment_reason = (prior_ra.get("scoreAdjustmentReason") or "").strip()
+    if abs(points - system_points) > 0.001:
+        if not partial_ok:
+            raise ValueError("assessed_points_not_adjustable")
+        if len(adjustment_reason) < MIN_ADJUSTMENT_REASON_LEN:
+            raise ValueError("score_adjustment_reason_required")
+    elif adjustment_reason:
+        adjustment_reason = ""
+    return points, adjustment_reason
+
+
+def _append_assessment_revision_history(
+    prior_ra: dict[str, Any],
+    *,
+    draft_assessed_points: float,
+    draft_remarks: str,
+    draft_adjustment_reason: str,
+    reviewer_user_id: int,
+    reviewer_display_name: str,
+) -> list[dict[str, Any]]:
+    history = list(prior_ra.get("history") or []) if isinstance(prior_ra.get("history"), list) else []
+    history.append(
+        {
+            "kind": "saved_assessment_revision",
+            "draftAssessedPoints": draft_assessed_points,
+            "draftRemarks": draft_remarks or None,
+            "draftScoreAdjustmentReason": draft_adjustment_reason or None,
+            "savedAt": _utc_iso(),
+            "reviewerUserId": int(reviewer_user_id),
+            "reviewerDisplayName": (reviewer_display_name or "").strip() or None,
+        }
+    )
+    return history[-HISTORY_LIMIT:]
+
+
+def _save_post_finalization_assessment_revision(
+    bundle: dict[str, Any],
+    *,
+    reviewer_user_id: int,
+    reviewer_display_name: str,
+    remarks: str = "",
+    assessed_points: float | int | str | None = None,
+    score_adjustment_reason: str = "",
+    indicator_id: str,
+    settings: dict[str, Any] | None = None,
+) -> None:
+    prior_ra = bundle.get("reviewerAssessment")
+    prior_ra = dict(prior_ra) if isinstance(prior_ra, dict) else {}
+
+    points, adjustment_reason = propose_assessed_points(
+        bundle,
+        assessed_points=assessed_points,
+        score_adjustment_reason=score_adjustment_reason,
+        fallback_assessed_from={
+            **prior_ra,
+            "assessedPoints": prior_ra.get("draftAssessedPoints")
+            if prior_ra.get("draftAssessedPoints") is not None
+            else prior_ra.get("approvedPoints")
+            if prior_ra.get("approvedPoints") is not None
+            else prior_ra.get("assessedPoints"),
+            "scoreAdjustmentReason": prior_ra.get("draftScoreAdjustmentReason")
+            or prior_ra.get("scoreAdjustmentReason"),
+        },
+        indicator_id=indicator_id,
+        settings=settings,
+    )
+
+    remark_text = (remarks or "").strip()
+    if not remark_text:
+        remark_text = (prior_ra.get("draftRemarks") or prior_ra.get("remarks") or "").strip()
+
+    prior_ra["draftAssessedPoints"] = points
+    prior_ra["draftRemarks"] = remark_text or None
+    prior_ra["draftScoreAdjustmentReason"] = adjustment_reason or None
+    prior_ra["draftSavedAt"] = _utc_iso()
+    prior_ra["draftReviewerUserId"] = int(reviewer_user_id)
+    prior_ra["draftReviewerDisplayName"] = (reviewer_display_name or "").strip() or None
+    prior_ra["history"] = _append_assessment_revision_history(
+        prior_ra,
+        draft_assessed_points=points,
+        draft_remarks=remark_text,
+        draft_adjustment_reason=adjustment_reason,
+        reviewer_user_id=reviewer_user_id,
+        reviewer_display_name=reviewer_display_name,
+    )
+    bundle["reviewerAssessment"] = prior_ra
+
+
+def save_reviewer_assessment_draft(
+    bundle: dict[str, Any],
+    *,
+    reviewer_user_id: int,
+    reviewer_display_name: str,
+    remarks: str = "",
+    assessed_points: float | int | str | None = None,
+    score_adjustment_reason: str = "",
+    indicator_id: str,
+    settings: dict[str, Any] | None = None,
+) -> None:
+    """Persist reviewer points and feedback without finalizing reviewStatus."""
+    prior_status = (bundle.get("reviewStatus") or "").strip().lower()
+    if prior_status in (REVIEW_APPROVED, REVIEW_REJECTED):
+        _save_post_finalization_assessment_revision(
+            bundle,
+            reviewer_user_id=reviewer_user_id,
+            reviewer_display_name=reviewer_display_name,
+            remarks=remarks,
+            assessed_points=assessed_points,
+            score_adjustment_reason=score_adjustment_reason,
+            indicator_id=indicator_id,
+            settings=settings,
+        )
+        return
+
+    eligible = published_kra2_indicator_points(
+        indicator_id,
+        settings,
+        allow_annex_fallback=settings is None,
+    )
+    if eligible is None:
+        raise ValueError("indicator_points_unknown")
+    official_max = official_indicator_max_points(indicator_id, settings)
+    indicator_cap = round(float(official_max if official_max is not None else eligible), 2)
+    system_points = round(float(_default_assessed_points(bundle, base_points=float(eligible))), 2)
+    prior_ra = bundle.get("reviewerAssessment")
+    prior_ra = prior_ra if isinstance(prior_ra, dict) else {}
+
+    points, adjustment_reason = propose_assessed_points(
+        bundle,
+        assessed_points=assessed_points,
+        score_adjustment_reason=score_adjustment_reason,
+        indicator_id=indicator_id,
+        settings=settings,
+    )
+
+    remark_text = (remarks or "").strip()
+    if not remark_text:
+        remark_text = (prior_ra.get("remarks") or bundle.get("reviewerRemarks") or "").strip()
+
+    history = list(prior_ra["history"]) if isinstance(prior_ra.get("history"), list) else []
+
+    bundle["reviewStatus"] = prior_status if prior_status == REVIEW_REJECTED else REVIEW_PENDING
+    if remark_text:
+        bundle["reviewerRemarks"] = remark_text
+    bundle["reviewerAssessment"] = {
+        "reviewStatus": prior_status if prior_status == REVIEW_REJECTED else REVIEW_PENDING,
+        "eligiblePoints": round(float(eligible), 2),
+        "officialIndicatorMaxPoints": indicator_cap,
+        "systemCalculatedPoints": system_points,
+        "assessedPoints": points,
+        "approvedPoints": None,
+        "scoreAdjustmentReason": adjustment_reason or None,
+        "remarks": remark_text or None,
+        "reviewerUserId": int(reviewer_user_id),
+        "reviewerDisplayName": (reviewer_display_name or "").strip() or None,
+        "draftSavedAt": _utc_iso(),
+        "history": history,
+    }
+
+
 def apply_reviewer_accomplishment_decision(
     bundle: dict[str, Any],
     *,

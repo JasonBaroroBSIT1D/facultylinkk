@@ -688,11 +688,27 @@ FL.documents = {
     return criterionId === "kra2-a" || criterionId === "kra2-b" || criterionId === "kra2-c";
   },
 
+  _isKra3Criterion: function (criterionId) {
+    return (
+      criterionId === "kra3-a" ||
+      criterionId === "kra3-b" ||
+      criterionId === "kra3-c" ||
+      criterionId === "kra3-d"
+    );
+  },
+
   _isKra2PrimaryAccomplishment: function (doc) {
     if (!doc || !FL.documents._isKra2Criterion(doc.criterionId)) return false;
     var ev = doc.kra2Evidence;
     if (ev && ev.isSupportingDocument) return false;
     var link = doc.extractedInfo && doc.extractedInfo.kra2EvidenceLink;
+    if (link && link.role === "supporting") return false;
+    return true;
+  },
+
+  _isKra3PrimaryAccomplishment: function (doc) {
+    if (!doc || !FL.documents._isKra3Criterion(doc.criterionId)) return false;
+    var link = doc.extractedInfo && doc.extractedInfo.kra3EvidenceLink;
     if (link && link.role === "supporting") return false;
     return true;
   },
@@ -731,16 +747,19 @@ FL.documents = {
       return;
     }
     if (
-      FL.documents._isKra2Criterion(doc.criterionId) &&
-      FL.documents._isKra2PrimaryAccomplishment(doc) &&
-      FL.kra2AReview
+      (FL.documents._isKra2Criterion(doc.criterionId) &&
+        FL.documents._isKra2PrimaryAccomplishment(doc)) ||
+      (FL.documents._isKra3Criterion(doc.criterionId) &&
+        FL.documents._isKra3PrimaryAccomplishment(doc))
     ) {
-      FL.kra2AReview.paintReviewPage(session, doc, canDecide, {
-        faculty: faculty,
-        back: back,
-        backLabel: backLabel
-      });
-      return;
+      if (FL.kra2AReview) {
+        FL.kra2AReview.paintReviewPage(session, doc, canDecide, {
+          faculty: faculty,
+          back: back,
+          backLabel: backLabel
+        });
+        return;
+      }
     }
     const activeTab = FL.documents._reviewActiveTab || "review";
     const toolbar = doc.fileUrl

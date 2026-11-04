@@ -548,6 +548,26 @@ def _kra2_evidence_error_response(error) -> tuple:
             400,
             "This accomplishment is already approved. Reassessment requires an authorized workflow.",
         ),
+        "reassessment_not_authorized": (
+            403,
+            "Reassessment is disabled or you are not authorized to open it. Contact an administrator.",
+        ),
+        "reassessment_requires_approved": (400, "Reassessment applies only to approved accomplishments."),
+        "reassessment_reason_required": (
+            400,
+            "Provide a reason for reopening reassessment (at least 20 characters).",
+        ),
+        "reassessment_already_open": (400, "A reassessment session is already open for this accomplishment."),
+        "reassessment_not_active": (400, "No active reassessment session."),
+        "reassessment_confirmation_required": (
+            400,
+            "Confirm reassessment before finalizing the corrected score.",
+        ),
+        "invalid_reassessment_action": (400, "Unknown reassessment action."),
+        "reassessment_finalize_requires_administrator": (
+            403,
+            "An administrator must finalize this reassessment before the corrected score takes effect.",
+        ),
     }
     status, msg = messages.get(error.code, (400, "Update failed."))
     return jsonify({"message": msg}), status
@@ -613,6 +633,89 @@ def faculty_link_kra2_supporting(public_id: str):
         )
     except Kra2EvidenceError as error:
         return _kra2_evidence_error_response(error)
+    return jsonify(
+        {
+            "document": document_to_web(primary, api_base=_file_api_base("faculty", primary.public_id)),
+            "validation": validation,
+        }
+    ), 200
+
+
+def _kra3_evidence_error_response(error) -> tuple:
+    from documents.kra3_evidence.service import Kra3EvidenceError
+
+    if not isinstance(error, Kra3EvidenceError):
+        raise error
+    from documents.kra2_evidence.service import Kra2EvidenceError
+
+    wrapped = Kra2EvidenceError(error.code, str(error))
+    return _kra2_evidence_error_response(wrapped)
+
+
+@faculty_docs_bp.get("/<public_id>/kra3/evidence-bundle")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_get_kra3_bundle(public_id: str):
+    from documents.kra3_evidence.service import bundle_api_payload
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    doc = doc_svc.get_owned_document(public_id, user) if user else None
+    if not doc:
+        return jsonify({"message": "Document was not found."}), 404
+    return jsonify(bundle_api_payload(doc)), 200
+
+
+@faculty_docs_bp.patch("/<public_id>/kra3/evidence-bundle")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_patch_kra3_bundle(public_id: str):
+    from documents.kra3_evidence.service import Kra3EvidenceError, update_bundle_metadata, bundle_api_payload
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    try:
+        doc, validation = update_bundle_metadata(user, public_id, body)
+    except Kra3EvidenceError as error:
+        return _kra3_evidence_error_response(error)
+    payload = bundle_api_payload(doc)
+    return jsonify(
+        {
+            "document": document_to_web(doc, api_base=_file_api_base("faculty", doc.public_id)),
+            "validation": validation,
+            "bundle": payload.get("bundle"),
+            "scoring": payload.get("scoring"),
+            "ocrStatus": payload.get("ocrStatus"),
+            "ocrExtraction": payload.get("ocrExtraction"),
+            "requiredEvidenceSlots": payload.get("requiredEvidenceSlots"),
+            "slotLabels": payload.get("slotLabels"),
+            "submissionStatus": validation.get("validationStatus"),
+            "scoringVersion": payload.get("scoring", {}).get("scoringConfigurationVersion"),
+        }
+    ), 200
+
+
+@faculty_docs_bp.post("/<public_id>/kra3/link-supporting")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_link_kra3_supporting(public_id: str):
+    from documents.kra3_evidence.service import Kra3EvidenceError, link_existing_supporting_document
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    supporting_id = (body.get("supportingDocumentId") or body.get("supporting_document_id") or "").strip()
+    slot = (body.get("evidenceSlot") or body.get("evidence_slot") or "").strip()
+    if not supporting_id or not slot:
+        return jsonify({"message": "supportingDocumentId and evidenceSlot are required."}), 400
+    try:
+        primary, validation = link_existing_supporting_document(
+            user,
+            primary_public_id=public_id,
+            supporting_public_id=supporting_id,
+            evidence_slot=slot,
+        )
+    except Kra3EvidenceError as error:
+        return _kra3_evidence_error_response(error)
     return jsonify(
         {
             "document": document_to_web(primary, api_base=_file_api_base("faculty", primary.public_id)),
@@ -1015,7 +1118,7 @@ def reviewer_get_kra2_bundle(public_id: str):
     doc = doc_svc.get_document(public_id)
     if not doc or not user or not doc_svc.reviewer_can_access(user, doc):
         return jsonify({"message": "Document was not found."}), 404
-    return jsonify(bundle_api_payload(doc)), 200
+    return jsonify(bundle_api_payload(doc, viewer_user=user)), 200
 
 
 @reviewer_docs_bp.patch("/documents/<public_id>/kra2/evidence-bundle")
@@ -1029,6 +1132,11 @@ def reviewer_patch_kra2_bundle(public_id: str):
     status = (body.get("status") or "").strip()
     review_status = (body.get("reviewStatus") or body.get("review_status") or "").strip() or None
     has_remarks = bool((body.get("remarks") or body.get("reviewerRemarks") or "").strip())
+    has_assessment_fields = (
+        "assessedPoints" in body
+        or "assessed_points" in body
+        or bool((body.get("scoreAdjustmentReason") or body.get("score_adjustment_reason") or "").strip())
+    )
     metadata_keys = (
         "outputTitle",
         "outputVenue",
@@ -1046,8 +1154,16 @@ def reviewer_patch_kra2_bundle(public_id: str):
     if body.get("confirmReviewerMetadata") is True:
         metadata_patch["confirmReviewerMetadata"] = True
     has_metadata = bool(metadata_patch)
-    if not slot_id and not review_status and not has_remarks and not has_metadata:
-        return jsonify({"message": "evidenceSlot/status, reviewStatus, metadata, or remarks required."}), 400
+    reassessment_action = (body.get("reassessmentAction") or body.get("reassessment_action") or "").strip() or None
+    if (
+        not slot_id
+        and not review_status
+        and not has_remarks
+        and not has_metadata
+        and not has_assessment_fields
+        and not reassessment_action
+    ):
+        return jsonify({"message": "evidenceSlot/status, reviewStatus, metadata, remarks, or assessedPoints required."}), 400
     if slot_id and not status:
         return jsonify({"message": "status is required when evidenceSlot is provided."}), 400
     try:
@@ -1059,15 +1175,19 @@ def reviewer_patch_kra2_bundle(public_id: str):
             reviewer_note=(body.get("reviewerNote") or body.get("note") or ""),
             review_status=review_status,
             remarks=(body.get("remarks") or body.get("reviewerRemarks") or ""),
-            assessed_points=body.get("assessedPoints") or body.get("assessed_points"),
+            assessed_points=body.get("assessedPoints") if "assessedPoints" in body else body.get("assessed_points"),
             score_adjustment_reason=(
                 body.get("scoreAdjustmentReason") or body.get("score_adjustment_reason") or ""
             ),
             metadata=metadata_patch if has_metadata else None,
+            reassessment_action=reassessment_action,
+            reassessment_reason=(body.get("reassessmentReason") or body.get("reassessment_reason") or ""),
+            confirm_reassessment=body.get("confirmReassessment") is True
+            or body.get("confirm_reassessment") is True,
         )
     except Kra2EvidenceError as error:
         return _kra2_evidence_error_response(error)
-    payload = bundle_api_payload(doc)
+    payload = bundle_api_payload(doc, viewer_user=user)
     return jsonify(
         {
             "document": document_to_web(doc, api_base=_file_api_base("reviewer", doc.public_id), ocr_detail=True),
@@ -1075,6 +1195,107 @@ def reviewer_patch_kra2_bundle(public_id: str):
             "bundle": payload.get("bundle"),
             "scoring": payload.get("scoring"),
             "ocrExtraction": payload.get("ocrExtraction"),
+            "reassessmentCapabilities": payload.get("reassessmentCapabilities"),
+            "reassessmentSession": payload.get("reassessmentSession"),
+            "reassessmentHistory": payload.get("reassessmentHistory"),
+        }
+    ), 200
+
+
+@reviewer_docs_bp.get("/documents/<public_id>/kra3/evidence-bundle")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_get_kra3_bundle(public_id: str):
+    from documents.kra3_evidence.service import bundle_api_payload
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    doc = doc_svc.get_document(public_id)
+    if not doc or not user or not doc_svc.reviewer_can_access(user, doc):
+        return jsonify({"message": "Document was not found."}), 404
+    return jsonify(bundle_api_payload(doc, viewer_user=user)), 200
+
+
+@reviewer_docs_bp.patch("/documents/<public_id>/kra3/evidence-bundle")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_patch_kra3_bundle(public_id: str):
+    from documents.kra3_evidence.service import Kra3EvidenceError, reviewer_update_kra3, bundle_api_payload
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    body = request.get_json(silent=True) or {}
+    slot_id = (body.get("evidenceSlot") or body.get("evidence_slot") or body.get("slotId") or "").strip()
+    status = (body.get("status") or "").strip()
+    review_status = (body.get("reviewStatus") or body.get("review_status") or "").strip() or None
+    has_remarks = bool((body.get("remarks") or body.get("reviewerRemarks") or "").strip())
+    has_assessment_fields = (
+        "assessedPoints" in body
+        or "assessed_points" in body
+        or bool((body.get("scoreAdjustmentReason") or body.get("score_adjustment_reason") or "").strip())
+    )
+    metadata_keys = (
+        "activityTitle",
+        "organizationName",
+        "facultyRole",
+        "activityDate",
+        "serviceStartDate",
+        "serviceEndDate",
+        "grossIncomeAmount",
+        "deliveryHours",
+        "csrOverallRating",
+        "linkedExtensionProjectId",
+        "designationTitle",
+        "approvalReference",
+        "serviceDurationMonths",
+        "outputTitle",
+    )
+    metadata_patch = {k: body[k] for k in metadata_keys if k in body}
+    if body.get("confirmReviewerMetadata") is True:
+        metadata_patch["confirmReviewerMetadata"] = True
+    has_metadata = bool(metadata_patch)
+    reassessment_action = (body.get("reassessmentAction") or body.get("reassessment_action") or "").strip() or None
+    if (
+        not slot_id
+        and not review_status
+        and not has_remarks
+        and not has_metadata
+        and not has_assessment_fields
+        and not reassessment_action
+    ):
+        return jsonify({"message": "evidenceSlot/status, reviewStatus, metadata, remarks, or assessedPoints required."}), 400
+    if slot_id and not status:
+        return jsonify({"message": "status is required when evidenceSlot is provided."}), 400
+    try:
+        doc, validation = reviewer_update_kra3(
+            user,
+            public_id,
+            slot_id=slot_id or None,
+            status=status or None,
+            reviewer_note=(body.get("reviewerNote") or body.get("note") or ""),
+            review_status=review_status,
+            remarks=(body.get("remarks") or body.get("reviewerRemarks") or ""),
+            assessed_points=body.get("assessedPoints") if "assessedPoints" in body else body.get("assessed_points"),
+            score_adjustment_reason=(
+                body.get("scoreAdjustmentReason") or body.get("score_adjustment_reason") or ""
+            ),
+            metadata=metadata_patch if has_metadata else None,
+            reassessment_action=reassessment_action,
+            reassessment_reason=(body.get("reassessmentReason") or body.get("reassessment_reason") or ""),
+            confirm_reassessment=body.get("confirmReassessment") is True
+            or body.get("confirm_reassessment") is True,
+        )
+    except Kra3EvidenceError as error:
+        return _kra3_evidence_error_response(error)
+    payload = bundle_api_payload(doc, viewer_user=user)
+    return jsonify(
+        {
+            "document": document_to_web(doc, api_base=_file_api_base("reviewer", doc.public_id), ocr_detail=True),
+            "validation": validation,
+            "bundle": payload.get("bundle"),
+            "scoring": payload.get("scoring"),
+            "ocrExtraction": payload.get("ocrExtraction"),
+            "requiredEvidenceSlots": payload.get("requiredEvidenceSlots"),
+            "slotLabels": payload.get("slotLabels"),
+            "reassessmentCapabilities": payload.get("reassessmentCapabilities"),
+            "reassessmentSession": payload.get("reassessmentSession"),
+            "reassessmentHistory": payload.get("reassessmentHistory"),
         }
     ), 200
 
@@ -1175,6 +1396,184 @@ def reviewer_kra2_c_accomplishments(faculty_public_id: str):
     from kra_configuration.kra2_annex import CRITERION_C_ID
 
     return _reviewer_kra2_criterion_accomplishments(faculty_public_id, CRITERION_C_ID)
+
+
+def _faculty_kra3_criterion_summary(criterion_id: str):
+    from documents.kra3_evidence.service import kra3_summary_for_faculty
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify(kra3_summary_for_faculty(user.faculty_profile.id, criterion_id=criterion_id)), 200
+
+
+def _faculty_kra3_criterion_accomplishments(criterion_id: str):
+    from documents.kra3_evidence.service import list_faculty_accomplishments
+
+    user = aq.current_faculty_user(get_jwt_identity())
+    if not user or not user.faculty_profile:
+        return jsonify({"message": "Faculty profile was not found."}), 404
+    return jsonify(
+        {"accomplishments": list_faculty_accomplishments(user.faculty_profile.id, criterion_id=criterion_id)}
+    ), 200
+
+
+def _reviewer_kra3_criterion_summary(faculty_public_id: str, criterion_id: str):
+    from documents.kra3_evidence.service import kra3_summary_for_faculty
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = _reviewer_faculty_profile_or_404(user, faculty_public_id)
+    if not profile:
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    return jsonify(kra3_summary_for_faculty(profile.id, criterion_id=criterion_id)), 200
+
+
+def _reviewer_kra3_criterion_accomplishments(faculty_public_id: str, criterion_id: str):
+    from documents.kra3_evidence.service import list_faculty_accomplishments
+
+    user = aq.current_reviewer_user(get_jwt_identity())
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    profile = _reviewer_faculty_profile_or_404(user, faculty_public_id)
+    if not profile:
+        return jsonify({"message": "Faculty assignment was not found."}), 404
+    return jsonify(
+        {
+            "accomplishments": list_faculty_accomplishments(
+                profile.id, criterion_id=criterion_id, submitted_only=True
+            )
+        }
+    ), 200
+
+
+@faculty_docs_bp.get("/kra3-a/summary")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra3_a_summary():
+    from kra_configuration.kra3_annex import CRITERION_A_ID
+
+    return _faculty_kra3_criterion_summary(CRITERION_A_ID)
+
+
+@faculty_docs_bp.get("/kra3-a/accomplishments")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra3_a_accomplishments():
+    from kra_configuration.kra3_annex import CRITERION_A_ID
+
+    return _faculty_kra3_criterion_accomplishments(CRITERION_A_ID)
+
+
+@faculty_docs_bp.get("/kra3-b/summary")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra3_b_summary():
+    from kra_configuration.kra3_annex import CRITERION_B_ID
+
+    return _faculty_kra3_criterion_summary(CRITERION_B_ID)
+
+
+@faculty_docs_bp.get("/kra3-b/accomplishments")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra3_b_accomplishments():
+    from kra_configuration.kra3_annex import CRITERION_B_ID
+
+    return _faculty_kra3_criterion_accomplishments(CRITERION_B_ID)
+
+
+@faculty_docs_bp.get("/kra3-c/summary")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra3_c_summary():
+    from kra_configuration.kra3_annex import CRITERION_C_ID
+
+    return _faculty_kra3_criterion_summary(CRITERION_C_ID)
+
+
+@faculty_docs_bp.get("/kra3-c/accomplishments")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra3_c_accomplishments():
+    from kra_configuration.kra3_annex import CRITERION_C_ID
+
+    return _faculty_kra3_criterion_accomplishments(CRITERION_C_ID)
+
+
+@faculty_docs_bp.get("/kra3-d/summary")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra3_d_summary():
+    from kra_configuration.kra3_annex import CRITERION_D_ID
+
+    return _faculty_kra3_criterion_summary(CRITERION_D_ID)
+
+
+@faculty_docs_bp.get("/kra3-d/accomplishments")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_kra3_d_accomplishments():
+    from kra_configuration.kra3_annex import CRITERION_D_ID
+
+    return _faculty_kra3_criterion_accomplishments(CRITERION_D_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra3-a/summary")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra3_a_summary(faculty_public_id: str):
+    from kra_configuration.kra3_annex import CRITERION_A_ID
+
+    return _reviewer_kra3_criterion_summary(faculty_public_id, CRITERION_A_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra3-a/accomplishments")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra3_a_accomplishments(faculty_public_id: str):
+    from kra_configuration.kra3_annex import CRITERION_A_ID
+
+    return _reviewer_kra3_criterion_accomplishments(faculty_public_id, CRITERION_A_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra3-b/summary")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra3_b_summary(faculty_public_id: str):
+    from kra_configuration.kra3_annex import CRITERION_B_ID
+
+    return _reviewer_kra3_criterion_summary(faculty_public_id, CRITERION_B_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra3-b/accomplishments")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra3_b_accomplishments(faculty_public_id: str):
+    from kra_configuration.kra3_annex import CRITERION_B_ID
+
+    return _reviewer_kra3_criterion_accomplishments(faculty_public_id, CRITERION_B_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra3-c/summary")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra3_c_summary(faculty_public_id: str):
+    from kra_configuration.kra3_annex import CRITERION_C_ID
+
+    return _reviewer_kra3_criterion_summary(faculty_public_id, CRITERION_C_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra3-c/accomplishments")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra3_c_accomplishments(faculty_public_id: str):
+    from kra_configuration.kra3_annex import CRITERION_C_ID
+
+    return _reviewer_kra3_criterion_accomplishments(faculty_public_id, CRITERION_C_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra3-d/summary")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra3_d_summary(faculty_public_id: str):
+    from kra_configuration.kra3_annex import CRITERION_D_ID
+
+    return _reviewer_kra3_criterion_summary(faculty_public_id, CRITERION_D_ID)
+
+
+@reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/kra3-d/accomplishments")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_kra3_d_accomplishments(faculty_public_id: str):
+    from kra_configuration.kra3_annex import CRITERION_D_ID
+
+    return _reviewer_kra3_criterion_accomplishments(faculty_public_id, CRITERION_D_ID)
 
 
 @reviewer_docs_bp.get("/me/faculty/<faculty_public_id>/criterion-c/summary")
@@ -1518,6 +1917,88 @@ def admin_get_document(public_id: str):
             ocr_detail=True,
         )
     ), 200
+
+
+def _admin_reassessment_patch_kra3(public_id: str):
+    from documents.kra3_evidence.service import Kra3EvidenceError, reviewer_update_kra3, bundle_api_payload
+    from models import User
+
+    admin = User.query.filter_by(public_id=get_jwt_identity(), role=ROLE_ADMINISTRATOR, is_active=True).first()
+    if not admin:
+        return jsonify({"message": "Administrator account was not found."}), 403
+    body = request.get_json(silent=True) or {}
+    reassessment_action = (body.get("reassessmentAction") or body.get("reassessment_action") or "").strip()
+    if not reassessment_action:
+        return jsonify({"message": "reassessmentAction is required for administrator reassessment."}), 400
+    try:
+        doc, validation = reviewer_update_kra3(
+            admin,
+            public_id,
+            slot_id=None,
+            status=None,
+            review_status=None,
+            remarks=(body.get("remarks") or body.get("reviewerRemarks") or ""),
+            assessed_points=body.get("assessedPoints") if "assessedPoints" in body else body.get("assessed_points"),
+            score_adjustment_reason=(
+                body.get("scoreAdjustmentReason") or body.get("score_adjustment_reason") or ""
+            ),
+            reassessment_action=reassessment_action,
+            reassessment_reason=(body.get("reassessmentReason") or body.get("reassessment_reason") or ""),
+            confirm_reassessment=body.get("confirmReassessment") is True
+            or body.get("confirm_reassessment") is True,
+            actor_is_administrator=True,
+        )
+    except Kra3EvidenceError as error:
+        return _kra3_evidence_error_response(error)
+    payload = bundle_api_payload(doc)
+    return jsonify({"validation": validation, "bundle": payload.get("bundle"), "scoring": payload.get("scoring")}), 200
+
+
+@admin_docs_bp.patch("/<public_id>/kra3/evidence-bundle")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_patch_kra3_evidence_bundle(public_id: str):
+    return _admin_reassessment_patch_kra3(public_id)
+
+
+def _admin_reassessment_patch_kra2(public_id: str):
+    from documents.kra2_evidence.service import Kra2EvidenceError, reviewer_update_kra2, bundle_api_payload
+    from models import User
+
+    admin = User.query.filter_by(public_id=get_jwt_identity(), role=ROLE_ADMINISTRATOR, is_active=True).first()
+    if not admin:
+        return jsonify({"message": "Administrator account was not found."}), 403
+    body = request.get_json(silent=True) or {}
+    reassessment_action = (body.get("reassessmentAction") or body.get("reassessment_action") or "").strip()
+    if not reassessment_action:
+        return jsonify({"message": "reassessmentAction is required for administrator reassessment."}), 400
+    try:
+        doc, validation = reviewer_update_kra2(
+            admin,
+            public_id,
+            slot_id=None,
+            status=None,
+            review_status=None,
+            remarks=(body.get("remarks") or body.get("reviewerRemarks") or ""),
+            assessed_points=body.get("assessedPoints") if "assessedPoints" in body else body.get("assessed_points"),
+            score_adjustment_reason=(
+                body.get("scoreAdjustmentReason") or body.get("score_adjustment_reason") or ""
+            ),
+            reassessment_action=reassessment_action,
+            reassessment_reason=(body.get("reassessmentReason") or body.get("reassessment_reason") or ""),
+            confirm_reassessment=body.get("confirmReassessment") is True
+            or body.get("confirm_reassessment") is True,
+            actor_is_administrator=True,
+        )
+    except Kra2EvidenceError as error:
+        return _kra2_evidence_error_response(error)
+    payload = bundle_api_payload(doc)
+    return jsonify({"validation": validation, "bundle": payload.get("bundle"), "scoring": payload.get("scoring")}), 200
+
+
+@admin_docs_bp.patch("/<public_id>/kra2/evidence-bundle")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_patch_kra2_evidence_bundle(public_id: str):
+    return _admin_reassessment_patch_kra2(public_id)
 
 
 @admin_docs_bp.post("/<public_id>/ocr/retry")

@@ -99,3 +99,11 @@ class Config:
     SET_SEF_AUTO_APPROVAL_ALLOW_ADMIN_TOGGLE = (
         os.getenv("SET_SEF_AUTO_APPROVAL_ALLOW_ADMIN_TOGGLE") or ""
     ).strip()
+
+    # Approved accomplishment reassessment (off by default; enable explicitly for authorized corrections)
+    ACCOMPLISHMENT_REASSESSMENT_ENABLED = (
+        os.getenv("FL_ACCOMPLISHMENT_REASSESSMENT_ENABLED") or ""
+    ).lower() in ("1", "true", "yes")
+    ACCOMPLISHMENT_REASSESSMENT_ALLOW_REVIEWER = (
+        os.getenv("FL_ACCOMPLISHMENT_REASSESSMENT_ALLOW_REVIEWER") or ""
+    ).lower() in ("1", "true", "yes")

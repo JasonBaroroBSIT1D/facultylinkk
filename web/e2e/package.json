@@ -2,6 +2,7 @@
   "name": "facultylink-web-e2e",
   "private": true,
   "scripts": {
+    "test:kra3": "playwright test kra3-reviewer.spec.js",
     "test:kra2-b": "playwright test kra2-b-reviewer.spec.js",
     "test:kra2-b:headed": "playwright test kra2-b-reviewer.spec.js --headed"
   },
