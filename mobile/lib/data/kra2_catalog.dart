@@ -344,34 +344,181 @@ abstract final class Kra2Catalog {
     return _genericMetadataLabel(fieldId);
   }
 
+  static String _criterionAPublicationKind(String indicatorId) {
+    if (indicatorId.contains('book')) return 'book';
+    if (indicatorId.contains('chapter')) return 'chapter';
+    if (indicatorId.contains('journal')) return 'journal';
+    if (indicatorId.contains('monograph')) return 'monograph';
+    if (indicatorId.contains('translation')) return 'translation';
+    if (indicatorId.contains('cite')) return 'cite';
+    return 'publication';
+  }
+
+  static bool _isPerformanceIndicator(String indicatorId) =>
+      workflowFamily(indicatorId) == 'performance_work';
+
+  /// Annex-aligned creative-work subfamily (mirrors backend `kra2_c_workflow.py`).
+  static String criterionCSubfamily(String indicatorId) {
+    final iid = indicatorId.trim();
+    if (!iid.startsWith('$criterionC-')) return 'literary';
+    if (iid.startsWith('$criterionC-music-comp-') || iid.startsWith('$criterionC-music-arr-')) {
+      return 'music_composition';
+    }
+    if (iid.startsWith('$criterionC-music-prod-')) return 'music_production';
+    if (iid.startsWith('$criterionC-music-perf') || iid.startsWith('$criterionC-conducting')) {
+      return 'music_performance';
+    }
+    if (iid.startsWith('$criterionC-choreo-')) return 'dance_choreography';
+    if (iid.startsWith('$criterionC-dance-perf')) return 'dance_performance';
+    if (iid.startsWith('$criterionC-directing') || iid.startsWith('$criterionC-acting')) {
+      return 'theater_performance';
+    }
+    if (iid.startsWith('$criterionC-playwright-') || iid.startsWith('$criterionC-prod-design')) {
+      return 'theater';
+    }
+    if (iid.startsWith('$criterionC-visual')) return 'visual_arts';
+    if (iid.startsWith('$criterionC-arch-design')) return 'design_exhibition';
+    if (iid.startsWith('$criterionC-film')) return 'film';
+    if (iid.startsWith('$criterionC-novel-') ||
+        iid.startsWith('$criterionC-story-') ||
+        iid.startsWith('$criterionC-poetry') ||
+        iid.startsWith('$criterionC-essay')) {
+      return 'literary';
+    }
+    return 'literary';
+  }
+
+  static String? _criterionCMetadataLabel(String fieldId, String indicatorId) {
+    const profiles = <String, Map<String, String>>{
+      'music_composition': {
+        'outputTitle': 'Title of composition or arrangement',
+        'authorsLine': 'Composer or arranger',
+        'outputVenue': 'Venue, organizer, or publisher',
+        'publicationDate': 'Date of first performance or publication',
+      },
+      'music_production': {
+        'outputTitle': 'Title of produced work',
+        'authorsLine': 'Producer or creator',
+        'outputVenue': 'Label, platform, or release venue',
+        'publicationDate': 'Release or publication date',
+      },
+      'music_performance': {
+        'outputTitle': 'Title of performance',
+        'authorsLine': 'Performer or conductor',
+        'outputVenue': 'Performance venue or organizer',
+        'publicationDate': 'Date of performance',
+      },
+      'dance_choreography': {
+        'outputTitle': 'Title of choreography',
+        'authorsLine': 'Choreographer',
+        'outputVenue': 'Venue or organizer',
+        'publicationDate': 'Date of first performance',
+      },
+      'dance_performance': {
+        'outputTitle': 'Title of dance performance',
+        'authorsLine': 'Dancer or performer',
+        'outputVenue': 'Performance venue or organizer',
+        'publicationDate': 'Date of performance',
+      },
+      'theater': {
+        'outputTitle': 'Title of production or role',
+        'authorsLine': 'Playwright or creator',
+        'outputVenue': 'Theater, organizer, or festival',
+        'publicationDate': 'Date of production or publication',
+      },
+      'theater_performance': {
+        'outputTitle': 'Title of performance',
+        'authorsLine': 'Performer or director',
+        'outputVenue': 'Performance venue or organizer',
+        'publicationDate': 'Date of performance',
+      },
+      'visual_arts': {
+        'outputTitle': 'Title of artwork',
+        'authorsLine': 'Artist or creator',
+        'outputVenue': 'Gallery or exhibition venue',
+        'publicationDate': 'Exhibition date',
+      },
+      'design_exhibition': {
+        'outputTitle': 'Title of design or project',
+        'authorsLine': 'Designer or creator',
+        'outputVenue': 'Exhibition, competition, or organizer',
+        'publicationDate': 'Exhibition or competition date',
+      },
+      'film': {
+        'outputTitle': 'Film title',
+        'authorsLine': 'Director or creator',
+        'outputVenue': 'Festival, venue, or organizer',
+        'publicationDate': 'Screening or release date',
+      },
+      'literary': {
+        'outputTitle': 'Title of literary work',
+        'authorsLine': 'Author or contributor',
+        'outputVenue': 'Publisher or publication',
+        'publicationDate': 'Publication date',
+      },
+    };
+    final sub = criterionCSubfamily(indicatorId);
+    if (fieldId == 'declaredContributionPercent') {
+      return 'Your verified contribution (%)';
+    }
+    return profiles[sub]?[fieldId];
+  }
+
   static String metadataLabelForIndicator(String fieldId, String indicatorId) {
+    if (indicatorId.startsWith('$criterionC-')) {
+      return _criterionCMetadataLabel(fieldId, indicatorId) ?? _genericMetadataLabel(fieldId);
+    }
     final family = workflowFamily(indicatorId);
+    final critAKind =
+        indicatorId.startsWith('$criterionA-') ? _criterionAPublicationKind(indicatorId) : '';
     switch (fieldId) {
       case 'outputTitle':
         if (family == 'invention_ip') return 'Name of your invention';
         if (family == 'citation_impact') return 'Title of your published work';
-        if (family == 'creative_work' || family == 'performance_work') {
+        if (family == 'performance_work') return 'Title of performance';
+        if (family == 'creative_work') {
           return 'Title of your work';
         }
+        if (critAKind == 'book' || critAKind == 'monograph') return 'Title of your book';
+        if (critAKind == 'chapter') return 'Title of your chapter';
+        if (critAKind == 'translation') return 'Title of your research output';
         return 'Title of your article';
       case 'authorsLine':
         if (family == 'invention_ip') return 'Inventor names';
-        if (family == 'creative_work' || family == 'performance_work') {
+        if (family == 'performance_work') return 'Performer / creator';
+        if (family == 'creative_work') {
           return 'Creator names';
         }
         return 'Author names';
       case 'outputVenue':
+        if (_isPerformanceIndicator(indicatorId)) {
+          return 'Performance venue or organizer';
+        }
         if (family == 'invention_ip') return 'Patent office or registry';
         if (family == 'commercialization') return 'Company or market';
-        return 'Journal name';
+        if (critAKind == 'book' || critAKind == 'chapter' || critAKind == 'monograph') {
+          return 'Publisher';
+        }
+        if (critAKind == 'translation') return 'Organization or program';
+        if (critAKind == 'journal') return 'Journal name';
+        return 'Journal or publisher';
       case 'publicationDate':
         if (family == 'invention_ip') return 'Patent date';
-        if (family == 'creative_work' || family == 'performance_work') {
+        if (family == 'performance_work') return 'Date of performance';
+        if (family == 'creative_work') {
           return 'Date of the work';
         }
+        if (critAKind == 'translation') return 'Date of utilization or completion';
         return 'Publication date';
       case 'publicationReference':
-        return 'DOI (if you have one)';
+        if (critAKind == 'book' ||
+            critAKind == 'chapter' ||
+            critAKind == 'monograph' ||
+            critAKind == 'translation') {
+          return 'ISBN or reference number (optional)';
+        }
+        if (critAKind == 'journal') return 'DOI (if you have one)';
+        return 'Reference number (optional)';
       case 'registrationNumber':
         return 'Patent or registration number';
       case 'registrationDate':
@@ -494,15 +641,280 @@ abstract final class Kra2Catalog {
     }
   }
 
+  /// Evidence slots required before faculty can send for review (matches backend Annex A checklists).
+  static List<String> requiredEvidenceSlots(String indicatorId) {
+    final id = indicatorId.trim();
+    if (id.startsWith('$criterionA-')) {
+      const criterionASlots = {
+        'kra2-a-book-sole': ['primary_output', 'peer_review_evidence'],
+        'kra2-a-book-co': ['primary_output', 'contribution_certificate'],
+        'kra2-a-chapter-sole': ['primary_output', 'peer_review_evidence'],
+        'kra2-a-chapter-co': ['primary_output', 'contribution_certificate'],
+        'kra2-a-journal-sole': ['primary_output', 'indexing_certification'],
+        'kra2-a-journal-co': [
+          'primary_output',
+          'indexing_certification',
+          'contribution_certificate',
+        ],
+        'kra2-a-monograph-sole': ['primary_output', 'peer_review_evidence'],
+        'kra2-a-monograph-co': ['primary_output', 'contribution_certificate'],
+        'kra2-a-translation-sole': ['primary_output', 'translation_impact_evidence'],
+        'kra2-a-translation-co': [
+          'primary_output',
+          'translation_impact_evidence',
+          'contribution_certificate',
+        ],
+        'kra2-a-cite': [
+          'primary_output',
+          'citing_publication_evidence',
+          'indexing_certification',
+        ],
+      };
+      return List<String>.from(criterionASlots[id] ?? ['primary_output']);
+    }
+    if (id.startsWith('$criterionB-')) {
+      const criterionBSlots = {
+        'kra2-b-patent-a-sole': ['primary_output', 'invention_photo', 'president_special_order'],
+        'kra2-b-patent-p-sole': ['primary_output', 'invention_photo', 'president_special_order'],
+        'kra2-b-patent-g-sole': ['primary_output', 'invention_photo', 'president_special_order'],
+        'kra2-b-patent-a-co': ['primary_output', 'contribution_certificate'],
+        'kra2-b-patent-p-co': ['primary_output', 'contribution_certificate'],
+        'kra2-b-patent-g-co': ['primary_output', 'contribution_certificate'],
+        'kra2-b-comm-local': [
+          'product_photo',
+          'patent_certificate',
+          'licensing_or_cpr_evidence',
+          'commercialization_proof',
+          'rd_itso_certification',
+        ],
+        'kra2-b-comm-intl': [
+          'product_photo',
+          'patent_certificate',
+          'licensing_or_cpr_evidence',
+          'commercialization_proof',
+          'rd_itso_certification',
+        ],
+        'kra2-b-um-sole': ['primary_output', 'invention_photo', 'president_special_order'],
+        'kra2-b-id-sole': ['primary_output', 'invention_photo', 'president_special_order'],
+        'kra2-b-um-co': ['primary_output', 'contribution_certificate'],
+        'kra2-b-id-co': ['primary_output', 'contribution_certificate'],
+        'kra2-b-sw-new-sole': [
+          'president_special_order',
+          'project_summary',
+          'software_documentation',
+          'primary_output',
+          'utilization_certification',
+        ],
+        'kra2-b-sw-new-co': [
+          'president_special_order',
+          'project_summary',
+          'software_documentation',
+          'primary_output',
+          'utilization_certification',
+          'contribution_certificate',
+        ],
+        'kra2-b-sw-upd-sole': [
+          'president_special_order',
+          'project_summary',
+          'primary_output',
+          'utilization_certification',
+          'software_update_description',
+        ],
+        'kra2-b-sw-upd-co': [
+          'president_special_order',
+          'project_summary',
+          'primary_output',
+          'utilization_certification',
+          'software_update_description',
+          'contribution_certificate',
+        ],
+        'kra2-b-variety-sole': ['president_special_order', 'registration_deposit_evidence'],
+        'kra2-b-variety-co': ['registration_deposit_evidence', 'contribution_certificate'],
+      };
+      return List<String>.from(criterionBSlots[id] ?? ['primary_output']);
+    }
+    if (id.startsWith('$criterionC-')) {
+      const criterionCSlots = {
+        'kra2-c-acting': ['primary_output', 'program_documentation', 'media_documentation', 'role_certification'],
+        'kra2-c-arch-design': ['primary_output', 'invitation_acceptance', 'exhibition_documentation', 'authorship_documentation', 'organizing_body_info'],
+        'kra2-c-choreo-co': ['primary_output', 'contribution_certificate'],
+        'kra2-c-choreo-sole': ['primary_output', 'invitation_acceptance', 'performance_proof', 'role_certification'],
+        'kra2-c-conducting': ['primary_output', 'invitation_acceptance', 'role_certification'],
+        'kra2-c-dance-perf': ['primary_output', 'role_certification'],
+        'kra2-c-directing': ['primary_output', 'program_documentation', 'media_documentation', 'role_certification'],
+        'kra2-c-essay': ['primary_output', 'editorial_review', 'publisher_credibility'],
+        'kra2-c-film': ['primary_output', 'invitation_acceptance', 'festival_program', 'role_certification'],
+        'kra2-c-music-arr-co': ['primary_output', 'contribution_certificate'],
+        'kra2-c-music-arr-sole': ['primary_output', 'invitation_acceptance', 'performance_proof', 'role_certification'],
+        'kra2-c-music-comp-co': ['primary_output', 'contribution_certificate'],
+        'kra2-c-music-comp-sole': ['primary_output', 'invitation_acceptance', 'performance_proof'],
+        'kra2-c-music-perf': ['primary_output', 'invitation_acceptance', 'role_certification'],
+        'kra2-c-music-prod-co': ['primary_output', 'contribution_certificate'],
+        'kra2-c-music-prod-sole': ['primary_output', 'copyright_registration', 'published_release', 'role_certification'],
+        'kra2-c-novel-co': ['primary_output', 'contribution_certificate'],
+        'kra2-c-novel-sole': ['primary_output', 'editorial_review', 'publisher_credibility'],
+        'kra2-c-playwright-co': ['primary_output', 'contribution_certificate'],
+        'kra2-c-playwright-sole': ['primary_output', 'copyright_registration', 'invitation_acceptance', 'production_proof', 'role_certification'],
+        'kra2-c-poetry': ['primary_output', 'editorial_review', 'publisher_credibility'],
+        'kra2-c-prod-design': ['primary_output', 'design_portfolio', 'media_documentation', 'program_documentation', 'role_certification'],
+        'kra2-c-story-co': ['primary_output', 'contribution_certificate'],
+        'kra2-c-story-sole': ['primary_output', 'editorial_review', 'publisher_credibility'],
+        'kra2-c-visual': ['primary_output', 'invitation_acceptance', 'exhibition_catalog', 'gallery_documentation', 'role_certification'],
+      };
+      return List<String>.from(criterionCSlots[id] ?? ['primary_output']);
+    }
+    final slots = <String>['primary_output'];
+    if (requiresContributionCertificate(id)) {
+      slots.add('contribution_certificate');
+    }
+    return slots;
+  }
+
+  static String slotLabelForIndicator(String slotId, String indicatorId) {
+    final id = indicatorId.trim();
+    if (id.startsWith('$criterionA-')) {
+      switch (slotId) {
+        case 'primary_output':
+          if (id.contains('book') || id.contains('monograph')) {
+            return 'Published book (PDF)';
+          }
+          if (id.contains('chapter')) return 'Published chapter (PDF)';
+          if (id.contains('journal')) return 'Published article (PDF)';
+          if (id.contains('translation')) return 'Research output (PDF)';
+          if (id.contains('cite')) return 'Your cited article (PDF)';
+          return 'Primary evidence (PDF)';
+        case 'peer_review_evidence':
+          return 'Peer review and academic press evidence';
+        case 'indexing_certification':
+          return 'Indexing certification (Research Director)';
+        case 'contribution_certificate':
+          if (id.contains('translation')) {
+            return 'Certificate of Contribution (Annex E)';
+          }
+          return 'Certificate of Contribution (Annex D)';
+        case 'citing_publication_evidence':
+          return 'Citing article (PDF)';
+        case 'translation_impact_evidence':
+          return 'Proof of project, policy, or product use';
+      }
+    }
+    if (id.startsWith('$criterionB-')) {
+      switch (slotId) {
+        case 'primary_output':
+          if (id.contains('patent')) return 'IPOPHL patent stage document';
+          if (id.contains('comm-')) return 'Commercialization evidence (PDF)';
+          if (id.contains('sw-')) return 'Copyright certificate (IPOPHL)';
+          if (id.contains('um-') || id.contains('id-')) return 'Registration certificate';
+          if (id.contains('variety')) return 'Registration or deposit evidence';
+          return 'Primary evidence (PDF)';
+        case 'invention_photo':
+          return 'Photo of the invention or design';
+        case 'president_special_order':
+          return 'Special Order signed by the President';
+        case 'product_photo':
+          return 'Photo of the patented product';
+        case 'patent_certificate':
+          return 'Invention Patent Certificate';
+        case 'licensing_or_cpr_evidence':
+          return 'CPR or licensing agreement';
+        case 'commercialization_proof':
+          return 'Proof of commercialization';
+        case 'rd_itso_certification':
+          return 'Research Director / ITSO certification';
+        case 'project_summary':
+          return 'Project summary';
+        case 'software_documentation':
+          return 'User manual or design documentation';
+        case 'utilization_certification':
+          return 'End-user utilization certification';
+        case 'software_update_description':
+          return 'Description of substantial new functionalities';
+        case 'registration_deposit_evidence':
+          return 'Registration or deposit evidence';
+        case 'contribution_certificate':
+          if (id.contains('sw-')) return 'Certificate of Contribution (Annex G)';
+          if (id.contains('variety')) return 'Certificate of Contribution (Annex H)';
+          return 'Certificate of Contribution (Annex F)';
+      }
+    }
+    if (id.startsWith('$criterionC-')) {
+      switch (slotId) {
+        case 'contribution_certificate':
+          return 'Certificate of Contribution (Annex I)';
+        case 'invitation_acceptance':
+          return 'Proof of invitation or acceptance';
+        case 'performance_proof':
+          return 'Proof of performance or first performance';
+        case 'role_certification':
+          return 'Certification of role';
+        case 'copyright_registration':
+          return 'Copyright registration';
+        case 'published_release':
+          return 'Published release details';
+        case 'production_proof':
+          return 'Proof of production or staging';
+        case 'program_documentation':
+          return 'Program, playbill, or event flyer';
+        case 'media_documentation':
+          return 'Photo or video documentation';
+        case 'design_portfolio':
+          return 'Design portfolio or proposal';
+        case 'exhibition_catalog':
+          return 'Exhibition catalog or brochure';
+        case 'gallery_documentation':
+          return 'Gallery or venue information';
+        case 'exhibition_documentation':
+          return 'Exhibition or competition documentation';
+        case 'authorship_documentation':
+          return 'Authorship documentation';
+        case 'organizing_body_info':
+          return 'Organizing body or gallery profile';
+        case 'festival_program':
+          return 'Festival program or screening announcement';
+        case 'editorial_review':
+          return 'Editorial review evidence';
+        case 'publisher_credibility':
+          return 'Proof of publisher credibility';
+        case 'primary_output':
+          return 'Primary creative or performance evidence (PDF)';
+      }
+    }
+    return slotLabel(slotId);
+  }
+
   static String slotLabel(String slotId) {
     switch (slotId) {
       case 'primary_output':
         return 'Your PDF';
       case 'contribution_certificate':
         return 'Shared authorship certificate';
+      case 'peer_review_evidence':
+        return 'Peer review evidence';
+      case 'indexing_certification':
+        return 'Indexing certification';
+      case 'citing_publication_evidence':
+        return 'Citing publication';
+      case 'translation_impact_evidence':
+        return 'Translation impact evidence';
       default:
         return slotId.replaceAll('_', ' ');
     }
+  }
+
+  static String facultySlotStatusSubtitle(String slotId, Map<String, dynamic>? checklistEntry) {
+    final entry = checklistEntry;
+    if (entry == null) {
+      return 'Not uploaded yet';
+    }
+    final docId = entry['documentId']?.toString().trim() ?? '';
+    final status = (entry['status'] ?? 'missing').toString().toLowerCase();
+    if (docId.isEmpty || status == 'missing') {
+      return 'Not uploaded yet';
+    }
+    if (status == 'verified') {
+      return 'Uploaded and verified by reviewer';
+    }
+    return 'Uploaded — your reviewer will verify this';
   }
 
   static bool requiresContributionCertificate(String indicatorId) {

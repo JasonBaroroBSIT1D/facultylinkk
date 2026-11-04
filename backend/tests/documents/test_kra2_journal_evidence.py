@@ -51,14 +51,26 @@ def _submit_bundle(bundle: dict, *, co: bool = False) -> dict:
 
 
 def test_journal_sole_required_slots():
-    assert required_slots(indicator_id="kra2-a-journal-sole") == ("primary_output",)
+    assert required_slots(indicator_id="kra2-a-journal-sole") == (
+        "primary_output",
+        "indexing_certification",
+    )
 
 
 def test_journal_co_requires_annex_d_slot():
     assert required_slots(indicator_id="kra2-a-journal-co") == (
         "primary_output",
+        "indexing_certification",
         "contribution_certificate",
     )
+
+
+def _verify_all_required_slots(bundle: dict, indicator_id: str) -> None:
+    for slot in required_slots(indicator_id=indicator_id):
+        bundle.setdefault("checklist", {})[slot] = {
+            "status": SLOT_STATUS_VERIFIED,
+            "documentId": f"doc_{slot}",
+        }
 
 
 def test_estimated_points_co_author_percent():
@@ -79,7 +91,7 @@ def test_co_author_assessed_cannot_exceed_system_calculated():
         indicator_id="kra2-a-journal-co",
     )
     _submit_bundle(bundle, co=True)
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    _verify_all_required_slots(bundle, bundle.get("indicatorId") or "kra2-a-journal-sole")
     with pytest.raises(ValueError, match="assessed_points_exceeds_eligible"):
         apply_reviewer_accomplishment_decision(
             bundle,
@@ -100,7 +112,7 @@ def test_co_journal_rejects_assessed_above_system_calculated():
         indicator_id="kra2-a-journal-co",
     )
     _submit_bundle(bundle, co=True)
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    _verify_all_required_slots(bundle, bundle.get("indicatorId") or "kra2-a-journal-sole")
     with pytest.raises(ValueError, match="assessed_points_exceeds_eligible"):
         apply_reviewer_accomplishment_decision(
             bundle,
@@ -121,7 +133,7 @@ def test_journal_sole_allows_partial_assessment_with_reason():
         indicator_id="kra2-a-journal-sole",
     )
     _submit_bundle(bundle)
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    _verify_all_required_slots(bundle, bundle.get("indicatorId") or "kra2-a-journal-sole")
     apply_reviewer_accomplishment_decision(
         bundle,
         review_status=REVIEW_APPROVED,
@@ -144,7 +156,7 @@ def test_journal_sole_partial_requires_adjustment_reason():
         indicator_id="kra2-a-journal-sole",
     )
     _submit_bundle(bundle)
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    _verify_all_required_slots(bundle, bundle.get("indicatorId") or "kra2-a-journal-sole")
     with pytest.raises(ValueError, match="score_adjustment_reason_required"):
         apply_reviewer_accomplishment_decision(
             bundle,
@@ -165,7 +177,7 @@ def test_book_sole_disallows_partial_override():
         indicator_id="kra2-a-book-sole",
     )
     _submit_bundle(bundle)
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    _verify_all_required_slots(bundle, bundle.get("indicatorId") or "kra2-a-journal-sole")
     with pytest.raises(ValueError, match="assessed_points_not_adjustable"):
         apply_reviewer_accomplishment_decision(
             bundle,
@@ -187,7 +199,7 @@ def test_assessed_cannot_exceed_indicator_max():
         indicator_id="kra2-a-journal-sole",
     )
     _submit_bundle(bundle)
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    _verify_all_required_slots(bundle, bundle.get("indicatorId") or "kra2-a-journal-sole")
     with pytest.raises(ValueError, match="assessed_points_exceeds_indicator_max"):
         apply_reviewer_accomplishment_decision(
             bundle,
@@ -224,7 +236,7 @@ def test_approval_sets_assessed_points_sole():
         indicator_id="kra2-a-journal-sole",
     )
     _submit_bundle(bundle)
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    _verify_all_required_slots(bundle, bundle.get("indicatorId") or "kra2-a-journal-sole")
     apply_reviewer_accomplishment_decision(
         bundle,
         review_status=REVIEW_APPROVED,
@@ -244,7 +256,7 @@ def test_aggregate_caps_criterion_a():
         indicator_id="kra2-a-journal-sole",
     )
     _submit_bundle(bundle)
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    _verify_all_required_slots(bundle, bundle.get("indicatorId") or "kra2-a-journal-sole")
     apply_reviewer_accomplishment_decision(
         bundle,
         review_status=REVIEW_APPROVED,
@@ -274,7 +286,7 @@ def test_rank_simulation_integration_kra2_a():
         indicator_id="kra2-a-journal-sole",
     )
     _submit_bundle(bundle)
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    _verify_all_required_slots(bundle, bundle.get("indicatorId") or "kra2-a-journal-sole")
     apply_reviewer_accomplishment_decision(
         bundle,
         review_status=REVIEW_APPROVED,
@@ -323,7 +335,7 @@ def test_validation_blocks_approval_without_submission():
         primary_file_hash="h1",
         indicator_id="kra2-a-journal-sole",
     )
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    _verify_all_required_slots(bundle, bundle.get("indicatorId") or "kra2-a-journal-sole")
     v = validate_kra2_bundle(bundle, indicator_id="kra2-a-journal-sole")
     assert v["readyForReviewer"] is False
     assert "not_submitted" in v["flags"]

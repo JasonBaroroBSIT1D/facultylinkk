@@ -39,6 +39,9 @@ def validate_kra2_bundle(bundle: dict[str, Any] | None, *, indicator_id: str) ->
         return _empty_validation("bundle_missing", "This accomplishment is not set up yet.")
 
     ind = (indicator_id or bundle.get("indicatorId") or "").strip()
+    from documents.kra2_evidence.bundle import ensure_checklist_slots
+
+    ensure_checklist_slots(bundle, indicator_id=ind)
 
     for field_id in metadata_field_ids(ind):
         if field_id == "declaredContributionPercent":
@@ -54,10 +57,23 @@ def validate_kra2_bundle(bundle: dict[str, Any] | None, *, indicator_id: str) ->
                 msg = message_for_field("declaredContributionPercent")
                 submission_blockers.append(msg)
             continue
-        if not _field_value(bundle, field_id):
+        val = _field_value(bundle, field_id)
+        if not val:
             flags.append(f"missing_{field_id}")
             msg = message_for_field(field_id)
             submission_blockers.append(msg)
+            continue
+        from documents.kra2_evidence.ocr_extraction import is_metadata_label_value, _is_placeholder_title
+
+        if field_id == "outputTitle" and _is_placeholder_title(bundle, val):
+            flags.append("invalid_outputTitle")
+            submission_blockers.append(message_for_field("outputTitle"))
+            continue
+        if field_id in ("outputTitle", "authorsLine", "outputVenue", "citationContext") and is_metadata_label_value(
+            val, field_id=field_id
+        ):
+            flags.append(f"invalid_{field_id}")
+            submission_blockers.append(message_for_field(field_id))
 
     confirmed = bundle.get("metadataConfirmed") if isinstance(bundle.get("metadataConfirmed"), dict) else {}
     if not bundle.get("submittedForReviewAt"):

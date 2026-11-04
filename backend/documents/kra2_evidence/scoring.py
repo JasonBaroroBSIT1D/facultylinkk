@@ -70,6 +70,12 @@ def estimated_points_for_bundle(
     return round(float(base), 2)
 
 
+def is_qa_sandbox_accomplishment(doc: Any) -> bool:
+    """Automated QA uploads — excluded from rank simulation and criterion totals."""
+    title = (getattr(doc, "title", None) or "").strip()
+    return title.startswith("[KRA2-B-QA]")
+
+
 def _accomplishment_dedup_key(bundle: dict[str, Any], doc: Any) -> str:
     aid = (bundle.get("accomplishmentId") or "").strip()
     if aid:
@@ -89,6 +95,18 @@ def score_accomplishment_document(
         return None
     if is_supporting_evidence_document(doc):
         return None
+    if is_qa_sandbox_accomplishment(doc):
+        return Kra2AccomplishmentScore(
+            document_public_id=(getattr(doc, "public_id", None) or "").strip(),
+            indicator_id=indicator_id,
+            criterion_id=criterion_id or (criterion_id_for_indicator(indicator_id) or ""),
+            accomplishment_id=None,
+            eligible_points=0.0,
+            assessed_points=None,
+            counted_points=0.0,
+            included=False,
+            reasons=("qa_sandbox_excluded",),
+        )
 
     bundle = bundle_from_document(doc)
     if not bundle:
@@ -199,6 +217,8 @@ def aggregate_kra2_criterion_from_documents(
     accomplishment_rows: list[Kra2AccomplishmentScore] = []
 
     for doc in bundle_docs:
+        if is_qa_sandbox_accomplishment(doc):
+            continue
         bundle = bundle_from_document(doc)
         if not isinstance(bundle, dict):
             continue

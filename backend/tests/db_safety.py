@@ -33,13 +33,21 @@ def database_name_from_url(url: str) -> str:
     return urlparse(normalized).path.lstrip("/").split("?")[0]
 
 
+def allowed_database_names() -> frozenset[str]:
+    names = {"facultylink"}
+    if os.environ.get("FACULTYLINK_QA_DATABASE_ALLOWED", "").strip() == "1":
+        names.add("facultylink_qa")
+    return frozenset(names)
+
+
 def assert_production_database_url(url: str) -> None:
-    """Ensure automated tests target only the facultylink database name."""
+    """Ensure automated tests target an approved PostgreSQL database name."""
     name = database_name_from_url(url)
-    if name != "facultylink":
+    allowed = allowed_database_names()
+    if name not in allowed:
         raise RuntimeError(
             f"Refusing to run tests against database {name!r}. "
-            "Expected database name 'facultylink'."
+            f"Allowed names: {', '.join(sorted(allowed))}."
         )
     if url.lower().startswith("sqlite:"):
         raise RuntimeError("SQLite URIs are not permitted for FacultyLink tests.")

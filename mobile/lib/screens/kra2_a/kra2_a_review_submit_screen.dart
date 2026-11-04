@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/app_state.dart';
 import '../../data/kra2_a_catalog.dart';
 import '../../data/kra2_a_ux.dart';
+import '../../data/kra2_catalog.dart';
+import '../../data/kra2_ocr_sync.dart';
 import '../../models/enums.dart';
 import '../../navigation/app_routes.dart';
 import '../../theme/app_colors.dart';
@@ -37,10 +41,23 @@ class _Kra2AReviewSubmitScreenState extends State<Kra2AReviewSubmitScreen> {
   Map<String, dynamic>? _validation;
   Map<String, dynamic>? _scoring;
   String? _ocrStatus;
+  Map<String, Map<String, dynamic>> _ocrFields = {};
+  List<String> _ocrReviewFlags = const [];
+  final Set<String> _userEditedFields = {};
   bool _loading = true;
   bool _saving = false;
   bool _submitting = false;
+  bool _ocrPolling = false;
+  bool _ocrRetrying = false;
   String? _error;
+
+  static const _fieldIds = [
+    'outputTitle',
+    'authorsLine',
+    'outputVenue',
+    'publicationDate',
+    'publicationReference',
+  ];
 
   bool get _isCoAuthor {
     final ind = (_bundle?['indicatorId'] ?? '').toString();
@@ -78,14 +95,24 @@ class _Kra2AReviewSubmitScreenState extends State<Kra2AReviewSubmitScreen> {
       final payload = await AppState.instance.fetchKra2EvidenceBundle(widget.primaryDocumentId);
       if (!mounted) return;
       final bundle = payload['bundle'] is Map ? Map<String, dynamic>.from(payload['bundle'] as Map) : null;
+      final ocrExtraction = payload['ocrExtraction'] is Map
+          ? Map<String, dynamic>.from(payload['ocrExtraction'] as Map)
+          : null;
+      _ocrFields = Kra2OcrSync.parseExtractionFields(ocrExtraction);
+      final flags = payload['ocrReviewFlags'];
+      _ocrReviewFlags = flags is List ? flags.map((e) => e.toString()).toList() : const [];
       _syncControllers(bundle);
+      final ocr = payload['ocrStatus']?.toString();
       setState(() {
         _bundle = bundle;
         _validation = payload['validation'] is Map ? Map<String, dynamic>.from(payload['validation'] as Map) : null;
         _scoring = payload['scoring'] is Map ? Map<String, dynamic>.from(payload['scoring'] as Map) : null;
-        _ocrStatus = payload['ocrStatus']?.toString();
+        _ocrStatus = ocr;
         _loading = false;
       });
+      if (pollOcr) {
+        unawaited(_startOcrPollIfNeeded(ocr));
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -95,22 +122,90 @@ class _Kra2AReviewSubmitScreenState extends State<Kra2AReviewSubmitScreen> {
     }
   }
 
+  Future<void> _startOcrPollIfNeeded(String? currentStatus) async {
+    final st = (currentStatus ?? '').toLowerCase();
+    if (st == 'completed' || st == 'failed' || st == 'complete') return;
+    if (_ocrPolling) return;
+    _ocrPolling = true;
+    if (mounted) setState(() {});
+    await AppState.instance.pollKra2OcrInBackground(
+      widget.primaryDocumentId,
+      onUpdate: (status) {
+        if (!mounted) return;
+        setState(() => _ocrStatus = status);
+        final s = (status ?? '').toLowerCase();
+        if (s == 'completed' || s == 'complete') {
+          unawaited(_load());
+        }
+      },
+    );
+    if (!mounted) return;
+    _ocrPolling = false;
+    await _load();
+  }
+
+  Future<void> _retryOcr() async {
+    setState(() => _ocrRetrying = true);
+    try {
+      await AppState.instance.retryFacultyDocumentOcr(widget.primaryDocumentId);
+      await _startOcrPollIfNeeded('pending');
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not restart reading. Try again later.')),
+      );
+    } finally {
+      if (mounted) setState(() => _ocrRetrying = false);
+    }
+  }
+
+  TextEditingController _ctrlFor(String fieldId) {
+    switch (fieldId) {
+      case 'outputTitle':
+        return _titleCtrl;
+      case 'authorsLine':
+        return _authorsCtrl;
+      case 'outputVenue':
+        return _journalCtrl;
+      case 'publicationDate':
+        return _dateCtrl;
+      case 'publicationReference':
+        return _doiCtrl;
+      default:
+        return _titleCtrl;
+    }
+  }
+
   void _syncControllers(Map<String, dynamic>? bundle) {
     if (bundle == null) return;
-    void set(TextEditingController c, String key) {
-      final v = (bundle[key] ?? '').toString().trim();
-      if (c.text.isEmpty && v.isNotEmpty) c.text = v;
+    for (final fieldId in _fieldIds) {
+      Kra2OcrSync.syncController(
+        controller: _ctrlFor(fieldId),
+        fieldId: fieldId,
+        bundle: bundle,
+        ocrFields: _ocrFields,
+        userEditedFields: _userEditedFields,
+      );
     }
-
-    set(_titleCtrl, 'outputTitle');
-    set(_authorsCtrl, 'authorsLine');
-    set(_journalCtrl, 'journalTitle');
-    set(_dateCtrl, 'publicationDate');
-    set(_doiCtrl, 'publicationReference');
     final pct = bundle['declaredContributionPercent'];
     if (_percentCtrl.text.isEmpty && pct != null) {
       _percentCtrl.text = pct.toString();
     }
+  }
+
+  bool _ocrFieldsIncomplete() {
+    for (final fieldId in _fieldIds) {
+      if (fieldId == 'publicationReference') continue;
+      if (!Kra2OcrSync.fieldHasValue(
+        fieldId: fieldId,
+        controllerText: _ctrlFor(fieldId).text,
+        bundle: _bundle,
+        ocrFields: _ocrFields,
+      )) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Map<String, dynamic> _metadataBody({required bool submit}) {
@@ -158,6 +253,27 @@ class _Kra2AReviewSubmitScreenState extends State<Kra2AReviewSubmitScreen> {
   }
 
   Future<void> _submit() async {
+    for (final fieldId in _fieldIds) {
+      if (fieldId == 'publicationReference') continue;
+      if (!Kra2OcrSync.fieldHasValue(
+        fieldId: fieldId,
+        controllerText: _ctrlFor(fieldId).text,
+        bundle: _bundle,
+        ocrFields: _ocrFields,
+      )) {
+        if (!mounted) return;
+        final ind = (_bundle?['indicatorId'] ?? '').toString();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Please complete ${Kra2Catalog.metadataLabel(fieldId, ind)} before submitting.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
     setState(() => _submitting = true);
     try {
       await AppState.instance.patchKra2EvidenceBundle(
@@ -221,12 +337,16 @@ class _Kra2AReviewSubmitScreenState extends State<Kra2AReviewSubmitScreen> {
   }
 
   List<String> _friendlyBlockers() {
-    final blockers = _validation?['blockers'];
+    final submission = _validation?['submissionBlockers'];
+    final blockers = submission is List && submission.isNotEmpty
+        ? submission
+        : _validation?['userBlockers'] ?? _validation?['blockers'];
     if (blockers is! List) return const [];
+    final ind = (_bundle?['indicatorId'] ?? '').toString();
     return blockers
         .whereType<String>()
-        .map(Kra2AUx.humanizeBlocker)
-        .where((s) => s.isNotEmpty)
+        .map((e) => Kra2AUx.humanizeBlocker(e, indicatorId: ind))
+        .where((s) => s.isNotEmpty && !s.toLowerCase().contains('verify supporting evidence'))
         .toList();
   }
 
@@ -281,17 +401,101 @@ class _Kra2AReviewSubmitScreenState extends State<Kra2AReviewSubmitScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Text(Kra2AUx.ocrStatusLabel(_ocrStatus), style: TextStyle(color: Colors.grey.shade700)),
+                  Text(
+                    Kra2AUx.readingFileLabel(
+                      _ocrStatus,
+                      extractionIncomplete: canEdit && _ocrFieldsIncomplete(),
+                    ),
+                    style: TextStyle(color: Colors.grey.shade700),
+                  ),
+                  if (_ocrPolling)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+                  if (canEdit &&
+                      (_ocrFieldsIncomplete() ||
+                          (_ocrStatus ?? '').toLowerCase() == 'failed'))
+                    TextButton(
+                      onPressed: _ocrRetrying ? null : _retryOcr,
+                      child: Text(_ocrRetrying ? 'Reading…' : 'Read my file again'),
+                    ),
                   const SizedBox(height: 16),
                   const Text('Publication details', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   const Text('Check each field against your PDF. You can edit anything that looks wrong.'),
                   const SizedBox(height: 12),
-                  _field('Article title', _titleCtrl, enabled: canEdit),
-                  _field('Author names', _authorsCtrl, enabled: canEdit),
-                  _field('Journal or publication name', _journalCtrl, enabled: canEdit),
-                  _field('Publication date', _dateCtrl, enabled: canEdit, hint: 'e.g. 2025-06-01 or June 2025'),
-                  _field('DOI or reference (optional)', _doiCtrl, enabled: canEdit),
+                  _field(
+                    'Article title',
+                    _titleCtrl,
+                    enabled: canEdit,
+                    helperText: Kra2OcrSync.fieldHelper(
+                      fieldId: 'outputTitle',
+                      controllerText: _titleCtrl.text,
+                      ocrFields: _ocrFields,
+                      bundle: _bundle,
+                      userEditedFields: _userEditedFields,
+                      reviewFlags: _ocrReviewFlags,
+                    ),
+                    onChanged: canEdit ? (_) => setState(() => _userEditedFields.add('outputTitle')) : null,
+                  ),
+                  _field(
+                    'Author names',
+                    _authorsCtrl,
+                    enabled: canEdit,
+                    helperText: Kra2OcrSync.fieldHelper(
+                      fieldId: 'authorsLine',
+                      controllerText: _authorsCtrl.text,
+                      ocrFields: _ocrFields,
+                      bundle: _bundle,
+                      userEditedFields: _userEditedFields,
+                      reviewFlags: _ocrReviewFlags,
+                    ),
+                    onChanged: canEdit ? (_) => setState(() => _userEditedFields.add('authorsLine')) : null,
+                  ),
+                  _field(
+                    'Journal or publication name',
+                    _journalCtrl,
+                    enabled: canEdit,
+                    helperText: Kra2OcrSync.fieldHelper(
+                      fieldId: 'outputVenue',
+                      controllerText: _journalCtrl.text,
+                      ocrFields: _ocrFields,
+                      bundle: _bundle,
+                      userEditedFields: _userEditedFields,
+                      reviewFlags: _ocrReviewFlags,
+                    ),
+                    onChanged: canEdit ? (_) => setState(() => _userEditedFields.add('outputVenue')) : null,
+                  ),
+                  _field(
+                    'Publication date',
+                    _dateCtrl,
+                    enabled: canEdit,
+                    hint: 'e.g. 2025-06-01 or June 2025',
+                    helperText: Kra2OcrSync.fieldHelper(
+                      fieldId: 'publicationDate',
+                      controllerText: _dateCtrl.text,
+                      ocrFields: _ocrFields,
+                      bundle: _bundle,
+                      userEditedFields: _userEditedFields,
+                      reviewFlags: _ocrReviewFlags,
+                    ),
+                    onChanged: canEdit ? (_) => setState(() => _userEditedFields.add('publicationDate')) : null,
+                  ),
+                  _field(
+                    'DOI or reference (optional)',
+                    _doiCtrl,
+                    enabled: canEdit,
+                    helperText: Kra2OcrSync.fieldHelper(
+                      fieldId: 'publicationReference',
+                      controllerText: _doiCtrl.text,
+                      ocrFields: _ocrFields,
+                      bundle: _bundle,
+                      userEditedFields: _userEditedFields,
+                      reviewFlags: _ocrReviewFlags,
+                    ),
+                    onChanged: canEdit ? (_) => setState(() => _userEditedFields.add('publicationReference')) : null,
+                  ),
                   if (_isCoAuthor)
                     _field('Your contribution (%)', _percentCtrl, enabled: canEdit, keyboard: TextInputType.number),
                   const SizedBox(height: 16),
@@ -385,7 +589,9 @@ class _Kra2AReviewSubmitScreenState extends State<Kra2AReviewSubmitScreen> {
     TextEditingController controller, {
     bool enabled = true,
     String? hint,
+    String? helperText,
     TextInputType? keyboard,
+    ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -393,9 +599,11 @@ class _Kra2AReviewSubmitScreenState extends State<Kra2AReviewSubmitScreen> {
         controller: controller,
         enabled: enabled,
         keyboardType: keyboard,
+        onChanged: onChanged,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
+          helperText: helperText,
           border: const OutlineInputBorder(),
           filled: true,
           fillColor: Colors.white,

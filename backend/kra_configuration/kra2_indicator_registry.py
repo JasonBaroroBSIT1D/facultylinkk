@@ -65,6 +65,8 @@ def workflow_family(indicator_id: str) -> str:
     if crit == CRITERION_B_ID:
         if family_token.startswith("comm"):
             return FAMILY_COMMERCIAL
+        if family_token.startswith("sw") or family_token == "variety":
+            return FAMILY_INVENTION
         return FAMILY_INVENTION
     if crit == CRITERION_C_ID:
         perf_tokens = frozenset(
@@ -98,12 +100,93 @@ def allows_reviewer_partial_points(indicator_id: str) -> bool:
     try:
         base = float(row.get("points") or 0)
         mx = float(row.get("maxPoints") or base)
+        group_max = row.get("groupMax")
+        gm = float(group_max) if group_max is not None else None
     except (TypeError, ValueError):
         return False
     contrib = (row.get("contribution") or "").strip().lower()
     if mx > base + 0.001 and contrib == "not-applicable":
         return True
+    if gm is not None and gm > base + 0.001:
+        return True
+    if family_token_allows_tiered_partial(iid):
+        return True
     return False
+
+
+def family_token_allows_tiered_partial(indicator_id: str) -> bool:
+    """Commercialization indicators with published tier max above base points."""
+    iid = (indicator_id or "").strip()
+    parts = iid.split("-")
+    if len(parts) >= 3 and parts[2].startswith("comm"):
+        return True
+    return False
+
+
+def official_indicator_max_points(indicator_id: str, settings: dict[str, Any] | None = None) -> float | None:
+    """Published per-accomplishment maximum from Admin (not criterion or group caps)."""
+    iid = (indicator_id or "").strip()
+    if settings and isinstance(settings.get("indicators"), dict):
+        entry = settings["indicators"].get(iid)
+        if isinstance(entry, dict):
+            vals: list[float] = []
+            for key in ("points", "maxPoints"):
+                raw = entry.get(key)
+                if raw is not None:
+                    try:
+                        vals.append(float(raw))
+                    except (TypeError, ValueError):
+                        pass
+            if vals:
+                return max(vals)
+    row = indicator_row(iid)
+    if not row:
+        return None
+    try:
+        vals = [float(row.get("points") or 0), float(row.get("maxPoints") or row.get("points") or 0)]
+        return max(vals)
+    except (TypeError, ValueError):
+        return None
+
+
+def reviewer_adjustment_governing_rule(indicator_id: str) -> str:
+    """Plain-language rule for reviewer UI (derived from catalog; not a new policy)."""
+    iid = (indicator_id or "").strip()
+    if "journal" in iid:
+        return (
+            "Journal outputs may receive less than the full published base when indexing or "
+            "eligibility rules in the official matrix do not support the maximum."
+        )
+    if "cite" in iid:
+        return (
+            "Citation impact uses a tiered catalog; assess below the system-calculated amount "
+            "when the cited work or evidence does not support full credit."
+        )
+    parts = iid.split("-")
+    if len(parts) >= 3 and parts[2].startswith("comm"):
+        return (
+            "Commercialization uses tiered published caps; assess below the system-calculated "
+            "amount when revenue, licensing, or market evidence supports a lower tier only."
+        )
+    row = indicator_row(iid)
+    gm = row.get("groupMax") if row else None
+    try:
+        if gm is not None and float(gm) > float((row or {}).get("points") or 0) + 0.001:
+            return (
+                "This indicator has a published group cap; per-output base points apply and "
+                "assessed points may be reduced when evidence does not support full eligibility."
+            )
+    except (TypeError, ValueError):
+        pass
+    if contribution_mode(iid) == "declared":
+        return (
+            "Co-authored outputs scale with verified contribution percentage. Adjust contribution "
+            "after verifying authorship; you may also reduce assessed points when partial rules apply."
+        )
+    return (
+        "Official fixed points for a fully eligible output. Approve at the system-calculated "
+        "amount or reject/return when evidence is ineligible — arbitrary partial scores are not allowed."
+    )
 
 
 def contribution_mode(indicator_id: str) -> str:

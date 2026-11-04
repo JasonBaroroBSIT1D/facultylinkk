@@ -26,5 +26,19 @@ void main() {
       Kra2AUx.humanizeBlocker('Title of the research output is required.'),
       'Please enter the title.',
     );
+    expect(
+      Kra2AUx.humanizeBlocker(
+        'Please enter the author or inventor names.',
+        indicatorId: 'kra2-a-journal-sole',
+      ),
+      'Please check the author names.',
+    );
+    expect(
+      Kra2AUx.humanizeBlocker(
+        'Please enter the author or inventor names.',
+        indicatorId: 'kra2-b-patent-a-sole',
+      ),
+      'Please check the inventor names.',
+    );
   });
 }

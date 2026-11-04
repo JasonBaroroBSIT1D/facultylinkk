@@ -1,7 +1,8 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "source": "web/js/rules.js",
-  "pdfVerified": false,
+  "pdfVerified": true,
+  "criterionAAnnexVerified": "JC 01 s. 2026 Annex A pp. 78-81 (Criterion A indicators)",
   "indicatorCount": 54,
   "indicators": [
     {
@@ -410,8 +411,8 @@
       "group": null,
       "groupMax": null,
       "evidenceHints": [
-        ",\n                ",
-        ",\n                "
+        "Special Order signed by the President",
+        "Registration or deposit evidence for the cultivar, breed, or microbial strain"
       ]
     },
     {

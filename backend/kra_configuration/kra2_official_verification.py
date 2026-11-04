@@ -67,6 +67,36 @@ VERIFIED_RULES: tuple[dict[str, Any], ...] = (
         "notes": "Annex Criterion A row 3 Sole Author of a Journal Article.",
     },
     {
+        "ruleId": "kra2_book_sole_100",
+        "summary": "Sole author academic book: 100 points.",
+        "pdfPages": [78],
+        "notes": "Annex A item 1 Academic Book.",
+    },
+    {
+        "ruleId": "kra2_chapter_sole_35",
+        "summary": "Sole author edited academic book chapter: 35 points.",
+        "pdfPages": [78],
+        "notes": "Annex A item 2 Chapter in edited volume.",
+    },
+    {
+        "ruleId": "kra2_monograph_sole_100",
+        "summary": "Sole author academic monograph: 100 points.",
+        "pdfPages": [79],
+        "notes": "Annex A item 4 Monograph.",
+    },
+    {
+        "ruleId": "kra2_translation_35_70",
+        "summary": "Research translated to project/policy/product: 35 points per output, maximum 70.",
+        "pdfPages": [80],
+        "notes": "Annex A item 5; Section 20.",
+    },
+    {
+        "ruleId": "kra2_contribution_annex_d",
+        "summary": "Co-authored research outputs: points = base × documented contribution % (Annex D).",
+        "pdfPages": [12, 78],
+        "notes": "Section 18; no author-order shortcuts.",
+    },
+    {
         "ruleId": "kra2_patent_and_commercialization_separate",
         "summary": "Patent certificate and commercialization may be claimed separately in the same period.",
         "pdfPages": [20],

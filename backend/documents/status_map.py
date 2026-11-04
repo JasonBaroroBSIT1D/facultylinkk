@@ -35,6 +35,13 @@ def is_legacy_uploaded_draft(doc) -> bool:
         return False
     if doc.status != "draft":
         return False
+    try:
+        from documents.kra2_evidence.submission_state import is_kra2_unsubmitted_draft
+
+        if is_kra2_unsubmitted_draft(doc):
+            return False
+    except Exception:  # noqa: BLE001
+        pass
     return bool(doc.file_path)
 
 

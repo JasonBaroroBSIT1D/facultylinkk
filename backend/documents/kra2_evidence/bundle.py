@@ -58,10 +58,13 @@ def build_initial_bundle(
 ) -> dict[str, Any]:
     meta = indicator_metadata(indicator_id) or {}
     contrib = contribution_mode(indicator_id)
+    from documents.kra2_evidence.slots import primary_evidence_slot
+
+    primary_slot = primary_evidence_slot(indicator_id=indicator_id)
     checklist: dict[str, Any] = {}
     for slot in required_slots(indicator_id=indicator_id):
         entry = empty_checklist_entry()
-        if slot == "primary_output":
+        if slot == primary_slot:
             entry["documentId"] = primary_document_id
             entry["fileHash"] = primary_file_hash
             entry["status"] = SLOT_STATUS_PRESENT_UNVERIFIED
@@ -103,6 +106,29 @@ def build_initial_bundle(
         "primaryDocumentId": primary_document_id,
         "primaryFileHash": primary_file_hash,
     }
+
+
+def ensure_checklist_slots(bundle: dict[str, Any], *, indicator_id: str) -> bool:
+    """Add missing checklist entries when slot requirements expand (non-destructive)."""
+    from documents.kra2_evidence.kra2_a_evidence_slots import migrate_legacy_criterion_a_checklist_slots
+    from documents.kra2_evidence.slots import required_slots
+
+    changed = False
+    checklist = bundle.setdefault("checklist", {})
+    if migrate_legacy_criterion_a_checklist_slots(checklist, indicator_id=indicator_id):
+        changed = True
+    from documents.kra2_evidence.slots import primary_evidence_slot
+
+    primary_slot = primary_evidence_slot(indicator_id=indicator_id)
+    for slot in required_slots(indicator_id=indicator_id):
+        if slot not in checklist or not isinstance(checklist.get(slot), dict):
+            checklist[slot] = empty_checklist_entry()
+            if slot == primary_slot and bundle.get("primaryDocumentId"):
+                checklist[slot]["documentId"] = bundle.get("primaryDocumentId")
+                checklist[slot]["fileHash"] = bundle.get("primaryFileHash")
+                checklist[slot]["status"] = "present_unverified"
+            changed = True
+    return changed
 
 
 def bundle_from_document(doc: Any) -> dict[str, Any] | None:

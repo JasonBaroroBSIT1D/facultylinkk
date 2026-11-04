@@ -18,7 +18,7 @@ from kra_configuration.kra2_indicator_registry import (
 )
 
 OCR_EXTRACTION_KEY = "kra2PublicationOcr"
-OCR_EXTRACTION_VERSION = "1.3"
+OCR_EXTRACTION_VERSION = "1.7"
 
 _DOI_RE = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Z0-9]+)\b", re.I)
 _ISBN_RE = re.compile(r"\b(?:ISBN[- ]?(?:13|10)?[: ]*)?(97[89][- ]?\d[- ]?\d{2}[- ]?\d{6}[- ]?\d)\b", re.I)
@@ -94,9 +94,31 @@ _TITLE_LABELS = (
     r"title\s+of\s+(?:the\s+)?(?:invention|work|paper|article|book|chapter|study)",
     r"^article\s+title\s*:",
 )
+_WORK_TITLE_LABELS = (
+    r"title\s+of\s+work\s*/?\s*invention?",
+    r"title\s+of\s+(?:the\s+)?work",
+    r"name\s+of\s+(?:the\s+)?work",
+)
+_ARTICLE_TITLE_LABELS = (
+    r"chapter\s+title",
+    r"title\s+of\s+(?:the\s+)?chapter",
+    r"article\s+title",
+    r"title\s+of\s+(?:the\s+)?article",
+    r"paper\s+title",
+    r"manuscript\s+title",
+    r"research\s+article\s+title",
+    r"^book\s+title\s*:?\s*$",
+    r"title\s+of\s+(?:the\s+)?book",
+)
 _AUTHOR_LABELS = (
+    r"author\s*\(?s?\)?\s*/\s*inventor\s*\(?s?\)?\s*/\s*creator\s*\(?s?\)?",
+    r"creators?\s*\(?s?\)?\s*:?\s*$",
+    r"contributors?\s*\(?s?\)?\s*:?\s*$",
     r"^authors?\s*:",
+    r"^author\s+names?\s*:",
     r"^author\s*:",
+    r"^authors?\s*:?\s*$",
+    r"^author\s+names?\s*:?\s*$",
     r"^inventors?\s*:",
     r"^inventors?\s*/\s*s\s*:",
     r"^inventor\(s\)\s*:",
@@ -106,10 +128,32 @@ _AUTHOR_LABELS = (
     r"^written\s+by\s*:",
 )
 _JOURNAL_LABELS = (
+    r"journal\s*/\s*publisher\s*/\s*issuing\s+organization",
+    r"journal\s+name",
     r"^journal\s*:",
+    r"^journal\s*:?\s*$",
     r"^published\s+in\s*:",
+    r"^publisher\s*:",
+    r"^publisher\s*:?\s*$",
     r"^source\s*:",
+    r"^venue\s*:?\s*$",
     r"^venue\s*:",
+    r"^press\s*:",
+)
+_PUBLICATION_DATE_LABELS = (
+    r"publication\s*/\s*registration\s*/\s*event\s+date",
+    r"publication\s+date",
+    r"date\s+published",
+    r"^date\s*:",
+    r"^publication\s+date\s*:",
+    r"^published\s*:",
+)
+_REFERENCE_LABELS = (
+    r"doi\s*/\s*registration\s*/\s*reference\s*(?:number)?\s*:?\s*$",
+    r"doi\s*/\s*reference\s*(?:number)?\s*:?\s*$",
+    r"registration\s*/\s*reference\s*(?:number)?\s*:?\s*$",
+    r"^doi\s*:?\s*$",
+    r"^reference\s*:?\s*$",
 )
 _PUBLISHER_LABELS = (r"^publisher\s*:", r"^press\s*:")
 _DATE_LABELS = (r"^date\s*:", r"^publication\s+date\s*:", r"^published\s*:", r"^registration\s+date\s*:")
@@ -159,6 +203,25 @@ _ISSUING_ORG_LABELS = (
     r"intellectual\s+property\s+office",
 )
 
+_DISCLAIMER_TITLE_RE = re.compile(
+    r"(?:"
+    r"\bfictional\b|"
+    r"for\s+system\s+testing|"
+    r"system\s+testing\s+only|"
+    r"not\s+(?:a\s+)?real(?:\s+certification|\s+document|\s+record)?|"
+    r"not\s+an?\s+official|"
+    r"sample\s+document|"
+    r"for\s+testing\s+purposes|"
+    r"facultylink\s+test|"
+    r"simulated\s+test\s+evidence|"
+    r"software\s+testing\s+only|"
+    r"synthetic|"
+    r"not\s+issued|"
+    r"not\s+authentic"
+    r")",
+    re.I,
+)
+
 _PLACEHOLDER_ACCOMPLISHMENT_TITLES = frozenset(
     {
         "patent application",
@@ -192,7 +255,147 @@ def ocr_text_from_document(doc: Any) -> str:
     return ""
 
 
-def _line_after_label(lines: list[str], patterns: tuple[str, ...]) -> str | None:
+def _is_disclaimer_or_banner_line(line: str) -> bool:
+    ln = (line or "").strip()
+    if len(ln) < 8:
+        return False
+    if len(ln) > 18 and re.search(r"\((?:fictional|not\s+real)\)\s*$", ln, re.I) and not re.search(
+        r"for\s+system\s+testing|testing\s+only|system\s+testing\s+only", ln, re.I
+    ):
+        return False
+    if _DISCLAIMER_TITLE_RE.search(ln):
+        if len(ln) > 32 and re.search(
+            r"\b(journal\s+of|press|university|office|department|learning)\b", ln, re.I
+        ) and not re.search(r"for\s+system\s+testing|system\s+testing\s+only", ln, re.I):
+            return False
+        return True
+    if re.search(r"facultylink\s*[|•]", ln, re.I) and re.search(r"test|simulated|fictional", ln, re.I):
+        return True
+    return False
+
+
+def _is_disclaimer_title(value: str) -> bool:
+    v = (value or "").strip()
+    if not v:
+        return False
+    return _is_disclaimer_or_banner_line(v)
+
+
+_METADATA_LABEL_PHRASE = re.compile(
+    r"(?:"
+    r"publication\s+information|page\s+and\s+publication|document\s+details|"
+    r"supporting\s+document|field\s+labels?|accomplishment\s+type|"
+    r"testing\s+instructions|supporting\s+narrative|kra\s+ii\s+criterion|"
+    r"criterion\s+[abc]\b|"
+    r"journal\s*/\s*publisher|issuing\s+organization|"
+    r"author\s*names?|publication\s+date|reference\s+number|"
+    r"doi\s*/\s*registration|registration\s*/\s*reference|"
+    r"publication\s*/\s*registration"
+    r")",
+    re.I,
+)
+
+
+def _value_looks_like_date(value: str) -> bool:
+    v = (value or "").strip()
+    if not v:
+        return False
+    if re.fullmatch(r"(19|20)\d{2}", v):
+        return True
+    if _DATE_RE.search(v) and len(v) <= 40:
+        return True
+    return False
+
+
+def _looks_like_ui_instruction_text(value: str) -> bool:
+    """OCR sometimes captures faculty-facing helper copy, not documentary names."""
+    v = (value or "").strip()
+    if len(v) < 18:
+        return False
+    low = v.casefold()
+    if re.search(
+        r"\b(please\s+(enter|add|complete|check)|enter\s+the\s+missing|try\s+reading\s+again|"
+        r"information\s+below|missing\s+information|we\s+could\s*n'?t\s+read|found\s+in\s+your\s+document|"
+        r"you\s+can\s+try|check\s+these\s+details|before\s+you\s+send)\b",
+        low,
+    ):
+        return True
+    if v.endswith(".") and re.search(r"\b(you|your|please|enter|missing|information)\b", low) and len(v) > 40:
+        return True
+    return False
+
+
+def is_metadata_label_value(value: str, *, field_id: str = "") -> bool:
+    """True when text is a form heading/label, not documentary metadata."""
+    v = (value or "").strip()
+    if not v:
+        return True
+    low = v.casefold()
+    if _is_disclaimer_title(v):
+        return True
+    if v.rstrip().endswith("/") or v.rstrip().endswith(" /"):
+        return True
+    if re.fullmatch(r"(authors?|journal|venue|publisher|doi|date|book|title|inventors?)", low):
+        return True
+    if v.count("/") >= 2 and re.search(
+        r"journal|publisher|author|inventor|creator|venue|organization|registration|reference",
+        low,
+    ):
+        return True
+    if _METADATA_LABEL_PHRASE.search(v) and len(v) < 160:
+        return True
+    if field_id == "outputTitle" and re.search(
+        r"\b(information|details|instructions|narrative|overview|type)\b", low
+    ) and len(v) < 100:
+        return True
+    if field_id in ("outputVenue", "journalTitle"):
+        if re.search(r"\b(journal\s+of|press|university|college|publisher)\b", low) and len(v) > 14:
+            if not v.rstrip().endswith("/"):
+                return False
+        if _METADATA_LABEL_PHRASE.search(v):
+            return True
+        if re.search(r"simulated\s+journal|journal\s+article\s+page", low):
+            return True
+    if field_id in ("publicationDate", "registrationDate") and not _value_looks_like_date(v):
+        return True
+    if field_id == "authorsLine":
+        if len(v) < 3 or low in _REG_NUMBER_STOPWORDS:
+            return True
+        if _METADATA_LABEL_PHRASE.search(v):
+            return True
+        if _looks_like_ui_instruction_text(v):
+            return True
+    if field_id in ("outputTitle", "outputVenue", "citationContext") and _looks_like_ui_instruction_text(v):
+        return True
+    return False
+
+
+def _line_after_label_priority(
+    lines: list[str],
+    pattern_groups: tuple[tuple[str, ...], ...],
+) -> str | None:
+    for patterns in pattern_groups:
+        val = _line_after_label(lines, patterns)
+        if val:
+            return val
+    return None
+
+
+def _following_value_line(lines: list[str], start_index: int) -> str | None:
+    for j in range(start_index + 1, min(start_index + 6, len(lines))):
+        nxt = lines[j].strip()
+        if not nxt:
+            continue
+        if _is_disclaimer_or_banner_line(nxt):
+            break
+        if is_metadata_label_value(nxt):
+            continue
+        if len(nxt) < 400:
+            return nxt[:500]
+    return None
+
+
+def _line_after_label(lines: list[str], patterns: tuple[str, ...], *, field_id: str = "") -> str | None:
     compiled = [re.compile(p, re.I) for p in patterns]
     for i, ln in enumerate(lines):
         for pat in compiled:
@@ -200,12 +403,13 @@ def _line_after_label(lines: list[str], patterns: tuple[str, ...]) -> str | None
             if not m:
                 continue
             rest = ln[m.end() :].lstrip(" \t:-#")
-            if rest:
-                return rest[:500]
-            if i + 1 < len(lines):
-                nxt = lines[i + 1].strip()
-                if nxt and len(nxt) < 400:
-                    return nxt[:500]
+            if rest and re.fullmatch(r"number", rest, re.I):
+                rest = ""
+            candidate = rest if rest and not is_metadata_label_value(rest, field_id=field_id) else None
+            if not candidate:
+                candidate = _following_value_line(lines, i)
+            if candidate and not is_metadata_label_value(candidate, field_id=field_id):
+                return candidate[:500]
     return None
 
 
@@ -217,6 +421,74 @@ def _first_doi(text: str) -> str | None:
 def _first_date(text: str) -> str | None:
     m = _DATE_RE.search(text or "")
     return m.group(0)[:120] if m else None
+
+
+def _normalize_issuing_venue(venue: str | None, full_text: str) -> str | None:
+    v = (venue or "").strip()
+    if re.search(r"Intellectual\s+Property\s+Office\s+of", v, re.I):
+        return v[:300]
+    if re.search(r"\bIPOPHL\b", v, re.I) and "Intellectual Property Office" not in v:
+        v = ""
+    elif v and not re.match(r"^(?:of|the)\b", v, re.I):
+        if len(v) >= 8:
+            return v[:300]
+    if re.match(r"^(?:of|the)\b", (venue or "").strip(), re.I):
+        v = ""
+    m = re.search(
+        r"Intellectual\s+Property\s+Office\s+of\s+the\s+Philippines(?:\s*\(\s*IPOPHL\s*\))?",
+        full_text or "",
+        re.I,
+    )
+    if m:
+        return m.group(0).strip()[:300]
+    if re.search(r"\bIPOPHL\b", full_text or "", re.I):
+        return "Intellectual Property Office of the Philippines (IPOPHL)"
+    return v[:300] if v else None
+
+
+_CONTRIBUTION_PERCENT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"percentage\s+of\s+contribution\s*:?\s*(\d{1,3})\s*%?",
+        re.I,
+    ),
+    re.compile(
+        r"contribution\s+(?:share|percent(?:age)?)\s*:?\s*(\d{1,3})\s*%?",
+        re.I,
+    ),
+    re.compile(r"(\d{1,3})\s*%\s*contribution", re.I),
+)
+
+
+def _extract_contribution_percent_advisory(text: str) -> str | None:
+    body = text or ""
+    for pat in _CONTRIBUTION_PERCENT_PATTERNS:
+        m = pat.search(body)
+        if not m:
+            continue
+        try:
+            pct = int(m.group(1))
+        except (TypeError, ValueError):
+            continue
+        if 0 < pct <= 100:
+            return str(pct)
+    return None
+
+
+def _merge_contribution_annex_hints(raw: dict[str, str], text: str, indicator_id: str) -> None:
+    if "declaredContributionPercent" in raw:
+        return
+    if not re.search(
+        r"Annex\s+[FGH]|Certificate\s+of\s+Contribution|Form[_\s]+Software|Cultivars?,\s*Breeds",
+        text or "",
+        re.I,
+    ):
+        from kra_configuration.kra2_indicator_registry import contribution_mode
+
+        if contribution_mode(indicator_id) != "declared":
+            return
+    pct = _extract_contribution_percent_advisory(text)
+    if pct:
+        raw["declaredContributionPercent"] = pct
 
 
 def _normalize_inventor_line(value: str) -> str:
@@ -328,12 +600,25 @@ def validate_extracted_field(field_id: str, value: str, indicator_id: str) -> tu
         return v[:120], "extracted"
 
     if field_id in ("publicationDate", "registrationDate"):
+        if not _value_looks_like_date(v):
+            return None, "rejected"
         return v[:120], _date_extraction_status(v)
 
     if field_id == "outputTitle":
         low = v.casefold()
+        if is_metadata_label_value(v, field_id="outputTitle"):
+            return None, "rejected"
         if low in _PLACEHOLDER_ACCOMPLISHMENT_TITLES:
             return None, "rejected"
+        if _is_disclaimer_title(v):
+            return None, "rejected"
+        if family in (FAMILY_CREATIVE, FAMILY_PERFORMANCE):
+            if re.match(r"^/?\s*(invention|patent|utility\s+model|journal\s+article)\b", low):
+                return None, "rejected"
+            if re.fullmatch(r"/?\s*invention", low):
+                return None, "rejected"
+            if len(v) < 4:
+                return None, "rejected"
         if family == FAMILY_INVENTION and re.search(
             r"patent\s+publication\s+notice|formality\s+examination|"
             r"intellectual\s+property\s+office|substantive\s+examination|"
@@ -348,12 +633,30 @@ def validate_extracted_field(field_id: str, value: str, indicator_id: str) -> tu
             return v[:200], "extracted"
         if _ISBN_RE.search(v):
             return v[:200], "extracted"
+        if re.fullmatch(r"[A-Z0-9][A-Z0-9\-/.]{4,}", v, re.I) and v.casefold() not in _REG_NUMBER_STOPWORDS:
+            return v[:200], "extracted"
         return None, "rejected"
 
     if field_id == "authorsLine":
-        if len(v) < 3 or v.casefold() in _REG_NUMBER_STOPWORDS:
+        if is_metadata_label_value(v, field_id="authorsLine"):
+            return None, "rejected"
+        if not re.search(r"[A-Za-z]{2,}", v):
             return None, "rejected"
         return v[:300], "extracted"
+
+    if field_id == "declaredContributionPercent":
+        try:
+            pct = float(v.replace("%", "").strip())
+        except ValueError:
+            return None, "rejected"
+        if not 0 < pct <= 100:
+            return None, "rejected"
+        normalized = str(int(pct)) if pct == int(pct) else str(round(pct, 2))
+        return normalized, "partial"
+
+    if field_id in ("outputVenue", "journalTitle", "citationContext"):
+        if is_metadata_label_value(v, field_id=field_id):
+            return None, "rejected"
 
     return v[:500], "extracted"
 
@@ -390,50 +693,89 @@ def _names_after_label(lines: list[str], patterns: tuple[str, ...]) -> str | Non
 
 
 def _guess_title_line(lines: list[str]) -> str | None:
-    labeled = _line_after_label(lines, _TITLE_LABELS)
-    if labeled:
+    return _guess_publication_title(lines)
+
+
+def _guess_publication_title(lines: list[str]) -> str | None:
+    labeled = _line_after_label(lines, _ARTICLE_TITLE_LABELS + _TITLE_LABELS)
+    if labeled and not _is_disclaimer_title(labeled):
         return labeled
     skip = re.compile(
-        r"^(abstract|keywords|introduction|doi|issn|volume|issue|copyright|page|\d+\s*$)",
+        r"^(abstract|keywords|introduction|doi|issn|volume|issue|copyright|page|"
+        r"faculty|document\s+type|evidence\s+status|overview|note|\d+\s*$)",
         re.I,
     )
-    for ln in lines[:25]:
+    for ln in lines[:40]:
         if len(ln) < 12 or len(ln) > 300:
+            continue
+        if _is_disclaimer_or_banner_line(ln):
             continue
         if skip.search(ln):
             continue
-        if re.search(r"\b(university|college|journal|vol\.|pp\.|issn|doi:)\b", ln, re.I):
+        if re.search(r"\b(university|college|vol\.|pp\.|issn|doi:|facultylink|simulated)\b", ln, re.I):
+            continue
+        if re.fullmatch(r"(authors?|journal|publication\s+date|doi)", ln, re.I):
             continue
         return ln[:500]
-    return lines[0][:500] if lines else None
+    return None
 
 
-def _parse_publication(text: str) -> dict[str, str]:
+def _publication_title_label_groups(indicator_id: str) -> tuple[tuple[str, ...], ...]:
+    iid = (indicator_id or "").casefold()
+    if "chapter" in iid:
+        return (
+            (r"chapter\s+title", r"title\s+of\s+(?:the\s+)?chapter"),
+            _WORK_TITLE_LABELS,
+            _ARTICLE_TITLE_LABELS,
+            _TITLE_LABELS,
+        )
+    if "book" in iid or "monograph" in iid:
+        return (_WORK_TITLE_LABELS, _ARTICLE_TITLE_LABELS, _TITLE_LABELS)
+    return (_WORK_TITLE_LABELS, _ARTICLE_TITLE_LABELS, _TITLE_LABELS)
+
+
+def _parse_publication(text: str, indicator_id: str = "") -> dict[str, str]:
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
     out: dict[str, str] = {}
-    title = _guess_title_line(lines)
-    if title:
+    title = _line_after_label_priority(lines, _publication_title_label_groups(indicator_id)) or _guess_publication_title(
+        lines
+    )
+    if title and not _is_disclaimer_title(title) and not is_metadata_label_value(title, field_id="outputTitle"):
         out["outputTitle"] = title
-    authors = _line_after_label(lines, _AUTHOR_LABELS)
-    if authors:
-        out["authorsLine"] = authors[:300]
-    journal = _line_after_label(lines, _JOURNAL_LABELS)
+    raw_authors = (
+        _line_after_label(lines, _AUTHOR_LABELS, field_id="authorsLine")
+        or _names_after_label(lines, _AUTHOR_LABELS)
+    )
+    if raw_authors and not re.match(r"^faculty\s*:", raw_authors, re.I):
+        out["authorsLine"] = _normalize_inventor_line(raw_authors) or raw_authors[:300]
+    journal = _line_after_label(lines, _JOURNAL_LABELS, field_id="outputVenue")
     if journal:
         out["outputVenue"] = journal[:300]
         out["journalTitle"] = journal[:300]
     if not journal:
         for ln in lines[:40]:
+            if _is_disclaimer_or_banner_line(ln):
+                continue
+            if is_metadata_label_value(ln, field_id="outputVenue"):
+                continue
             if re.search(r"\bjournal\b|\bvol\.\s*\d|\bissn\b", ln, re.I) and len(ln) < 300:
-                out.setdefault("outputVenue", ln[:300])
-                out.setdefault("journalTitle", ln[:300])
+                out["outputVenue"] = ln[:300]
+                out["journalTitle"] = ln[:300]
                 break
     publisher = _line_after_label(lines, _PUBLISHER_LABELS)
     if publisher and "outputVenue" not in out:
         out["outputVenue"] = publisher[:300]
+    ref_line = _line_after_label(lines, _REFERENCE_LABELS, field_id="publicationReference")
     doi = _first_doi(text)
-    if doi:
+    if ref_line and not is_metadata_label_value(ref_line, field_id="publicationReference"):
+        out["publicationReference"] = ref_line[:200]
+    elif doi:
         out["publicationReference"] = doi
-    date_val = _line_after_label(lines, _DATE_LABELS) or _first_date(text)
+    date_val = _line_after_label(lines, _PUBLICATION_DATE_LABELS + _DATE_LABELS, field_id="publicationDate")
+    if not date_val or not _value_looks_like_date(date_val):
+        date_val = _extract_best_date(text or "", lines, _PUBLICATION_DATE_LABELS)
+    if not date_val or not _value_looks_like_date(date_val):
+        date_val = _first_date(text)
     if date_val:
         out["publicationDate"] = date_val
     isbn = _ISBN_RE.search(text or "")
@@ -494,75 +836,441 @@ def _parse_invention(text: str, indicator_id: str = "") -> dict[str, str]:
     )
     if date_val:
         out["registrationDate"] = date_val
-    venue = _line_after_label(lines, _ISSUING_ORG_LABELS)
+    venue = _normalize_issuing_venue(_line_after_label(lines, _ISSUING_ORG_LABELS), text or "")
     if venue:
-        out["outputVenue"] = venue[:300]
-    else:
-        for ln in lines[:40]:
-            if len(ln) < 300 and re.search(
-                r"\bIntellectual\s+Property\s+Office\b|\bIPOPHL\b|\bIPO\b|\bregistry\b|\bBureau\b",
-                ln,
-                re.I,
-            ):
-                out["outputVenue"] = ln[:300]
-                break
+        out["outputVenue"] = venue
     return out
 
 
-def _parse_citation(text: str) -> dict[str, str]:
+_SOFTWARE_TITLE_LABELS = (
+    r"software\s+title",
+    r"title\s+of\s+(?:the\s+)?(?:software|program|application)",
+    r"program\s+title",
+    r"^name\s+of\s+software\s*:?",
+)
+_COPYRIGHT_REG_LABELS = (
+    r"copyright\s+(?:reg(?:istration)?\.?\s*)?(?:no\.?|number)\s*:?",
+    r"certificate\s+(?:no\.?|number)\s*:?",
+    r"reg(?:istration)?\.?\s*no\.?\s*:?",
+)
+_DEVELOPER_LABELS = (
+    r"developer\s*\(?s?\)?\s*:?",
+    r"software\s+developer\s*\(?s?\)?\s*:?",
+    r"author\s*\(?s?\)?\s*of\s+(?:the\s+)?software",
+)
+_VARIETY_TITLE_LABELS = (
+    r"(?:cultivar|variety|breed|strain)\s+name\s*:?",
+    r"name\s+of\s+(?:the\s+)?(?:cultivar|variety|breed|strain)",
+    r"title\s+of\s+(?:the\s+)?(?:cultivar|variety|breed|strain)",
+)
+_DEPOSIT_REG_LABELS = (
+    r"deposit\s+(?:no\.?|number)\s*:?",
+    r"registration\s+(?:no\.?|number)\s*:?",
+    r"accession\s+(?:no\.?|number)\s*:?",
+)
+
+
+def _parse_software(text: str, indicator_id: str = "") -> dict[str, str]:
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
     out: dict[str, str] = {}
-    title = _guess_title_line(lines)
+    title = (
+        _line_after_label(lines, _SOFTWARE_TITLE_LABELS + _WORK_TITLE_LABELS + _INVENTION_TITLE_LABELS)
+        or _guess_invention_title(lines, indicator_id)
+    )
     if title:
         out["outputTitle"] = title
+    devs = (
+        _line_after_label(lines, _DEVELOPER_LABELS + _INVENTOR_LABELS)
+        or _names_after_label(lines, _DEVELOPER_LABELS + _AUTHOR_LABELS)
+    )
+    if devs:
+        out["authorsLine"] = (_normalize_inventor_line(devs) or devs)[:300]
+    reg = _line_after_label(lines, _COPYRIGHT_REG_LABELS) or _extract_registration_number(
+        text or "", lines, indicator_id=indicator_id
+    )
+    if reg:
+        out["registrationNumber"] = reg
+    date_val = _extract_best_date(text or "", lines, _INV_DATE_LABELS + _PUBLICATION_DATE_LABELS)
+    if date_val:
+        out["registrationDate"] = date_val
+    venue = _normalize_issuing_venue(_line_after_label(lines, _ISSUING_ORG_LABELS), text or "")
+    if venue:
+        out["outputVenue"] = venue
+    return out
+
+
+def _parse_variety(text: str, indicator_id: str = "") -> dict[str, str]:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    out: dict[str, str] = {}
+    title = (
+        _line_after_label(lines, _VARIETY_TITLE_LABELS + _INVENTION_TITLE_LABELS)
+        or _guess_invention_title(lines, indicator_id)
+    )
+    if title:
+        out["outputTitle"] = title
+    breeders = (
+        _line_after_label(lines, _DEVELOPER_LABELS + _INVENTOR_LABELS)
+        or _names_after_label(lines, _AUTHOR_LABELS)
+    )
+    if breeders:
+        out["authorsLine"] = (_normalize_inventor_line(breeders) or breeders)[:300]
+    reg = _line_after_label(lines, _DEPOSIT_REG_LABELS) or _extract_registration_number(
+        text or "", lines, indicator_id=indicator_id
+    )
+    if reg:
+        out["registrationNumber"] = reg
+    date_val = _extract_best_date(text or "", lines, _INV_DATE_LABELS)
+    if date_val:
+        out["registrationDate"] = date_val
     for ln in lines[:40]:
-        if re.search(r"\bcit(?:ed|ing|ation)\b", ln, re.I) and len(ln) < 400:
-            out["citationContext"] = ln[:400]
+        if re.search(r"\b(?:PCAARRD|Bureau|registry|gene\s+bank|deposit)\b", ln, re.I) and len(ln) < 300:
+            out["outputVenue"] = ln[:300]
             break
-    date_val = _first_date(text)
+    return out
+
+
+_CITATION_TITLE_LABELS = (
+    r"cited\s+work\s*:?",
+    r"title\s+of\s+cited\s+work\s*:?",
+    r"work\s+cited\s*:?",
+    r"cited\s+publication\s*:?",
+)
+_CITATION_CONTEXT_LABELS = (
+    r"citation\s+context",
+    r"citing\s+publication",
+    r"cited\s+in",
+    r"source\s+of\s+citation",
+    r"citation\s+details",
+)
+_CREATIVE_TITLE_LABELS = (
+    r"title\s+of\s+(?:the\s+)?(?:creative\s+)?work",
+    r"creative\s+work\s+title",
+    r"performance\s+title",
+    r"title\s+of\s+(?:the\s+)?(?:performance|production|composition|exhibit)",
+)
+_CREATIVE_VENUE_LABELS = (
+    r"exhibition\s+venue",
+    r"venue",
+    r"presented\s+at",
+    r"organization",
+    r"^venue\s*:?\s*$",
+    r"^organization\s*:?\s*$",
+)
+_CREATIVE_DATE_LABELS = (
+    r"performance\s+date",
+    r"exhibition\s+date",
+    r"date\s+of\s+(?:the\s+)?performance",
+    r"event\s+date",
+)
+_PERFORMANCE_TITLE_LABELS = (
+    r"title\s+of\s+(?:the\s+)?(?:play|production|performance|show|musical)",
+    r"(?:play|production|performance|show)\s+title",
+    r"production\s+name",
+    r"character\s+portrayed",
+)
+_PERFORMANCE_VENUE_LABELS = (
+    r"performance\s+venue",
+    r"theater",
+    r"theatre",
+    r"organizer",
+    r"invited\s+by",
+    r"presented\s+at",
+)
+
+
+_LITERARY_TITLE_LABELS = (
+    r"title\s+of\s+(?:the\s+)?(?:work|book|novel|story|poem|essay|literary)",
+    r"literary\s+work",
+    r"book\s+title",
+)
+_LITERARY_AUTHOR_LABELS = (r"author\s*\(?s?\)?", r"writer", r"by\s*:")
+_LITERARY_PUBLISHER_LABELS = (r"publisher", r"publication", r"published\s+by", r"press")
+
+_FILM_TITLE_LABELS = (r"film\s+title", r"title\s+of\s+(?:the\s+)?film", r"motion\s+picture")
+_FILM_DIRECTOR_LABELS = (r"director", r"created\s+by", r"filmmaker")
+_FILM_VENUE_LABELS = (r"festival", r"screening", r"venue", r"cinematheque", r"organizer")
+
+_EXHIBITION_TITLE_LABELS = (r"title\s+of\s+(?:the\s+)?(?:artwork|work|piece|design|project)", r"exhibition")
+_EXHIBITION_ARTIST_LABELS = (r"artist", r"creator", r"designer", r"architect")
+_EXHIBITION_VENUE_LABELS = (r"gallery", r"museum", r"exhibition\s+venue", r"exhibited\s+at", r"venue")
+
+_MUSIC_WORK_TITLE_LABELS = (
+    r"title\s+of\s+(?:the\s+)?(?:composition|arrangement|work|piece|production)",
+    r"composition",
+    r"arrangement",
+)
+_MUSIC_CREATOR_LABELS = (r"composer", r"arranger", r"producer", r"music\s+by")
+
+
+def _parse_literary(text: str, indicator_id: str = "") -> dict[str, str]:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    out: dict[str, str] = {}
+    title = _line_after_label(
+        lines, _LITERARY_TITLE_LABELS + _CREATIVE_TITLE_LABELS + _TITLE_LABELS, field_id="outputTitle"
+    )
+    if title and not _is_disclaimer_title(title) and not is_metadata_label_value(title, field_id="outputTitle"):
+        cleaned, status = validate_extracted_field("outputTitle", title, indicator_id)
+        if cleaned and status != "rejected":
+            out["outputTitle"] = cleaned
+    author = _line_after_label(lines, _LITERARY_AUTHOR_LABELS + _AUTHOR_LABELS, field_id="authorsLine") or _names_after_label(
+        lines, _AUTHOR_LABELS
+    )
+    if author and not is_metadata_label_value(author, field_id="authorsLine"):
+        out["authorsLine"] = (_normalize_inventor_line(author) or author)[:300]
+    venue = _line_after_label(lines, _LITERARY_PUBLISHER_LABELS + _PUBLISHER_LABELS, field_id="outputVenue")
+    if venue and not is_metadata_label_value(venue, field_id="outputVenue"):
+        out["outputVenue"] = venue[:300]
+    date_val = _line_after_label(
+        lines, _PUBLICATION_DATE_LABELS + _CREATIVE_DATE_LABELS + _DATE_LABELS, field_id="publicationDate"
+    )
+    if not date_val or not _value_looks_like_date(date_val):
+        date_val = _first_date(text)
     if date_val:
         out["publicationDate"] = date_val
+    return out
+
+
+def _parse_film(text: str, indicator_id: str = "") -> dict[str, str]:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    out: dict[str, str] = {}
+    title = _line_after_label(lines, _FILM_TITLE_LABELS + _CREATIVE_TITLE_LABELS + _TITLE_LABELS, field_id="outputTitle")
+    if title and not _is_disclaimer_title(title) and not is_metadata_label_value(title, field_id="outputTitle"):
+        cleaned, status = validate_extracted_field("outputTitle", title, indicator_id)
+        if cleaned and status != "rejected":
+            out["outputTitle"] = cleaned
+    director = _line_after_label(lines, _FILM_DIRECTOR_LABELS + _AUTHOR_LABELS, field_id="authorsLine") or _names_after_label(
+        lines, _FILM_DIRECTOR_LABELS
+    )
+    if director and not is_metadata_label_value(director, field_id="authorsLine"):
+        out["authorsLine"] = (_normalize_inventor_line(director) or director)[:300]
+    venue = _line_after_label(lines, _FILM_VENUE_LABELS + _CREATIVE_VENUE_LABELS, field_id="outputVenue")
+    if venue and not is_metadata_label_value(venue, field_id="outputVenue"):
+        out["outputVenue"] = venue[:300]
+    date_val = _line_after_label(
+        lines,
+        (r"screening\s+date", r"release\s+date", r"premiere") + _CREATIVE_DATE_LABELS + _DATE_LABELS,
+        field_id="publicationDate",
+    )
+    if not date_val or not _value_looks_like_date(date_val):
+        date_val = _first_date(text)
+    if date_val:
+        out["publicationDate"] = date_val
+    return out
+
+
+def _parse_exhibition(text: str, indicator_id: str = "") -> dict[str, str]:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    out: dict[str, str] = {}
+    title = _line_after_label(
+        lines, _EXHIBITION_TITLE_LABELS + _CREATIVE_TITLE_LABELS + _TITLE_LABELS, field_id="outputTitle"
+    )
+    if title and not _is_disclaimer_title(title) and not is_metadata_label_value(title, field_id="outputTitle"):
+        cleaned, status = validate_extracted_field("outputTitle", title, indicator_id)
+        if cleaned and status != "rejected":
+            out["outputTitle"] = cleaned
+    artist = _line_after_label(lines, _EXHIBITION_ARTIST_LABELS + _AUTHOR_LABELS, field_id="authorsLine") or _names_after_label(
+        lines, _EXHIBITION_ARTIST_LABELS
+    )
+    if artist and not is_metadata_label_value(artist, field_id="authorsLine"):
+        out["authorsLine"] = (_normalize_inventor_line(artist) or artist)[:300]
+    venue = _line_after_label(lines, _EXHIBITION_VENUE_LABELS + _CREATIVE_VENUE_LABELS, field_id="outputVenue")
+    if venue and not is_metadata_label_value(venue, field_id="outputVenue"):
+        out["outputVenue"] = venue[:300]
+    date_val = _line_after_label(
+        lines,
+        (r"exhibition\s+date", r"opening\s+date") + _CREATIVE_DATE_LABELS + _DATE_LABELS,
+        field_id="publicationDate",
+    )
+    if not date_val or not _value_looks_like_date(date_val):
+        date_val = _first_date(text)
+    if date_val:
+        out["publicationDate"] = date_val
+    return out
+
+
+def _parse_music_work(text: str, indicator_id: str = "") -> dict[str, str]:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    out: dict[str, str] = {}
+    title = _line_after_label(
+        lines, _MUSIC_WORK_TITLE_LABELS + _CREATIVE_TITLE_LABELS + _TITLE_LABELS, field_id="outputTitle"
+    )
+    if title and not _is_disclaimer_title(title) and not is_metadata_label_value(title, field_id="outputTitle"):
+        cleaned, status = validate_extracted_field("outputTitle", title, indicator_id)
+        if cleaned and status != "rejected":
+            out["outputTitle"] = cleaned
+    creator = _line_after_label(lines, _MUSIC_CREATOR_LABELS + _AUTHOR_LABELS, field_id="authorsLine") or _names_after_label(
+        lines, _MUSIC_CREATOR_LABELS
+    )
+    if creator and not is_metadata_label_value(creator, field_id="authorsLine"):
+        out["authorsLine"] = (_normalize_inventor_line(creator) or creator)[:300]
+    venue = _line_after_label(
+        lines, _CREATIVE_VENUE_LABELS + _PUBLISHER_LABELS + _PERFORMANCE_VENUE_LABELS, field_id="outputVenue"
+    )
+    if venue and not is_metadata_label_value(venue, field_id="outputVenue"):
+        out["outputVenue"] = venue[:300]
+    date_val = _line_after_label(
+        lines, _CREATIVE_DATE_LABELS + _PUBLICATION_DATE_LABELS + _DATE_LABELS, field_id="publicationDate"
+    )
+    if not date_val or not _value_looks_like_date(date_val):
+        date_val = _first_date(text)
+    if date_val:
+        out["publicationDate"] = date_val
+    return out
+
+
+def _parse_performance(text: str, indicator_id: str = "") -> dict[str, str]:
+    """Performing arts — acting, directing, music/dance performance, conducting."""
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    out: dict[str, str] = {}
+    title = _line_after_label(
+        lines,
+        _PERFORMANCE_TITLE_LABELS + _CREATIVE_TITLE_LABELS + _WORK_TITLE_LABELS + _TITLE_LABELS,
+        field_id="outputTitle",
+    )
+    if title and not _is_disclaimer_title(title) and not is_metadata_label_value(title, field_id="outputTitle"):
+        cleaned, status = validate_extracted_field("outputTitle", title, indicator_id)
+        if cleaned and status != "rejected":
+            out["outputTitle"] = cleaned
+    performers = (
+        _line_after_label(lines, (r"performer\s*\(?s?\)?", r"actor\s*\(?s?\)?", r"cast"), field_id="authorsLine")
+        or _line_after_label(lines, _AUTHOR_LABELS, field_id="authorsLine")
+        or _names_after_label(lines, _AUTHOR_LABELS)
+    )
+    if performers and not is_metadata_label_value(performers, field_id="authorsLine"):
+        out["authorsLine"] = (_normalize_inventor_line(performers) or performers)[:300]
+    venue = _line_after_label(
+        lines,
+        _PERFORMANCE_VENUE_LABELS + _CREATIVE_VENUE_LABELS + _JOURNAL_LABELS,
+        field_id="outputVenue",
+    )
+    if venue and not is_metadata_label_value(venue, field_id="outputVenue"):
+        out["outputVenue"] = venue[:300]
+    date_val = _line_after_label(
+        lines, _CREATIVE_DATE_LABELS + _PUBLICATION_DATE_LABELS + _DATE_LABELS, field_id="publicationDate"
+    )
+    if not date_val or not _value_looks_like_date(date_val):
+        date_val = _first_date(text)
+    if date_val:
+        out["publicationDate"] = date_val
+    return out
+
+
+def _parse_citation(text: str, indicator_id: str = "") -> dict[str, str]:
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    out: dict[str, str] = {}
+    title = _line_after_label(lines, _CITATION_TITLE_LABELS, field_id="outputTitle") or _guess_title_line(lines)
+    if title and not is_metadata_label_value(title, field_id="outputTitle"):
+        out["outputTitle"] = title
+    ctx = _line_after_label(lines, _CITATION_CONTEXT_LABELS, field_id="citationContext")
+    if ctx and not is_metadata_label_value(ctx, field_id="citationContext"):
+        out["citationContext"] = ctx[:400]
+    else:
+        for ln in lines[:40]:
+            if _is_disclaimer_or_banner_line(ln):
+                continue
+            if re.search(r"\bcit(?:ed|ing|ation)\b", ln, re.I) and len(ln) < 400:
+                if not is_metadata_label_value(ln, field_id="citationContext"):
+                    out["citationContext"] = ln[:400]
+                break
+    date_val = _line_after_label(lines, _PUBLICATION_DATE_LABELS + _DATE_LABELS, field_id="publicationDate")
+    if not date_val or not _value_looks_like_date(date_val):
+        date_val = _first_date(text)
+    if date_val:
+        out["publicationDate"] = date_val
+    ref_line = _line_after_label(lines, _REFERENCE_LABELS, field_id="publicationReference")
     doi = _first_doi(text)
-    if doi:
+    if ref_line and not is_metadata_label_value(ref_line, field_id="publicationReference"):
+        out["publicationReference"] = ref_line[:200]
+    elif doi:
         out["publicationReference"] = doi
     return out
 
 
-def _parse_creative(text: str) -> dict[str, str]:
+def _parse_creative(text: str, indicator_id: str = "") -> dict[str, str]:
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
     out: dict[str, str] = {}
-    title = _line_after_label(lines, _TITLE_LABELS) or _guess_title_line(lines)
-    if title:
-        out["outputTitle"] = title
-    creators = _line_after_label(lines, _AUTHOR_LABELS)
-    if creators:
-        out["authorsLine"] = creators[:300]
-    venue = _line_after_label(lines, _JOURNAL_LABELS + (r"^venue\s*:", r"^organization\s*:", r"^presented\s+at\s*:"))
-    if venue:
+    title = _line_after_label(
+        lines, _CREATIVE_TITLE_LABELS + _WORK_TITLE_LABELS + _TITLE_LABELS, field_id="outputTitle"
+    )
+    if title and not _is_disclaimer_title(title) and not is_metadata_label_value(title, field_id="outputTitle"):
+        cleaned, status = validate_extracted_field("outputTitle", title, indicator_id)
+        if cleaned and status != "rejected":
+            out["outputTitle"] = cleaned
+    raw_creators = _line_after_label(lines, _AUTHOR_LABELS, field_id="authorsLine") or _names_after_label(
+        lines, _AUTHOR_LABELS
+    )
+    if raw_creators and not is_metadata_label_value(raw_creators, field_id="authorsLine"):
+        out["authorsLine"] = (_normalize_inventor_line(raw_creators) or raw_creators)[:300]
+    venue = _line_after_label(
+        lines,
+        _CREATIVE_VENUE_LABELS + _JOURNAL_LABELS + _PUBLISHER_LABELS,
+        field_id="outputVenue",
+    )
+    if venue and not is_metadata_label_value(venue, field_id="outputVenue"):
         out["outputVenue"] = venue[:300]
-    date_val = _line_after_label(lines, _DATE_LABELS) or _first_date(text)
+    date_val = _line_after_label(
+        lines, _CREATIVE_DATE_LABELS + _PUBLICATION_DATE_LABELS + _DATE_LABELS, field_id="publicationDate"
+    )
+    if not date_val or not _value_looks_like_date(date_val):
+        date_val = _first_date(text)
     if date_val:
         out["publicationDate"] = date_val
+    ref_line = _line_after_label(lines, _REFERENCE_LABELS, field_id="publicationReference")
+    if ref_line and not is_metadata_label_value(ref_line, field_id="publicationReference"):
+        out["publicationReference"] = ref_line[:200]
     return out
 
 
 def extract_fields_for_indicator(text: str, indicator_id: str) -> dict[str, str]:
+    from documents.kra2_evidence.ocr_profiles import filter_extracted_fields
+    from documents.kra2_evidence.text_normalize import normalize_document_text
+
+    text = normalize_document_text(text or "")
     family = workflow_family(indicator_id)
     if family == FAMILY_CITATION:
-        return _parse_citation(text)
-    if family == FAMILY_INVENTION:
-        return _parse_invention(text, indicator_id)
-    if family == FAMILY_COMMERCIAL:
-        parsed = _parse_invention(text, indicator_id)
-        if "outputVenue" not in parsed:
+        raw = _parse_citation(text, indicator_id)
+    elif family == FAMILY_INVENTION:
+        iid = (indicator_id or "").casefold()
+        if iid.startswith("kra2-b-sw-"):
+            raw = _parse_software(text, indicator_id)
+        elif "variety" in iid:
+            raw = _parse_variety(text, indicator_id)
+        else:
+            raw = _parse_invention(text, indicator_id)
+    elif family == FAMILY_COMMERCIAL:
+        raw = _parse_invention(text, indicator_id)
+        if "outputVenue" not in raw:
             for ln in (text or "").splitlines():
                 if re.search(r"\bcommercial|market|license\b", ln, re.I):
-                    parsed["outputVenue"] = ln.strip()[:300]
+                    candidate = ln.strip()[:300]
+                    if not is_metadata_label_value(candidate, field_id="outputVenue"):
+                        raw["outputVenue"] = candidate
                     break
-        return parsed
-    if family in (FAMILY_CREATIVE, FAMILY_PERFORMANCE):
-        return _parse_creative(text)
-    return _parse_publication(text)
+    else:
+        from kra_configuration.kra2_c_workflow import criterion_c_ocr_parser_id, is_criterion_c_indicator
+
+        if is_criterion_c_indicator(indicator_id):
+            route = criterion_c_ocr_parser_id(indicator_id)
+            if route == "literary":
+                raw = _parse_literary(text, indicator_id)
+            elif route == "film":
+                raw = _parse_film(text, indicator_id)
+            elif route == "exhibition":
+                raw = _parse_exhibition(text, indicator_id)
+            elif route == "music_work":
+                raw = _parse_music_work(text, indicator_id)
+            elif route == "performance":
+                raw = _parse_performance(text, indicator_id)
+            else:
+                raw = _parse_creative(text, indicator_id)
+        elif family == FAMILY_PERFORMANCE:
+            raw = _parse_performance(text, indicator_id)
+        elif family == FAMILY_CREATIVE:
+            raw = _parse_creative(text, indicator_id)
+        else:
+            raw = _parse_publication(text, indicator_id)
+    _merge_contribution_annex_hints(raw, text, indicator_id)
+    return filter_extracted_fields(raw, indicator_id)
 
 
 def _field_blocks(raw: dict[str, str], indicator_id: str) -> dict[str, dict[str, str]]:
@@ -625,9 +1333,30 @@ def _is_year_only_date(value: str) -> bool:
     return bool(re.fullmatch(r"(19|20)\d{2}", (value or "").strip()))
 
 
+def _bundle_value_replaceable(key: str, current: str, bundle: dict[str, Any]) -> bool:
+    cur = (current or "").strip()
+    if not cur:
+        return True
+    if key == "outputTitle" and _is_placeholder_title(bundle, cur):
+        return True
+    if is_metadata_label_value(cur, field_id=key):
+        return True
+    if key in ("publicationDate", "registrationDate") and not _value_looks_like_date(cur):
+        return True
+    if key == "registrationNumber" and not _is_plausible_registration_number(cur):
+        return True
+    return False
+
+
 def _is_placeholder_title(bundle: dict[str, Any], current: str) -> bool:
     cur = (current or "").strip()
     if not cur:
+        return True
+    if is_metadata_label_value(cur, field_id="outputTitle"):
+        return True
+    if re.match(r"^/?\s*invention\b", cur, re.I):
+        return True
+    if _is_disclaimer_title(cur):
         return True
     if cur.casefold() in _PLACEHOLDER_ACCOMPLISHMENT_TITLES:
         return True
@@ -648,6 +1377,8 @@ def merge_ocr_into_bundle(bundle: dict[str, Any], extraction: dict[str, Any] | N
         return bundle
     confirmed = bundle.get("metadataConfirmed") if isinstance(bundle.get("metadataConfirmed"), dict) else {}
     fields = extraction.get("fields") if isinstance(extraction.get("fields"), dict) else {}
+    indicator_id = (bundle.get("indicatorId") or "").strip()
+    invention_only_keys = frozenset({"registrationNumber", "registrationDate"})
     merge_keys = (
         "outputTitle",
         "journalTitle",
@@ -659,7 +1390,12 @@ def merge_ocr_into_bundle(bundle: dict[str, Any], extraction: dict[str, Any] | N
         "registrationDate",
         "citationContext",
     )
+    from kra_configuration.kra2_annex import criterion_id_for_indicator
+
+    crit = criterion_id_for_indicator(indicator_id) if indicator_id else None
     for key in merge_keys:
+        if key in invention_only_keys and crit == "kra2-c":
+            continue
         if confirmed.get(key):
             continue
         block = fields.get(key) if isinstance(fields.get(key), dict) else {}
@@ -669,15 +1405,12 @@ def merge_ocr_into_bundle(bundle: dict[str, Any], extraction: dict[str, Any] | N
         if not val:
             continue
         current = (bundle.get(key) or "").strip()
-        if key == "outputTitle":
-            if current and not _is_placeholder_title(bundle, current):
-                continue
-        elif current:
-            if key == "registrationNumber" and not _is_plausible_registration_number(current):
-                bundle[key] = val
-            elif key in ("registrationDate", "publicationDate") and _is_year_only_date(current) and not _is_year_only_date(val):
-                bundle[key] = val
+        if current and not _bundle_value_replaceable(key, current, bundle):
             continue
+        if key in ("registrationDate", "publicationDate") and current and _value_looks_like_date(current):
+            if not _is_year_only_date(current) or _is_year_only_date(val):
+                if not _bundle_value_replaceable(key, current, bundle):
+                    continue
         bundle[key] = val
     jt = (bundle.get("journalTitle") or "").strip()
     if jt and not (bundle.get("outputVenue") or "").strip():

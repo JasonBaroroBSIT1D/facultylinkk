@@ -53,6 +53,28 @@ FL.evidence = {
     return indicatorId === "kra1-a-student" || indicatorId === "kra1-a-supervisor";
   },
 
+  isKra2CriterionId: function (criterionId) {
+    return criterionId === "kra2-a" || criterionId === "kra2-b" || criterionId === "kra2-c";
+  },
+
+  /** KRA II uses accomplishment list + document review — not per-indicator PDF grids. */
+  _stripKra2IndicatorDocRoute: function (state) {
+    if (!state || !state.facultyId || !state.indicatorId) return;
+    const ind = String(state.indicatorId);
+    const onKra2 =
+      state.kraId === "kra2" ||
+      FL.evidence.isKra2CriterionId(state.criterionId) ||
+      ind.indexOf("kra2-") === 0;
+    if (!onKra2) return;
+    const hit = FL.rules.findIndicator(ind);
+    if (hit && hit.criterion && hit.criterion.id) {
+      state.criterionId = hit.criterion.id;
+      state.kraId = "kra2";
+    }
+    state.indicatorId = "";
+    FL.evidence.pushLocation(state);
+  },
+
   reviewDocHref: function (doc, reviewBase) {
     const tevId = doc.teachingEvaluationId || doc.tevId || "";
     return reviewBase + "?id=" + encodeURIComponent(doc.id || doc.documentId)
@@ -1664,6 +1686,7 @@ FL.evidence = {
   },
 
   _render: function (session, state, isAdmin) {
+    FL.evidence._stripKra2IndicatorDocRoute(state);
     const stats = FL.store.evidenceStats || {};
     const page = document.getElementById("page");
     const inFolder = !!(state.facultyId || state.kraId || state.indicatorId);
@@ -1696,8 +1719,17 @@ FL.evidence = {
     FL.evidence._paintCrumb(state, isAdmin, session);
     FL.evidence._bindBack(state, session);
     if (pendingMode) FL.evidence._paintPendingList(session, state, isAdmin);
-    else if (state.indicatorId && state.facultyId) FL.evidence._paintIndicatorDocs(session, state, isAdmin);
-    else if (state.kraId && state.facultyId) FL.evidence._paintCriteria(session, state, isAdmin);
+    else if (
+      state.kraId &&
+      state.facultyId &&
+      FL.evidence.isKra2CriterionId(state.criterionId)
+    ) {
+      FL.evidence._paintCriteria(session, state, isAdmin);
+    } else if (state.indicatorId && state.facultyId) {
+      FL.evidence._paintIndicatorDocs(session, state, isAdmin);
+    } else if (state.kraId && state.facultyId) {
+      FL.evidence._paintCriteria(session, state, isAdmin);
+    }
     else if (state.facultyId) FL.evidence._paintKraGrid(session, state, isAdmin);
     else FL.evidence._paintDirectory(session, state, isAdmin);
 
@@ -1794,10 +1826,9 @@ FL.evidence = {
       state &&
       state.kraId === "kra2" &&
       state.facultyId &&
-      (state.criterionId === "kra2-a" || state.criterionId === "kra2-b" || state.criterionId === "kra2-c")
+      FL.evidence.isKra2CriterionId(state.criterionId)
     ) {
-      host.innerHTML =
-        '<div class="evidence-stat is-accent-teal"><div class="evidence-stat-body"><span>KRA II statistics</span><strong>Loading…</strong></div></div>';
+      host.innerHTML = "";
       return;
     }
     if (state && state.kraId === "kra2" && state.facultyId) {
@@ -1870,7 +1901,12 @@ FL.evidence = {
       const hit = FL.rules.findIndicator(state.indicatorId);
       parts.push({ label: hit ? hit.indicator.name : state.indicatorId, go: null });
     }
-    if (state.indicatorId && state.facultyId) {
+    if (
+      state.indicatorId &&
+      state.facultyId &&
+      state.kraId !== "kra2" &&
+      !FL.evidence.isKra2CriterionId(state.criterionId)
+    ) {
       parts.push({ label: "Documents", go: null });
     }
     host.innerHTML = parts.map(function (part, i) {
@@ -2244,6 +2280,15 @@ FL.evidence = {
   },
 
   _paintIndicatorDocs: function (session, state, isAdmin) {
+    if (
+      state.kraId === "kra2" ||
+      FL.evidence.isKra2CriterionId(state.criterionId) ||
+      (state.indicatorId && String(state.indicatorId).indexOf("kra2-") === 0)
+    ) {
+      FL.evidence._stripKra2IndicatorDocRoute(state);
+      FL.evidence._paintCriteria(session, state, isAdmin);
+      return;
+    }
     if (state.criterionId === "kra1-b") {
       state.indicatorId = "";
       FL.evidence.pushLocation(state);

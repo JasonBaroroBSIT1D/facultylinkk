@@ -136,8 +136,15 @@ FL.kra2AReview = {
     var configReady = FL.store.refreshScoringConfiguration({ force: false }).catch(function () {
       return null;
     });
-    Promise.all([configReady, FL.kra2Evidence.fetchBundle(session, doc.id)]).then(function (results) {
-      FL.kra2AReview._renderReview(session, doc, canDecide, ctx, results[1]);
+    var facultyId = doc.facultyId || (ctx && ctx.faculty && ctx.faculty.id) || "";
+    var docsPromise =
+      facultyId && FL.store && FL.store.loadFacultyDocuments
+        ? FL.store.loadFacultyDocuments(session, facultyId).catch(function () {
+            return [];
+          })
+        : Promise.resolve([]);
+    Promise.all([configReady, FL.kra2Evidence.fetchBundle(session, doc.id), docsPromise]).then(function (results) {
+      FL.kra2AReview._renderReview(session, doc, canDecide, ctx, results[1], results[2]);
     }).catch(function (err) {
       page.innerHTML = FL.ui.empty(
         "Could not load",
@@ -146,25 +153,36 @@ FL.kra2AReview = {
     });
   },
 
-  _renderReview: function (session, doc, canDecide, ctx, payload) {
-    var state = FL.kra2AReview._createState(session, doc, canDecide, ctx, payload);
+  _renderReview: function (session, doc, canDecide, ctx, payload, facultyDocs) {
+    var state = FL.kra2AReview._createState(session, doc, canDecide, ctx, payload, facultyDocs);
     FL.kra2AReview._renderPage(session, state);
   },
 
-  _createState: function (session, doc, canDecide, ctx, payload) {
+  _docIndex: function (facultyDocs) {
+    var map = {};
+    (facultyDocs || []).forEach(function (d) {
+      if (d && d.id) map[d.id] = d;
+    });
+    return map;
+  },
+
+  _createState: function (session, doc, canDecide, ctx, payload, facultyDocs) {
     var bundle = payload.bundle || {};
-    var slotIds = FL.kra2AWorkspaceUi.requiredSlotIds(bundle);
+    var docById = FL.kra2AReview._docIndex(facultyDocs);
+    var slotIds = FL.kra2AWorkspaceUi.requiredSlotIds(bundle, payload);
+    var buildOpts = { docById: docById, payload: payload };
     return {
       session: session,
       doc: doc,
       canDecide: !!canDecide,
       ctx: ctx,
       payload: payload,
+      docById: docById,
       bundle: bundle,
       validation: payload.validation || {},
       scoring: payload.scoring || {},
       slotIds: slotIds,
-      evidenceItems: FL.kra2AWorkspaceUi.buildEvidenceSlotItems(bundle, doc, slotIds),
+      evidenceItems: FL.kra2AWorkspaceUi.buildEvidenceSlotItems(bundle, doc, slotIds, buildOpts),
       remarks: bundle.reviewerRemarks || "",
       backHref: ctx.back || "documents.html",
       backLabel: ctx.backLabel || "Back",
@@ -180,7 +198,13 @@ FL.kra2AReview = {
     if (payload.bundle) state.bundle = payload.bundle;
     if (payload.validation) state.validation = payload.validation;
     if (payload.scoring) state.scoring = payload.scoring;
-    state.evidenceItems = FL.kra2AWorkspaceUi.buildEvidenceSlotItems(state.bundle, state.doc, state.slotIds);
+    if (Array.isArray(payload.requiredEvidenceSlots) && payload.requiredEvidenceSlots.length) {
+      state.slotIds = payload.requiredEvidenceSlots.slice();
+    }
+    state.evidenceItems = FL.kra2AWorkspaceUi.buildEvidenceSlotItems(state.bundle, state.doc, state.slotIds, {
+      docById: state.docById || {},
+      payload: state.payload
+    });
     if (state.bundle.reviewerRemarks) state.remarks = state.bundle.reviewerRemarks;
   },
 
@@ -229,8 +253,13 @@ FL.kra2AReview = {
     var finEl = document.getElementById("kra2-final-points-display");
     if (sysEl) sysEl.textContent = systemPts != null ? String(systemPts) : "—";
     if (finEl) finEl.textContent = finalPts != null ? String(finalPts) : "—";
-    var hidden = document.getElementById("kra2-assessed-points");
-    if (hidden && systemPts != null) hidden.value = String(systemPts);
+    var assessedInput = document.getElementById("kra2-assessed-points");
+    if (assessedInput && assessedInput.type === "hidden" && systemPts != null) {
+      assessedInput.value = String(systemPts);
+    }
+    if (finEl && assessedInput && assessedInput.type === "number" && assessedInput.value !== "") {
+      finEl.textContent = assessedInput.value;
+    }
   },
 
   _updateReviewValidationUi: function (session, state) {
@@ -471,15 +500,97 @@ FL.kra2AReview = {
     return body;
   },
 
-  _bindPage: function (session, state) {
-    var previewHost = document.querySelector("[data-doc-preview-id]");
-    if (previewHost && FL.documents && FL.documents.mountAuthenticatedPreview) {
-      FL.documents.mountAuthenticatedPreview(state.doc, previewHost, { session: session });
+  _revokeKra2PreviewObjectUrl: function (state) {
+    if (!state || !state._kra2PreviewObjectUrl) return;
+    try {
+      URL.revokeObjectURL(state._kra2PreviewObjectUrl);
+    } catch (_e) {
+      /* ignore */
     }
-    document.querySelectorAll("[data-kra2-scroll-preview]").forEach(function (btn) {
+    state._kra2PreviewObjectUrl = null;
+    state._kra2PreviewObjectDocId = null;
+  },
+
+  _mountKra2DocumentPreview: function (session, state, docId, labelText) {
+    var previewHost = document.querySelector(".kra2-doc-preview-frame[data-doc-preview-id]");
+    if (!previewHost || !FL.documents || !FL.documents.mountAuthenticatedPreview) {
+      return Promise.resolve();
+    }
+    var resolvedId = (docId || state.doc.id || "").trim();
+    if (!resolvedId) return Promise.resolve();
+
+    function resolveDocRow() {
+      if (resolvedId === state.doc.id) return Promise.resolve(state.doc);
+      if (state.docById && state.docById[resolvedId]) {
+        return Promise.resolve(state.docById[resolvedId]);
+      }
+      if (FL.store && FL.store.documentById) {
+        var cached = FL.store.documentById(resolvedId);
+        if (cached) {
+          if (!state.docById) state.docById = {};
+          state.docById[resolvedId] = cached;
+          return Promise.resolve(cached);
+        }
+      }
+      if (FL.store && FL.store.refreshLiveDocument) {
+        return FL.store.refreshLiveDocument(session, resolvedId).then(function (fresh) {
+          if (fresh) {
+            if (!state.docById) state.docById = {};
+            state.docById[resolvedId] = fresh;
+          }
+          return fresh;
+        });
+      }
+      return Promise.resolve(null);
+    }
+
+    if (state._kra2PreviewObjectDocId && state._kra2PreviewObjectDocId !== resolvedId) {
+      FL.kra2AReview._revokeKra2PreviewObjectUrl(state);
+    }
+
+    previewHost.setAttribute("data-doc-preview-id", resolvedId);
+    var labelEl = document.getElementById("kra2-preview-doc-label");
+    if (labelEl) {
+      labelEl.textContent = "Showing: " + (labelText || resolvedId);
+    }
+
+    return resolveDocRow().then(function (row) {
+      if (!row) {
+        previewHost.innerHTML =
+          '<div class="ca-preview-error"><p>Couldn\'t open this document. Please try again.</p>' +
+          '<button type="button" class="btn btn-ghost btn-small" data-kra2-preview-retry>Retry</button></div>';
+        var retryMissing = previewHost.querySelector("[data-kra2-preview-retry]");
+        if (retryMissing) {
+          retryMissing.addEventListener("click", function () {
+            FL.kra2AReview._mountKra2DocumentPreview(session, state, resolvedId, labelText);
+          });
+        }
+        return;
+      }
+      return FL.documents.mountAuthenticatedPreview(row, previewHost, {
+        session: session,
+        previewDocId: resolvedId
+      }).then(function () {
+        if (row._objectUrl) {
+          if (state._kra2PreviewObjectUrl && state._kra2PreviewObjectDocId !== resolvedId) {
+            FL.kra2AReview._revokeKra2PreviewObjectUrl(state);
+          }
+          state._kra2PreviewObjectUrl = row._objectUrl;
+          state._kra2PreviewObjectDocId = resolvedId;
+        }
+      });
+    });
+  },
+
+  _bindPage: function (session, state) {
+    FL.kra2AReview._mountKra2DocumentPreview(session, state, state.doc.id, state.doc.fileName || state.doc.title);
+    document.querySelectorAll("[data-kra2-preview-doc]").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        var host = document.querySelector("[data-doc-preview-id]");
+        var docId = btn.getAttribute("data-kra2-preview-doc");
+        var label = btn.getAttribute("data-kra2-preview-label") || "";
+        var host = document.querySelector(".kra2-doc-preview-frame[data-doc-preview-id]");
         if (host) host.scrollIntoView({ behavior: "smooth", block: "start" });
+        FL.kra2AReview._mountKra2DocumentPreview(session, state, docId, label);
       });
     });
     document.querySelectorAll(".kra2-slot-status").forEach(function (sel) {
@@ -512,6 +623,20 @@ FL.kra2AReview = {
     var remarksEl = document.getElementById("kra2-remarks");
     if (remarksEl) {
       remarksEl.addEventListener("input", function () {
+        FL.kra2AReview._syncApproveButton(state);
+      });
+    }
+    var assessedEl = document.getElementById("kra2-assessed-points");
+    if (assessedEl) {
+      assessedEl.addEventListener("input", function () {
+        FL.kra2AReview._syncApproveButton(state);
+        var finEl = document.getElementById("kra2-final-points-display");
+        if (finEl && assessedEl.value !== "") finEl.textContent = assessedEl.value;
+      });
+    }
+    var reasonEl = document.getElementById("kra2-score-adjustment-reason");
+    if (reasonEl) {
+      reasonEl.addEventListener("input", function () {
         FL.kra2AReview._syncApproveButton(state);
       });
     }

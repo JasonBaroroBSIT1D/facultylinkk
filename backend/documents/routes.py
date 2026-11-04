@@ -1107,7 +1107,11 @@ def reviewer_kra2_a_accomplishments(faculty_public_id: str):
     if not profile:
         return jsonify({"message": "Faculty assignment was not found."}), 404
     return jsonify(
-        {"accomplishments": list_faculty_accomplishments(profile.id, criterion_id=CRITERION_A_ID)}
+        {
+            "accomplishments": list_faculty_accomplishments(
+                profile.id, criterion_id=CRITERION_A_ID, submitted_only=True
+            )
+        }
     ), 200
 
 
@@ -1133,7 +1137,11 @@ def _reviewer_kra2_criterion_accomplishments(faculty_public_id: str, criterion_i
     if not profile:
         return jsonify({"message": "Faculty assignment was not found."}), 404
     return jsonify(
-        {"accomplishments": list_faculty_accomplishments(profile.id, criterion_id=criterion_id)}
+        {
+            "accomplishments": list_faculty_accomplishments(
+                profile.id, criterion_id=criterion_id, submitted_only=True
+            )
+        }
     ), 200
 
 

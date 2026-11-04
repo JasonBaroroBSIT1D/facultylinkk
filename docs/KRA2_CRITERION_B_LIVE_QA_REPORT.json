@@ -1,0 +1,296 @@
+{
+  "runId": "20261104T042202Z",
+  "startedAt": "2026-11-04T04:22:02.017851+00:00",
+  "families": {
+    "patent": {
+      "family": "patent",
+      "indicatorId": "kra2-b-patent-g-sole",
+      "status": "PASS",
+      "checks": {
+        "upload_stays_draft": true,
+        "ocr_ran_on_pdf": true,
+        "ready_before_submit": true,
+        "submit_ready": true,
+        "reviewer_submitted_only": true,
+        "draft_in_unfiltered_list_only": true,
+        "required_slots_match": true,
+        "approval_blockers_cleared": true,
+        "approved_points_persisted": true,
+        "document_status_approved": true
+      },
+      "documentId": "doc_14c663715348",
+      "ocrFields": {
+        "outputTitle": "QA Solar Desalination Module",
+        "authorsLine": "Jason Baroro",
+        "registrationNumber": "QA-PAT-G-20261104T042202Z",
+        "registrationDate": "2025-07-01",
+        "outputVenue": "Intellectual Property Office of the Philippines"
+      },
+      "requiredSlots": [
+        "primary_output",
+        "invention_photo",
+        "president_special_order"
+      ],
+      "approvalBlockersBeforeVerify": [
+        "Verify supporting evidence: IPOPHL acceptance, publication, or grant document.",
+        "Verify supporting evidence: Photo of the invention or design.",
+        "Verify supporting evidence: Special Order signed by the President."
+      ],
+      "approvalBlockersAfterVerify": [],
+      "approvedPoints": 80.0
+    },
+    "patent_co": {
+      "family": "patent_co",
+      "indicatorId": "kra2-b-patent-g-co",
+      "status": "PASS",
+      "checks": {
+        "upload_stays_draft": true,
+        "ocr_ran_on_pdf": true,
+        "ready_before_submit": true,
+        "submit_ready": true,
+        "reviewer_submitted_only": true,
+        "draft_in_unfiltered_list_only": true,
+        "required_slots_match": true,
+        "approval_blockers_cleared": true,
+        "approved_points_persisted": true,
+        "document_status_approved": true
+      },
+      "documentId": "doc_b9a3c9bead66",
+      "ocrFields": {
+        "outputTitle": "QA Co-Invented Filtration Device",
+        "authorsLine": "Jason Baroro; Maria Santos",
+        "registrationNumber": "QA-PAT-CO-20261104T042202Z",
+        "registrationDate": "2025-07-02",
+        "outputVenue": "Intellectual Property Office of the Philippines (IPOPHL)"
+      },
+      "requiredSlots": [
+        "primary_output",
+        "contribution_certificate"
+      ],
+      "approvalBlockersBeforeVerify": [
+        "Verify supporting evidence: IPOPHL acceptance, publication, or grant document.",
+        "Verify supporting evidence: Certificate of Contribution (Annex F \u2014 intellectual property)."
+      ],
+      "approvalBlockersAfterVerify": [],
+      "approvedPoints": 32.0
+    },
+    "commercialization": {
+      "family": "commercialization",
+      "indicatorId": "kra2-b-comm-local",
+      "status": "PASS",
+      "checks": {
+        "upload_stays_draft": true,
+        "ocr_ran_on_pdf": true,
+        "ready_before_submit": true,
+        "submit_ready": true,
+        "reviewer_submitted_only": true,
+        "draft_in_unfiltered_list_only": true,
+        "required_slots_match": true,
+        "approval_blockers_cleared": true,
+        "approved_points_persisted": true,
+        "document_status_approved": true
+      },
+      "documentId": "doc_caa4e0dd933a",
+      "ocrFields": {
+        "outputTitle": "QA Licensed Water Pump Product",
+        "outputVenue": "Proof of commercialization \u00b7 local market"
+      },
+      "requiredSlots": [
+        "product_photo",
+        "patent_certificate",
+        "licensing_or_cpr_evidence",
+        "commercialization_proof",
+        "rd_itso_certification"
+      ],
+      "approvalBlockersBeforeVerify": [
+        "Verify supporting evidence: Photo of the patented product.",
+        "Verify supporting evidence: Invention Patent Certificate.",
+        "Verify supporting evidence: CPR, licensing, or technology-transfer agreement.",
+        "Verify supporting evidence: Proof of commercialization.",
+        "Verify supporting evidence: Certification from Research Director / ITSO."
+      ],
+      "approvalBlockersAfterVerify": [],
+      "approvedPoints": 5.0
+    },
+    "utility_model": {
+      "family": "utility_model",
+      "indicatorId": "kra2-b-um-sole",
+      "status": "PASS",
+      "checks": {
+        "upload_stays_draft": true,
+        "ocr_ran_on_pdf": true,
+        "ready_before_submit": true,
+        "submit_ready": true,
+        "reviewer_submitted_only": true,
+        "draft_in_unfiltered_list_only": true,
+        "required_slots_match": true,
+        "approval_blockers_cleared": true,
+        "approved_points_persisted": true,
+        "document_status_approved": true
+      },
+      "documentId": "doc_a52f24f0ade3",
+      "ocrFields": {
+        "outputTitle": "QA Utility Model Valve Assembly",
+        "authorsLine": "Jason Baroro",
+        "registrationNumber": "QA-UM-20261104T042202Z",
+        "registrationDate": "2025-05-10",
+        "outputVenue": "Intellectual Property Office of the Philippines (IPOPHL)"
+      },
+      "requiredSlots": [
+        "primary_output",
+        "invention_photo",
+        "president_special_order"
+      ],
+      "approvalBlockersBeforeVerify": [
+        "Verify supporting evidence: Utility model or industrial design registration certificate.",
+        "Verify supporting evidence: Photo of the invention or design.",
+        "Verify supporting evidence: Special Order signed by the President."
+      ],
+      "approvalBlockersAfterVerify": [],
+      "approvedPoints": 10.0
+    },
+    "industrial_design": {
+      "family": "industrial_design",
+      "indicatorId": "kra2-b-id-sole",
+      "status": "PASS",
+      "checks": {
+        "upload_stays_draft": true,
+        "ocr_ran_on_pdf": true,
+        "ready_before_submit": true,
+        "submit_ready": true,
+        "reviewer_submitted_only": true,
+        "draft_in_unfiltered_list_only": true,
+        "required_slots_match": true,
+        "approval_blockers_cleared": true,
+        "approved_points_persisted": true,
+        "document_status_approved": true
+      },
+      "documentId": "doc_8ac913b79825",
+      "ocrFields": {
+        "outputTitle": "QA Industrial Design Handle Grip",
+        "authorsLine": "Jason Baroro",
+        "registrationNumber": "QA-ID-20261104T042202Z",
+        "registrationDate": "2025-05-15",
+        "outputVenue": "Intellectual Property Office of the Philippines (IPOPHL)"
+      },
+      "requiredSlots": [
+        "primary_output",
+        "invention_photo",
+        "president_special_order"
+      ],
+      "approvalBlockersBeforeVerify": [
+        "Verify supporting evidence: Utility model or industrial design registration certificate.",
+        "Verify supporting evidence: Photo of the invention or design.",
+        "Verify supporting evidence: Special Order signed by the President."
+      ],
+      "approvalBlockersAfterVerify": [],
+      "approvedPoints": 5.0
+    },
+    "software": {
+      "family": "software",
+      "indicatorId": "kra2-b-sw-new-sole",
+      "status": "PASS",
+      "checks": {
+        "upload_stays_draft": true,
+        "ocr_ran_on_pdf": true,
+        "ready_before_submit": true,
+        "submit_ready": true,
+        "reviewer_submitted_only": true,
+        "draft_in_unfiltered_list_only": true,
+        "required_slots_match": true,
+        "approval_blockers_cleared": true,
+        "approved_points_persisted": true,
+        "document_status_approved": true
+      },
+      "documentId": "doc_e1adc2f05a9c",
+      "ocrFields": {
+        "outputTitle": "QA FacultyLink Attendance Module",
+        "authorsLine": "Jason Baroro",
+        "registrationNumber": "QA-SW-20261104T042202Z",
+        "registrationDate": "2025-03-01",
+        "outputVenue": "Intellectual Property Office of the Philippines"
+      },
+      "requiredSlots": [
+        "president_special_order",
+        "project_summary",
+        "software_documentation",
+        "primary_output",
+        "utilization_certification"
+      ],
+      "approvalBlockersBeforeVerify": [
+        "Verify supporting evidence: Special Order signed by the President.",
+        "Verify supporting evidence: Project summary.",
+        "Verify supporting evidence: User manual, design, or source documentation.",
+        "Verify supporting evidence: Copyright certificate from IPOPHL.",
+        "Verify supporting evidence: End-user utilization certification."
+      ],
+      "approvalBlockersAfterVerify": [],
+      "approvedPoints": 10.0
+    },
+    "variety": {
+      "family": "variety",
+      "indicatorId": "kra2-b-variety-sole",
+      "status": "PASS",
+      "checks": {
+        "upload_stays_draft": true,
+        "ocr_ran_on_pdf": true,
+        "ready_before_submit": true,
+        "submit_ready": true,
+        "reviewer_submitted_only": true,
+        "draft_in_unfiltered_list_only": true,
+        "required_slots_match": true,
+        "approval_blockers_cleared": true,
+        "approved_points_persisted": true,
+        "document_status_approved": true
+      },
+      "documentId": "doc_1103b27d352e",
+      "ocrFields": {
+        "outputTitle": "QA High-Yield Test Rice Line 9",
+        "registrationNumber": "QA-VAR-20261104T042202Z",
+        "registrationDate": "2025-04-20"
+      },
+      "requiredSlots": [
+        "president_special_order",
+        "registration_deposit_evidence"
+      ],
+      "approvalBlockersBeforeVerify": [
+        "Verify supporting evidence: Special Order signed by the President.",
+        "Verify supporting evidence: Registration or deposit evidence (cultivar, breed, or strain)."
+      ],
+      "approvalBlockersAfterVerify": [],
+      "approvedPoints": 10.0
+    }
+  },
+  "environment": {
+    "flaskApi": "http://127.0.0.1:5000",
+    "webBase": "http://127.0.0.1:8080"
+  },
+  "faculty": {
+    "email": "jasonbaroro5@gmail.com",
+    "publicId": "fac_6047265f5ce9"
+  },
+  "reviewer": {
+    "email": "jaso.jary@gmail.com",
+    "id": 2
+  },
+  "edgeCases": {
+    "missing_files_block_submit": true,
+    "patent_dedup_counts_highest_stage_only": true,
+    "patent_dedup_points": {
+      "a": 0.0,
+      "g": 80.0
+    },
+    "annex_f_ocr_contribution_percent": "40",
+    "annex_f_contribution_ocr_missing": false,
+    "rejectAccomplishmentDocumentId": "doc_db0fe4da0c5f",
+    "reject_accomplishment_persisted": true
+  },
+  "rankSimulation": {
+    "kra2ValidatedPoints": 100.0,
+    "kra2EstimatedPoints": 100.0,
+    "kra2Assessed": true,
+    "status": "PASS"
+  },
+  "finishedAt": "2026-11-04T04:22:12.395820+00:00",
+  "overallStatus": "PASS"
+}

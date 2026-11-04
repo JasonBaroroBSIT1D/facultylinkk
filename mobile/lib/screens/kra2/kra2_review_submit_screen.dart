@@ -4,8 +4,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/app_auth_exception.dart';
 import '../../data/app_state.dart';
 import '../../data/kra2_catalog.dart';
+import '../../data/kra2_submit_readiness.dart';
 import '../../data/kra2_a_ux.dart';
 import '../../data/kra2_ocr_sync.dart';
 import '../../models/enums.dart';
@@ -40,6 +42,8 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
   bool _submitting = false;
   String? _error;
   List<String> _fieldIds = const [];
+  List<String> _requiredSlotIds = const [];
+  Map<String, String> _slotLabels = const {};
   bool _ocrPolling = false;
   Map<String, Map<String, dynamic>> _ocrFields = const {};
   List<String> _ocrReviewFlags = const [];
@@ -84,11 +88,21 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
       final ind = bundle?['indicatorId']?.toString() ?? '';
       _fieldIds = Kra2Catalog.metadataFieldIds(ind);
       final family = Kra2Catalog.workflowFamily(ind);
-      if (family != 'invention_ip' &&
-          family != 'citation_impact' &&
-          family != 'commercialization' &&
+      if (family == 'publication_output' &&
           !_fieldIds.contains('publicationReference')) {
         _fieldIds = [..._fieldIds, 'publicationReference'];
+      }
+      final apiSlots = payload['requiredEvidenceSlots'];
+      if (apiSlots is List && apiSlots.isNotEmpty) {
+        _requiredSlotIds = apiSlots.map((e) => e.toString()).toList();
+      } else {
+        _requiredSlotIds = Kra2Catalog.requiredEvidenceSlots(ind);
+      }
+      final labelsRaw = payload['slotLabels'];
+      if (labelsRaw is Map) {
+        _slotLabels = labelsRaw.map((k, v) => MapEntry(k.toString(), v.toString()));
+      } else {
+        _slotLabels = {};
       }
       final ocrExtraction = payload['ocrExtraction'] is Map
           ? Map<String, dynamic>.from(payload['ocrExtraction'] as Map)
@@ -150,6 +164,35 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
         userEditedFields: _userEditedFields,
       );
     }
+  }
+
+  String _slotLabel(String slotId, String indicatorId) {
+    return _slotLabels[slotId] ?? Kra2Catalog.slotLabelForIndicator(slotId, indicatorId);
+  }
+
+  Future<void> _viewDocumentById(String documentId) async {
+    if (documentId.isEmpty) return;
+    try {
+      await AppState.instance.refreshFacultyDocument(documentId, quiet: true);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('We could not load the document. Try again.')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final doc = AppState.instance.documentById(documentId);
+    if (doc == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Document record not found.')),
+      );
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => DocumentViewerScreen(document: doc)),
+    );
   }
 
   Future<void> _viewPrimaryDocument() async {
@@ -274,6 +317,15 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
       );
       widget.onFinished?.call();
       if (widget.onFinished == null) Navigator.of(context).pop(true);
+    } on AppAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.red,
+        ),
+      );
+      await _load();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -291,9 +343,12 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
   Future<void> _uploadSlot(String slotId, String title) async {
     final ind = (_bundle?['indicatorId'] ?? '').toString();
     final criterionId = (_bundle?['criterionId'] ?? Kra2Catalog.criterionA).toString();
+    final allowMedia = slotId == 'media_documentation';
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['pdf'],
+      allowedExtensions: allowMedia
+          ? const ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'mp4', 'mov']
+          : const ['pdf'],
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;
@@ -315,7 +370,7 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${Kra2Catalog.slotLabel(slotId)} uploaded.')),
+        SnackBar(content: Text('${_slotLabel(slotId, ind)} uploaded.')),
       );
       await _load();
     } catch (_) {
@@ -327,12 +382,72 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
   }
 
   bool _slotMissing(String slotId) {
+    if (slotId == 'primary_output') {
+      final entry = _checklistEntry('primary_output');
+      final docId = entry?['documentId']?.toString().trim() ?? '';
+      if (docId.isNotEmpty) return false;
+      return widget.primaryDocumentId.isEmpty;
+    }
+    final entry = _checklistEntry(slotId);
+    if (entry == null) return true;
+    final docId = entry['documentId']?.toString().trim() ?? '';
+    final st = (entry['status'] ?? 'missing').toString().toLowerCase();
+    return docId.isEmpty || st == 'missing';
+  }
+
+  bool _slotRejected(String slotId) {
+    final entry = _checklistEntry(slotId);
+    if (entry == null) return false;
+    final st = (entry['status'] ?? '').toString().toLowerCase();
+    return st.contains('reject');
+  }
+
+  String? _slotDocumentId(String slotId) {
+    if (slotId == 'primary_output') {
+      final entry = _checklistEntry('primary_output');
+      final linked = entry?['documentId']?.toString().trim() ?? '';
+      if (linked.isNotEmpty) return linked;
+      return widget.primaryDocumentId;
+    }
+    return _checklistEntry(slotId)?['documentId']?.toString().trim();
+  }
+
+  bool get _canSubmitForReview {
+    final ind = (_bundle?['indicatorId'] ?? '').toString();
+    return Kra2SubmitReadiness.canSubmitForReview(
+      fieldIds: _fieldIds,
+      indicatorId: ind,
+      requiredSlotIds: _requiredSlotIds,
+      controllerText: (id) => _ctrl(id).text,
+      slotMissing: _slotMissing,
+      bundle: _bundle,
+      ocrFields: _ocrFields,
+    );
+  }
+
+  List<String> _uiBlockers({required bool canEdit}) {
+    final ind = (_bundle?['indicatorId'] ?? '').toString();
+    if (canEdit) {
+      return Kra2SubmitReadiness.localBlockers(
+        fieldIds: _fieldIds,
+        indicatorId: ind,
+        requiredSlotIds: _requiredSlotIds,
+        controllerText: (id) => _ctrl(id).text,
+        fieldLabel: _fieldLabel,
+        slotLabel: (slotId) => _slotLabel(slotId, ind),
+        slotMissing: _slotMissing,
+        bundle: _bundle,
+        ocrFields: _ocrFields,
+      );
+    }
+    return _friendlyBlockers();
+  }
+
+  Map<String, dynamic>? _checklistEntry(String slotId) {
     final checklist = _bundle?['checklist'];
-    if (checklist is! Map) return true;
+    if (checklist is! Map) return null;
     final entry = checklist[slotId];
-    if (entry is! Map) return true;
-    final st = (entry['status'] ?? 'missing').toString();
-    return st == 'missing';
+    return entry is Map ? Map<String, dynamic>.from(entry) : null;
   }
 
   String? _documentMismatchHint(String indicatorId) {
@@ -349,10 +464,14 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
         : _validation?['userBlockers'] ?? _validation?['blockers'];
     if (blockers is! List) return const [];
     final ind = (_bundle?['indicatorId'] ?? '').toString();
-    return blockers
-        .map((e) => Kra2AUx.humanizeBlocker(e.toString(), indicatorId: ind))
-        .where((m) => !m.toLowerCase().contains('verify supporting evidence'))
-        .toList();
+    final seen = <String>{};
+    final out = <String>[];
+    for (final raw in blockers) {
+      final m = Kra2AUx.humanizeBlocker(raw.toString(), indicatorId: ind);
+      if (m.toLowerCase().contains('verify supporting evidence')) continue;
+      if (seen.add(m)) out.add(m);
+    }
+    return out;
   }
 
   bool _showOcrIncompleteBanner(bool canEdit) {
@@ -390,8 +509,6 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
     final assessed = (_scoring?['reviewerAssessedPoints'] as num?)?.toDouble();
     final canEdit = facultyStatus == Kra2FacultyStatus.draft ||
         facultyStatus == Kra2FacultyStatus.needsChanges;
-    final needsCert = Kra2Catalog.requiresContributionCertificate(ind);
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -437,7 +554,10 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    Kra2AUx.readingFileLabel(_ocrStatus),
+                    Kra2AUx.readingFileLabel(
+                      _ocrStatus,
+                      extractionIncomplete: _showOcrIncompleteBanner(canEdit),
+                    ),
                     style: TextStyle(color: Colors.grey.shade700),
                   ),
                   if (_documentMismatchHint(ind) != null)
@@ -521,42 +641,57 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
                     );
                   }),
                   const SizedBox(height: 16),
-                  const Text('Your file', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.picture_as_pdf),
-                    title: Text(Kra2Catalog.slotLabel('primary_output')),
-                    subtitle: const Text('Uploaded'),
-                    trailing: TextButton(
-                      onPressed: _viewPrimaryDocument,
-                      child: const Text('View document'),
-                    ),
+                  const Text('Required documents', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Add each item below. Your reviewer checks them after you send for review.',
+                    style: TextStyle(color: Colors.grey.shade700, height: 1.35),
                   ),
-                  if (needsCert)
-                    ListTile(
+                  const SizedBox(height: 8),
+                  ..._requiredSlotIds.map((slotId) {
+                    final missing = _slotMissing(slotId);
+                    final rejected = _slotRejected(slotId);
+                    final entry = _checklistEntry(slotId);
+                    final label = _slotLabel(slotId, ind);
+                    final subtitle = rejected
+                        ? 'Rejected — upload a corrected document'
+                        : Kra2Catalog.facultySlotStatusSubtitle(slotId, entry);
+                    final docId = _slotDocumentId(slotId) ?? '';
+                    return ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(
-                        Icons.description,
-                        color: _slotMissing('contribution_certificate') ? Colors.orange : AppColors.navy,
+                        slotId == 'media_documentation' ? Icons.perm_media : Icons.description,
+                        color: missing || rejected ? Colors.orange : AppColors.navy,
                       ),
-                      title: Text(Kra2Catalog.slotLabel('contribution_certificate')),
-                      subtitle: Text(
-                        _slotMissing('contribution_certificate')
-                            ? 'Required for shared authorship'
-                            : 'Uploaded',
-                      ),
+                      title: Text(label),
+                      subtitle: Text(subtitle),
                       trailing: canEdit
-                          ? TextButton(
-                              onPressed: () => _uploadSlot(
-                                'contribution_certificate',
-                                'Certificate of Contribution',
-                              ),
-                              child: const Text('Upload'),
+                          ? Wrap(
+                              spacing: 4,
+                              children: [
+                                if (!missing && docId.isNotEmpty)
+                                  TextButton(
+                                    onPressed: () => _viewDocumentById(docId),
+                                    child: const Text('View'),
+                                  ),
+                                TextButton(
+                                  onPressed: () => _uploadSlot(
+                                    slotId,
+                                    label,
+                                  ),
+                                  child: Text(missing ? 'Upload' : 'Replace'),
+                                ),
+                              ],
                             )
-                          : null,
-                    ),
-                  if (_friendlyBlockers().isNotEmpty) ...[
+                          : (!missing && docId.isNotEmpty
+                              ? TextButton(
+                                  onPressed: () => _viewDocumentById(docId),
+                                  child: const Text('View'),
+                                )
+                              : null),
+                    );
+                  }),
+                  if (_uiBlockers(canEdit: canEdit).isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -568,7 +703,7 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('Before you send', style: TextStyle(fontWeight: FontWeight.w600)),
-                          ..._friendlyBlockers().map(
+                          ..._uiBlockers(canEdit: canEdit).map(
                             (b) => Padding(
                               padding: const EdgeInsets.only(top: 4),
                               child: Text('• $b'),
@@ -584,8 +719,16 @@ class _Kra2ReviewSubmitScreenState extends State<Kra2ReviewSubmitScreen> {
                       label: _submitting ? 'Sending…' : 'Send for Review',
                       icon: Icons.send,
                       loading: _submitting,
-                      onPressed: _submitting ? null : _submit,
+                      onPressed: (_submitting || !_canSubmitForReview) ? null : _submit,
                     ),
+                    if (!_canSubmitForReview && _uiBlockers(canEdit: canEdit).isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Upload each required document and complete the details above before sending.',
+                          style: TextStyle(color: Colors.grey.shade700, height: 1.35),
+                        ),
+                      ),
                     const SizedBox(height: 10),
                     OutlinedButton(
                       onPressed: _saving ? null : _saveDraft,

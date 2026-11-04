@@ -964,6 +964,39 @@ FL.documents = {
     return doc.fileApiPath + join + "disposition=" + (disposition || "inline");
   },
 
+  previewErrorMessage: function (error) {
+    const status = error && error.status;
+    if (status === 401) {
+      return {
+        message: "Your session expired. Sign in again to preview documents.",
+        canRetry: false,
+        sessionExpired: true
+      };
+    }
+    if (status === 403) {
+      return {
+        message: "You don't have access to this document.",
+        canRetry: false
+      };
+    }
+    if (status === 404) {
+      return {
+        message: "This document file was not found.",
+        canRetry: true
+      };
+    }
+    if (status >= 500) {
+      return {
+        message: "Couldn't open this document. Please try again.",
+        canRetry: true
+      };
+    }
+    return {
+      message: "Couldn't open this document. Please try again.",
+      canRetry: true
+    };
+  },
+
   hydrateAuthenticatedFile: function (doc, options) {
     options = options || {};
     if (!FL.store.usesLiveDocuments() || !doc.fileApiPath) {
@@ -1071,7 +1104,17 @@ FL.documents = {
         FL.documents.bindPreviewDownloads(session);
       });
     }).catch(function (error) {
-      showError(error.message || "Preview failed.", true);
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[Document preview] load failed", {
+          status: error && error.status,
+          message: error && error.message
+        });
+      }
+      const info = FL.documents.previewErrorMessage(error);
+      showError(info.message, info.canRetry);
+      if (info.sessionExpired && FL.ui && FL.ui.toast) {
+        FL.ui.toast(info.message, "warning");
+      }
     });
   },
 

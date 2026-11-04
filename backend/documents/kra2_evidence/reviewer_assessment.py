@@ -6,7 +6,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from kra_configuration.kra2_annex import published_kra2_indicator_points
-from kra_configuration.kra2_indicator_registry import allows_reviewer_partial_points, contribution_mode
+from kra_configuration.kra2_indicator_registry import (
+    allows_reviewer_partial_points,
+    contribution_mode,
+    official_indicator_max_points,
+    reviewer_adjustment_governing_rule,
+)
 from documents.kra2_evidence.bundle import REVIEW_APPROVED, REVIEW_PENDING, REVIEW_REJECTED
 
 SCORING_METHOD_FIXED = "fixed"
@@ -61,6 +66,21 @@ def allows_reviewer_point_adjustment(*, indicator_id: str) -> bool:
     return allows_reviewer_partial_points(indicator_id)
 
 
+def reviewer_scoring_controls(indicator_id: str, *, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Reviewer-facing scoring control metadata (Admin rules unchanged)."""
+    method = reviewer_scoring_method(indicator_id)
+    partial = allows_reviewer_point_adjustment(indicator_id=indicator_id)
+    official_max = official_indicator_max_points(indicator_id, settings)
+    return {
+        "scoringMethod": method,
+        "scoringMethodLabel": reviewer_scoring_method_label(method),
+        "allowsPointAdjustment": partial,
+        "allowsContributionEdit": method == SCORING_METHOD_CONTRIBUTION,
+        "officialIndicatorMaxPoints": official_max,
+        "adjustmentGoverningRule": reviewer_adjustment_governing_rule(indicator_id),
+    }
+
+
 def _default_assessed_points(
     bundle: dict[str, Any],
     *,
@@ -101,6 +121,8 @@ def apply_reviewer_accomplishment_decision(
     )
     if eligible is None:
         raise ValueError("indicator_points_unknown")
+    official_max = official_indicator_max_points(indicator_id, settings)
+    indicator_cap = round(float(official_max if official_max is not None else eligible), 2)
 
     remark_text = (remarks or "").strip()
     if status == REVIEW_REJECTED and len(remark_text) < MIN_REMARKS_LEN:
@@ -114,14 +136,13 @@ def apply_reviewer_accomplishment_decision(
     if status == REVIEW_APPROVED:
         system_points = _default_assessed_points(bundle, base_points=float(eligible))
         system_points = round(float(system_points), 2)
-        indicator_max = round(float(eligible), 2)
         partial_ok = allows_reviewer_point_adjustment(indicator_id=indicator_id)
         if assessed_points is not None:
             try:
                 points = round(float(assessed_points), 2)
             except (TypeError, ValueError) as exc:
                 raise ValueError("assessed_points_invalid") from exc
-            if points < 0 or points > indicator_max:
+            if points < 0 or points > indicator_cap:
                 raise ValueError("assessed_points_exceeds_indicator_max")
             if points > system_points + 0.001:
                 raise ValueError("assessed_points_exceeds_eligible")
@@ -158,8 +179,10 @@ def apply_reviewer_accomplishment_decision(
     bundle["reviewerAssessment"] = {
         "reviewStatus": status,
         "eligiblePoints": round(float(eligible), 2),
+        "officialIndicatorMaxPoints": indicator_cap if status == REVIEW_APPROVED else None,
         "systemCalculatedPoints": round(float(system_points), 2) if status == REVIEW_APPROVED else None,
         "assessedPoints": points,
+        "approvedPoints": points if status == REVIEW_APPROVED else None,
         "scoreAdjustmentReason": adjustment_reason or None,
         "remarks": remark_text,
         "reviewerUserId": int(reviewer_user_id),

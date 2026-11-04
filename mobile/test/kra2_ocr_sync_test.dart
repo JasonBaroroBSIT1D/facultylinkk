@@ -63,6 +63,43 @@ void main() {
     expect(controller.text, '2025-02-12');
   });
 
+  test('metadata label values are detected', () {
+    expect(
+      Kra2OcrSync.isMetadataLabelValue('Journal / publisher / issuing organization /'),
+      isTrue,
+    );
+    expect(
+      Kra2OcrSync.isMetadataLabelValue('page and publication information', fieldId: 'outputTitle'),
+      isTrue,
+    );
+    expect(Kra2OcrSync.isMetadataLabelValue('Jason Baroro', fieldId: 'authorsLine'), isFalse);
+    expect(
+      Kra2OcrSync.isMetadataLabelValue('University Learning Press (FICTIONAL)', fieldId: 'outputVenue'),
+      isFalse,
+    );
+  });
+
+  test('disclaimer title is treated as placeholder', () {
+    expect(
+      Kra2OcrSync.isPlaceholderTitle(null, 'FICTIONAL — FOR SYSTEM TESTING ONLY'),
+      isTrue,
+    );
+  });
+
+  test('sync replaces disclaimer title with OCR value', () {
+    final controller = TextEditingController(text: 'FICTIONAL — FOR SYSTEM TESTING ONLY');
+    Kra2OcrSync.syncController(
+      controller: controller,
+      fieldId: 'outputTitle',
+      bundle: {'outputTitle': 'FICTIONAL — FOR SYSTEM TESTING ONLY'},
+      ocrFields: {
+        'outputTitle': {'value': 'Real Article Title', 'status': 'extracted'},
+      },
+      userEditedFields: {},
+    );
+    expect(controller.text, 'Real Article Title');
+  });
+
   test('sync replaces generic patent application title', () {
     final bundle = {
       'indicatorId': 'kra2-b-patent-a-sole',

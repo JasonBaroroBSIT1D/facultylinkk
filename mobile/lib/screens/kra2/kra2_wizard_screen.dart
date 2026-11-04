@@ -116,6 +116,9 @@ class _Kra2WizardScreenState extends State<Kra2WizardScreen> {
         throw StateError('Upload did not complete.');
       }
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your file is saved.')),
+      );
       setState(() {
         _documentId = id;
         _step = 2;

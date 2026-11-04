@@ -8,6 +8,7 @@ from documents.kra2_evidence.bundle import REVIEW_APPROVED, SLOT_STATUS_VERIFIED
 from documents.kra2_evidence.patent_deduplication import apply_patent_highest_stage_only
 from documents.kra2_evidence.reviewer_assessment import apply_reviewer_accomplishment_decision
 from documents.kra2_evidence.scoring import aggregate_kra2_criterion_from_documents, aggregate_kra2_kra_from_documents
+from documents.kra2_evidence.slots import required_slots
 from faculty.kra_document_aggregate import aggregate_criterion_documents_from_list
 
 
@@ -46,7 +47,11 @@ def _approved_journal_doc(*, public_id: str) -> SimpleNamespace:
         "publicationDate": True,
     }
     bundle["submittedForReviewAt"] = "2025-06-01T00:00:00+00:00"
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    for slot in required_slots(indicator_id="kra2-a-journal-sole"):
+        bundle.setdefault("checklist", {})[slot] = {
+            "status": SLOT_STATUS_VERIFIED,
+            "documentId": f"{public_id}-{slot}",
+        }
     apply_reviewer_accomplishment_decision(
         bundle,
         review_status=REVIEW_APPROVED,
@@ -83,7 +88,11 @@ def _approved_patent_doc(*, public_id: str, indicator_id: str, reg: str) -> Simp
         "authorsLine": True,
     }
     bundle["submittedForReviewAt"] = "2025-06-01T00:00:00+00:00"
-    bundle["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    for slot in required_slots(indicator_id=indicator_id):
+        bundle.setdefault("checklist", {})[slot] = {
+            "status": SLOT_STATUS_VERIFIED,
+            "documentId": f"{public_id}-{slot}",
+        }
     apply_reviewer_accomplishment_decision(
         bundle,
         review_status=REVIEW_APPROVED,
@@ -208,7 +217,11 @@ def test_patent_grant_plus_commercialization_same_period():
         "authorsLine": True,
     }
     comm["submittedForReviewAt"] = "2025-06-01T00:00:00+00:00"
-    comm["checklist"]["primary_output"]["status"] = SLOT_STATUS_VERIFIED
+    for slot in required_slots(indicator_id="kra2-b-comm-local"):
+        comm.setdefault("checklist", {})[slot] = {
+            "status": SLOT_STATUS_VERIFIED,
+            "documentId": f"c1-{slot}",
+        }
     apply_reviewer_accomplishment_decision(
         comm,
         review_status=REVIEW_APPROVED,

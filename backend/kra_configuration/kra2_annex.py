@@ -66,24 +66,49 @@ def published_kra2_indicator_points(
     *,
     allow_annex_fallback: bool = True,
 ) -> float | None:
-    """Resolve base points from published Admin configuration."""
+    """Resolve per-accomplishment base points from published Admin configuration (Annex A ``points``)."""
+    base = published_kra2_indicator_base_points(
+        indicator_id,
+        settings,
+        allow_annex_fallback=allow_annex_fallback,
+    )
+    if base is not None:
+        return base
+    if not allow_annex_fallback:
+        return None
+    return None
+
+
+def published_kra2_indicator_base_points(
+    indicator_id: str,
+    settings: dict[str, Any] | None,
+    *,
+    allow_annex_fallback: bool = True,
+) -> float | None:
+    """Official base points per qualifying output (never the criterion maximum)."""
     ind = (indicator_id or "").strip()
     if not is_kra2_indicator(ind):
         return None
     if settings and isinstance(settings.get("indicators"), dict):
         entry = settings["indicators"].get(ind)
         if isinstance(entry, dict):
-            for key in ("points", "maxPoints"):
-                raw = entry.get(key)
-                if raw is not None:
-                    try:
-                        return float(raw)
-                    except (TypeError, ValueError):
-                        pass
+            raw = entry.get("points")
+            if raw is not None:
+                try:
+                    return float(raw)
+                except (TypeError, ValueError):
+                    pass
         if not allow_annex_fallback:
             return None
-    if not allow_annex_fallback:
-        return None
+    if allow_annex_fallback:
+        from kra_configuration.kra2_indicator_registry import indicator_row
+
+        row = indicator_row(ind)
+        if row and row.get("points") is not None:
+            try:
+                return float(row["points"])
+            except (TypeError, ValueError):
+                pass
     return None
 
 

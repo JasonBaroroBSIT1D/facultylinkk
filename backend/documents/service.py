@@ -138,6 +138,44 @@ def faculty_owns(faculty_user: User, doc: Document) -> bool:
     return bool(profile and doc.faculty_profile_id == profile.id)
 
 
+def _duplicate_upload_for_profile(
+    *,
+    faculty_profile_id: int,
+    file_hash: str,
+    indicator_id: str,
+    criterion_id: str,
+    bundle_primary_public_id: str | None,
+    evidence_slot: str | None,
+) -> Document | None:
+    """Return an existing doc that blocks this upload, or None if allowed."""
+    dup_q = _active_docs_query().filter_by(
+        faculty_profile_id=faculty_profile_id,
+        file_hash=file_hash,
+    )
+    if criterion_id == CRITERION_A_ID and indicator_id == CRITERION_A_AUTO_INDICATOR_ID:
+        return dup_q.filter_by(criterion_id=CRITERION_A_ID).first()
+
+    primary_ref = (bundle_primary_public_id or "").strip()
+    slot = (evidence_slot or "").strip()
+    if primary_ref and slot:
+        from documents.kra2_evidence.bundle import link_from_document
+        from kra_configuration.kra2_annex import is_kra2_criterion
+
+        if is_kra2_criterion(criterion_id):
+            for candidate in dup_q.filter_by(indicator_id=indicator_id).all():
+                if candidate.public_id == primary_ref:
+                    continue
+                link = link_from_document(candidate) or {}
+                if link.get("primaryDocumentId") == primary_ref:
+                    if (link.get("evidenceSlot") or "").strip() == slot:
+                        return candidate
+                    continue
+                return candidate
+            return None
+
+    return dup_q.filter_by(indicator_id=indicator_id).first()
+
+
 def create_upload(
     faculty_user: User,
     *,
@@ -164,14 +202,14 @@ def create_upload(
     title = (title or "").strip() or (file.filename if file else "Document")
     relative, digest, size, mime = save_upload(file, profile.id)
     if not replaces_public_id:
-        dup_q = _active_docs_query().filter_by(
+        duplicate = _duplicate_upload_for_profile(
             faculty_profile_id=profile.id,
             file_hash=digest,
+            indicator_id=indicator_id,
+            criterion_id=criterion_id,
+            bundle_primary_public_id=bundle_primary_public_id,
+            evidence_slot=evidence_slot,
         )
-        if criterion_id == CRITERION_A_ID and indicator_id == CRITERION_A_AUTO_INDICATOR_ID:
-            duplicate = dup_q.filter_by(criterion_id=CRITERION_A_ID).first()
-        else:
-            duplicate = dup_q.filter_by(indicator_id=indicator_id).first()
     else:
         duplicate = None
     if duplicate:
@@ -494,8 +532,23 @@ def _recalculate_faculty_score_for_document(doc: Document, *, actor, reason: str
 
 
 def queue_for_reviewer(reviewer: User) -> list[Document]:
+    from documents.kra2_evidence.submission_state import (
+        heal_unsubmitted_kra2_document_status,
+        is_kra2_unsubmitted_draft,
+    )
+
     docs = list_reviewer_documents(reviewer)
-    return [d for d in docs if d.status in QUEUE_DB or is_legacy_uploaded_draft(d)]
+    out: list[Document] = []
+    for d in docs:
+        if heal_unsubmitted_kra2_document_status(d):
+            db.session.commit()
+        if is_kra2_unsubmitted_draft(d):
+            continue
+        if d.status in QUEUE_DB:
+            out.append(d)
+        elif is_legacy_uploaded_draft(d):
+            out.append(d)
+    return out
 
 
 def serialize_many(docs: list[Document], *, api_base: str = "") -> list[dict]:

@@ -22,7 +22,8 @@ from documents.kra2_evidence.bundle import (
     persist_bundle,
     persist_link,
 )
-from documents.kra2_evidence.slots import required_slots
+from documents.kra2_evidence.slots import required_slots, slot_label
+from documents.kra2_evidence.submission_state import accomplishment_submitted
 from documents.kra2_evidence.reviewer_assessment import apply_reviewer_accomplishment_decision
 from documents.kra2_evidence.scoring import estimated_points_for_bundle
 from documents.kra2_evidence.validation import validate_kra2_bundle
@@ -36,6 +37,11 @@ class Kra2EvidenceError(ValueError):
 
 
 def _indicator_for_doc(doc: Document) -> str:
+    bundle = bundle_from_document(doc)
+    if isinstance(bundle, dict):
+        bid = (bundle.get("indicatorId") or "").strip()
+        if bid and is_kra2_indicator(bid):
+            return bid
     return (doc.indicator_id or "").strip()
 
 
@@ -119,6 +125,7 @@ def maybe_initialize_kra2_bundle(doc: Document) -> None:
         public_id=doc.public_id,
     )
     persist_bundle(doc, bundle)
+    doc.status = "draft"
 
 
 def attach_supporting_upload_link(
@@ -344,10 +351,18 @@ def update_bundle_metadata(
         faculty_profile_id=primary.faculty_profile_id,
         public_id=primary.public_id,
     )
-    if payload.get("submitAccomplishment") is True:
-        if validation.get("submissionBlockers") or not validation.get("readyForSubmission"):
-            raise Kra2EvidenceError("accomplishment_not_ready_for_decision")
+    submitting = payload.get("submitAccomplishment") is True
     persist_bundle(primary, bundle)
+    if submitting:
+        if validation.get("submissionBlockers") or not validation.get("readyForSubmission"):
+            db.session.commit()
+            raise Kra2EvidenceError("accomplishment_not_ready_for_decision")
+        from documents.service import utcnow
+
+        primary.status = "pending_review"
+        primary.submitted_at = utcnow()
+        if profile := primary.faculty_profile:
+            primary.reviewer_user_id = profile.reviewer_user_id
     db.session.commit()
     return primary, validation
 
@@ -374,6 +389,8 @@ def reviewer_update_kra2(
     if not bundle:
         raise Kra2EvidenceError("bundle_not_initialized")
     indicator_id = _indicator_for_doc(primary)
+    if (slot_id or review_status) and not accomplishment_submitted(bundle):
+        raise Kra2EvidenceError("accomplishment_not_submitted")
     prior_review = (bundle.get("reviewStatus") or "").strip().lower()
     if prior_review == "approved" and review_status:
         raise Kra2EvidenceError("accomplishment_already_finalized")
@@ -536,6 +553,8 @@ def bundle_api_payload(doc: Document) -> dict[str, Any]:
 
     bundle = bundle_from_document(doc)
     indicator_id = _indicator_for_doc(doc)
+    if isinstance(bundle, dict) and (bundle.get("indicatorId") or "").strip() != indicator_id:
+        bundle["indicatorId"] = indicator_id
     validation = validate_kra2_bundle(bundle, indicator_id=indicator_id)
     if isinstance(bundle, dict):
         validation = _apply_validation_to_bundle(
@@ -547,12 +566,15 @@ def bundle_api_payload(doc: Document) -> dict[str, Any]:
         persist_bundle(doc, bundle)
     from kra_configuration.version_lock import resolve_settings_for_faculty_simulation
     from documents.kra2_evidence.reviewer_assessment import (
-        allows_reviewer_point_adjustment,
-        reviewer_scoring_method,
-        reviewer_scoring_method_label,
+        reviewer_scoring_controls,
         system_calculated_assessed_points,
     )
-    from kra_configuration.kra2_annex import published_kra2_indicator_points
+    from kra_configuration.kra2_annex import (
+        published_kra2_criterion_max_points,
+        published_kra2_indicator_base_points,
+        published_kra2_indicator_points,
+    )
+    from kra_configuration.kra2_indicator_registry import official_indicator_max_points, scoring_group_max
 
     score_settings, score_resolution = resolve_settings_for_faculty_simulation()
     applicable = score_resolution.has_applicable_row
@@ -588,23 +610,64 @@ def bundle_api_payload(doc: Document) -> dict[str, Any]:
     info = dict(getattr(doc, "extracted_info", None) or {})
     ocr_extraction = info.get(OCR_EXTRACTION_KEY)
     review_flags = ocr_review_flags_for_document(doc, bundle if isinstance(bundle, dict) else None)
-    method = reviewer_scoring_method(indicator_id)
+    controls = reviewer_scoring_controls(indicator_id, settings=score_settings)
+    official_max = official_indicator_max_points(indicator_id, score_settings)
+    official_base = published_kra2_indicator_base_points(
+        indicator_id,
+        score_settings,
+        allow_annex_fallback=not applicable,
+    )
+    group_max = scoring_group_max(indicator_id)
+    crit_id = (getattr(doc, "criterion_id", None) or "").strip()
+    criterion_cap = None
+    if crit_id:
+        cap = published_kra2_criterion_max_points(
+            crit_id,
+            score_settings,
+            allow_annex_fallback=not applicable,
+        )
+        criterion_cap = float(cap) if cap is not None else None
+    verified_pct = None
+    if isinstance(bundle, dict) and (bundle.get("contribution") or "").strip().lower() == "declared":
+        try:
+            verified_pct = float(bundle.get("declaredContributionPercent"))
+        except (TypeError, ValueError):
+            verified_pct = None
+    sc = (bundle or {}).get("scoringConfiguration") if isinstance(bundle, dict) else None
+    scoring_version = sc.get("version") if isinstance(sc, dict) else None
+    ra = (bundle or {}).get("reviewerAssessment") if isinstance(bundle, dict) else None
+    approved_pts = ra.get("approvedPoints") if isinstance(ra, dict) else None
+    if approved_pts is None and isinstance(ra, dict):
+        approved_pts = ra.get("assessedPoints")
+    req_slots = list(required_slots(indicator_id=indicator_id))
+    slot_labels = {slot: slot_label(slot, indicator_id=indicator_id) for slot in req_slots}
     return {
         "bundle": bundle,
         "validation": validation,
+        "requiredEvidenceSlots": req_slots,
+        "slotLabels": slot_labels,
+        "effectiveIndicatorId": indicator_id,
         "scoring": {
             "estimatedPoints": est,
+            "officialBasePoints": float(official_base) if official_base is not None else None,
+            "verifiedContributionPercent": verified_pct,
             "systemCalculatedPoints": system_calc if system_calc is not None else est,
             "eligiblePoints": float(eligible_max) if eligible_max is not None else None,
+            "groupMaxPoints": float(group_max) if group_max is not None else None,
+            "criterionMaxPoints": criterion_cap,
+            "criterionId": crit_id or None,
             "reviewerAssessedPoints": assessed,
+            "approvedPoints": approved_pts,
             "scoreAdjustmentReason": score_adjustment_reason,
-            "scoringMethod": method,
-            "scoringMethodLabel": reviewer_scoring_method_label(method),
-            "allowsPointAdjustment": allows_reviewer_point_adjustment(indicator_id=indicator_id),
-            "allowsContributionEdit": method == "contribution_based",
+            "scoringMethod": controls["scoringMethod"],
+            "scoringMethodLabel": controls["scoringMethodLabel"],
+            "allowsPointAdjustment": controls["allowsPointAdjustment"],
+            "allowsContributionEdit": controls["allowsContributionEdit"],
+            "adjustmentGoverningRule": controls["adjustmentGoverningRule"],
             "maxAssessedPoints": system_calc if system_calc is not None else est,
-            "indicatorMaxPoints": float(eligible_max) if eligible_max is not None else None,
-            "indicatorId": doc.indicator_id,
+            "indicatorMaxPoints": float(official_max) if official_max is not None else None,
+            "indicatorId": indicator_id,
+            "scoringConfigurationVersion": scoring_version,
         },
         "isSupportingDocument": is_supporting_evidence_document(doc),
         "link": link_from_document(doc),
@@ -618,6 +681,7 @@ def list_faculty_accomplishments(
     faculty_profile_id: int,
     *,
     criterion_id: str | None = None,
+    submitted_only: bool = False,
 ) -> list[dict[str, Any]]:
     q = Document.query.filter_by(faculty_profile_id=faculty_profile_id).filter(
         Document.deleted_at.is_(None)
@@ -633,6 +697,8 @@ def list_faculty_accomplishments(
         if is_supporting_evidence_document(doc):
             continue
         bundle = bundle_from_document(doc)
+        if submitted_only and not accomplishment_submitted(bundle):
+            continue
         indicator_id = _indicator_for_doc(doc)
         validation = validate_kra2_bundle(bundle, indicator_id=indicator_id) if bundle else None
         assessment = (bundle or {}).get("reviewerAssessment")
@@ -700,8 +766,11 @@ def kra2_summary_for_faculty(
         applicable_config_present=applicable or bool(settings and settings.get("criteria")),
     )
     block["accomplishmentCount"] = len(accomplishments)
-    pending = approved = rejected = 0
+    pending = approved = rejected = draft_count = 0
     for row in accomplishments:
+        if not (row.get("submittedForReviewAt") or "").strip():
+            draft_count += 1
+            continue
         rs = (row.get("reviewStatus") or "pending").strip().lower()
         if rs == "approved":
             approved += 1
@@ -709,6 +778,7 @@ def kra2_summary_for_faculty(
             rejected += 1
         else:
             pending += 1
+    block["draftCount"] = draft_count
     block["reviewCounts"] = {"pending": pending, "approved": approved, "rejected": rejected}
     draft_est = sum(float(r.get("estimatedPoints") or 0) for r in accomplishments)
     cap = float(block.get("maxPoints") or 100.0)
