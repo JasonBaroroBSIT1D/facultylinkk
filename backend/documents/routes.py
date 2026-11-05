@@ -513,6 +513,12 @@ def _kra2_evidence_error_response(error) -> tuple:
         "cannot_link_self": (400, "A document cannot be linked to itself."),
         "forbidden": (403, "You do not have access to this document."),
         "cannot_verify_empty_slot": (400, "Cannot verify a slot with no linked document."),
+        "accomplishment_not_submitted": (
+            400,
+            "This accomplishment has not been submitted for review yet. "
+            "Evidence verification and scoring apply after faculty submission. "
+            "You may save preparation notes only until then.",
+        ),
         "invalid_slot_status": (400, "Unknown checklist status."),
         "accomplishment_not_ready_for_decision": (
             400,
@@ -1330,7 +1336,7 @@ def reviewer_kra2_a_accomplishments(faculty_public_id: str):
     return jsonify(
         {
             "accomplishments": list_faculty_accomplishments(
-                profile.id, criterion_id=CRITERION_A_ID, submitted_only=True
+                profile.id, criterion_id=CRITERION_A_ID, submitted_only=False
             )
         }
     ), 200
@@ -1360,7 +1366,7 @@ def _reviewer_kra2_criterion_accomplishments(faculty_public_id: str, criterion_i
     return jsonify(
         {
             "accomplishments": list_faculty_accomplishments(
-                profile.id, criterion_id=criterion_id, submitted_only=True
+                profile.id, criterion_id=criterion_id, submitted_only=False
             )
         }
     ), 200
@@ -1442,7 +1448,7 @@ def _reviewer_kra3_criterion_accomplishments(faculty_public_id: str, criterion_i
     return jsonify(
         {
             "accomplishments": list_faculty_accomplishments(
-                profile.id, criterion_id=criterion_id, submitted_only=True
+                profile.id, criterion_id=criterion_id, submitted_only=False
             )
         }
     ), 200
@@ -2044,3 +2050,8 @@ def admin_download_file(public_id: str):
         as_attachment=not inline,
         download_name=doc.file_name or "document",
     )
+
+
+from documents.kra4_routes import register as _register_kra4_document_routes
+
+_register_kra4_document_routes()

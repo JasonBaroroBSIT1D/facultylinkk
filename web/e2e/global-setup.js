@@ -9,10 +9,24 @@ module.exports = async () => {
   if (fs.existsSync(envPath) && !process.env.QA_REVIEWER_EMAIL) {
     const dotenv = require("dotenv");
     const parsed = dotenv.parse(fs.readFileSync(envPath));
-    for (const key of ["QA_REVIEWER_EMAIL", "QA_REVIEWER_PASSWORD", "QA_FACULTY_EMAIL", "QA_FACULTY_PASSWORD"]) {
+    const shared = parsed.QA_ACCOUNT_PASSWORD || parsed.QA_PASSWORD;
+    for (const key of [
+      "QA_REVIEWER_EMAIL",
+      "QA_REVIEWER_PASSWORD",
+      "QA_FACULTY_EMAIL",
+      "QA_FACULTY_PASSWORD",
+      "QA_ADMIN_EMAIL",
+      "QA_ADMIN_PASSWORD",
+      "QA_ACCOUNT_PASSWORD",
+    ]) {
       if (parsed[key] && !process.env[key]) {
         process.env[key] = parsed[key];
       }
+    }
+    if (shared) {
+      if (!process.env.QA_REVIEWER_PASSWORD) process.env.QA_REVIEWER_PASSWORD = shared;
+      if (!process.env.QA_FACULTY_PASSWORD) process.env.QA_FACULTY_PASSWORD = shared;
+      if (!process.env.QA_ADMIN_PASSWORD) process.env.QA_ADMIN_PASSWORD = shared;
     }
   }
 };

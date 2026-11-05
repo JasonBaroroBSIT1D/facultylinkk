@@ -7,16 +7,55 @@ FL.criterionCReview = {
   _APPROVED_LIST_TOAST_KEY: "fl_cc_accomplishment_approved_toast",
 
   _reviewHref: function (doc) {
-    var base = "document-review.html?id=" + encodeURIComponent(doc.id);
-    var q = [
-      doc.facultyId ? "faculty=" + encodeURIComponent(doc.facultyId) : "",
-      "kra=" + encodeURIComponent(doc.kraId || "kra1"),
-      "criterion=kra1-c"
-    ].filter(Boolean).join("&");
-    return base + "&" + q;
+    if (FL.reviewerNav && FL.reviewerNav.accomplishmentReviewUrl) {
+      return FL.reviewerNav.accomplishmentReviewUrl(
+        Object.assign({}, doc, { criterionId: "kra1-c", kraId: doc.kraId || "kra1" })
+      );
+    }
+    return "documents.html";
+  },
+
+  mountWorkspaceAccomplishmentReview: function (session, state, isAdmin, host, docId) {
+    var back = FL.reviewerNav.criterionWorkspaceUrl({
+      facultyId: state.facultyId,
+      kraId: state.kraId || "kra1",
+      criterionId: "kra1-c",
+      docFilter: state.docFilter || "all"
+    });
+    var liveHost = function () {
+      return document.getElementById("evidence-body") || host;
+    };
+    liveHost().innerHTML = FL.ui.loading("Loading accomplishment", "Fetching Criterion C evidence…");
+    var cached = FL.store.documentById(docId);
+    var docPromise = cached ? Promise.resolve(cached) : FL.store.refreshLiveDocument(session, docId);
+    docPromise.then(function (doc) {
+      if (!doc) throw new Error("Document was not found.");
+      return FL.criterionCReview.paintReviewPage(session, doc, !isAdmin && session.role === "reviewer", {
+        faculty: FL.store.facultyById(state.facultyId),
+        back: back,
+        backLabel: "Back to accomplishments",
+        mountHost: liveHost(),
+        scrollDocId: state.scrollDoc || ""
+      });
+    }).catch(function (err) {
+      liveHost().innerHTML = FL.ui.emptyWithRetry(
+        "Could not load accomplishment",
+        (err && err.message) || "Try again.",
+        "cc-ws-review-retry"
+      );
+      var btn = document.getElementById("cc-ws-review-retry");
+      if (btn) {
+        btn.addEventListener("click", function () {
+          FL.criterionCReview.mountWorkspaceAccomplishmentReview(session, state, isAdmin, liveHost(), docId);
+        });
+      }
+    });
   },
 
   mountAccomplishmentListInWorkspace: function (session, state, isAdmin, host, criterion) {
+    if (state.focusDoc) {
+      return FL.criterionCReview.mountWorkspaceAccomplishmentReview(session, state, isAdmin, host, state.focusDoc);
+    }
     var facultyId = state.facultyId;
     var person = FL.store.facultyById(facultyId);
     var docs = FL.evidence._facultyDocs(session, facultyId);
@@ -66,6 +105,9 @@ FL.criterionCReview = {
         }
       });
       FL.criterionCReview._maybeShowApprovedListToast();
+      if (FL.evidence && FL.evidence.highlightAccomplishmentCard) {
+        FL.evidence.highlightAccomplishmentCard(state.highlightDoc);
+      }
     });
   },
 
@@ -100,24 +142,42 @@ FL.criterionCReview = {
   },
 
   paintReviewPage: function (session, doc, canDecide, ctx) {
-    var page = document.getElementById("page");
+    ctx = ctx || {};
+    var page = ctx.mountHost || document.getElementById("page");
+    if (!page) return Promise.reject(new Error("Review view is not available."));
     if (FL.criterionCWorkspaceUi.isFacultyDraftItem({ primary: doc })) {
       canDecide = false;
     }
     if (session.role === "administrator" && doc.criterionCEvidence) {
       FL.criterionCReview._renderReview(session, doc, false, ctx, doc.criterionCEvidence);
-      return;
+      return Promise.resolve();
     }
     page.innerHTML = FL.ui.loading("Loading Criterion C accomplishment…");
     var configReady = FL.store.refreshScoringConfiguration({ force: false }).catch(function () {
       return null;
     });
-    Promise.all([configReady, FL.criterionCEvidence.fetchBundle(session, doc.id)]).then(function (results) {
+    var bundlePromise = FL.criterionCEvidence.fetchBundle(session, doc.id);
+    var timed =
+      FL.criterionCEvidence && typeof FL.criterionCEvidence._withTimeout === "function"
+        ? FL.criterionCEvidence._withTimeout(bundlePromise, 25000, "Accomplishment request")
+        : bundlePromise;
+    Promise.all([configReady, timed]).then(function (results) {
       var payload = results[1];
       FL.criterionCReview._renderReview(session, doc, canDecide, ctx, payload);
     }).catch(function (err) {
-      page.innerHTML = FL.ui.empty("Could not load", FL.esc(err.message || "Try again."));
+      page.innerHTML = FL.ui.emptyWithRetry(
+        "Could not load accomplishment",
+        FL.esc(err.message || "Try again."),
+        "cc-review-retry"
+      );
+      var retryBtn = document.getElementById("cc-review-retry");
+      if (retryBtn) {
+        retryBtn.addEventListener("click", function () {
+          FL.criterionCReview.paintReviewPage(session, doc, canDecide, ctx);
+        });
+      }
     });
+    return Promise.resolve();
   },
 
   _renderReview: function (session, doc, canDecide, ctx, payload) {
@@ -165,6 +225,7 @@ FL.criterionCReview = {
           : "",
       backHref: ctx.back || "documents.html",
       backLabel: ctx.backLabel || "Back to Criterion C",
+      mountHost: ctx.mountHost || null,
       facultyName: (ctx.faculty && ctx.faculty.name) || "Faculty",
       verificationSave: { pending: false, requestId: 0, confirmedBySlot: {} },
       showGroupEditor: false
@@ -209,6 +270,15 @@ FL.criterionCReview = {
   },
 
   _autoSaveSlotVerification: function (session, state, slotId, newStatus, selectEl, indicatorEl) {
+    if (
+      FL.reviewerAccomplishmentState &&
+      !FL.reviewerAccomplishmentState.canVerifyEvidence(state)
+    ) {
+      if (selectEl) {
+        selectEl.value = FL.criterionCReview._confirmedSlotStatus(state, slotId);
+      }
+      return Promise.resolve();
+    }
     var ui = FL.criterionCWorkspaceUi;
     var confirmed = FL.criterionCReview._confirmedSlotStatus(state, slotId);
     if (!ui.slotStatusShouldPersist(newStatus, confirmed)) return Promise.resolve();
@@ -297,7 +367,8 @@ FL.criterionCReview = {
   },
 
   _renderGuidedStep: function (session, state) {
-    var page = document.getElementById("page");
+    var page = state.mountHost || document.getElementById("page");
+    if (!page) return;
     if (state.ocrPollTimer) {
       clearInterval(state.ocrPollTimer);
       state.ocrPollTimer = null;
@@ -440,7 +511,13 @@ FL.criterionCReview = {
     }
     document.querySelectorAll(".cc-evidence-slot-select").forEach(function (sel) {
       var slotId = sel.getAttribute("data-cc-slot");
-      if (!slotId || !state.canDecide) return;
+      if (
+        !slotId
+        || !state.canDecide
+        || (FL.reviewerAccomplishmentState && !FL.reviewerAccomplishmentState.canVerifyEvidence(state))
+      ) {
+        return;
+      }
       var indicator = document.querySelector('[data-cc-slot-indicator="' + slotId + '"]');
       sel.addEventListener("change", function () {
         FL.criterionCReview._autoSaveSlotVerification(session, state, slotId, sel.value, sel, indicator).then(
@@ -450,7 +527,38 @@ FL.criterionCReview = {
         );
       });
     });
+    var savePrepBtn = document.getElementById("kra2-save-prep-notes");
+    if (savePrepBtn) {
+      savePrepBtn.addEventListener("click", function () {
+        var indicator = document.getElementById("kra2-save-prep-notes-indicator");
+        var notesEl = document.getElementById("kra2-prep-notes");
+        var remarks = notesEl ? notesEl.value : "";
+        savePrepBtn.disabled = true;
+        if (indicator) indicator.textContent = "Saving…";
+        FL.criterionCEvidence.patchBundle(session, state.doc.id, { remarks: remarks })
+          .then(function () {
+            return FL.criterionCEvidence.fetchBundle(session, state.doc.id);
+          })
+          .then(function (fresh) {
+            FL.criterionCReview._mergePayloadIntoGuidedState(state, fresh);
+            if (indicator) indicator.textContent = "Notes saved";
+            if (FL.ui && FL.ui.toast) FL.ui.toast("Preparation notes saved.", "ok");
+          })
+          .catch(function (err) {
+            if (indicator) indicator.textContent = "Could not save";
+            if (FL.ui && FL.ui.toast) {
+              FL.ui.toast((err && err.message) || "Could not save notes.", "danger");
+            }
+          })
+          .finally(function () {
+            savePrepBtn.disabled = false;
+          });
+      });
+    }
     if (!state.canDecide) return;
+    if (FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.isDraftAwaitingFaculty(state)) {
+      return;
+    }
     var approveBtn = document.getElementById("cc-approve");
     var rejectBtn = document.getElementById("cc-reject");
     var reloadDocs = function () {

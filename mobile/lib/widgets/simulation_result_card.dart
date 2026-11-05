@@ -55,6 +55,11 @@ class _SimulationResultCardState extends State<SimulationResultCard>
     super.dispose();
   }
 
+  static String _fmt(num? v) {
+    if (v == null) return '—';
+    return v.toStringAsFixed(2);
+  }
+
   @override
   Widget build(BuildContext context) {
     final sim = widget.simulation;
@@ -91,9 +96,15 @@ class _SimulationResultCardState extends State<SimulationResultCard>
         ),
       );
     }
-    final readiness = (sim.progress * 100).round();
-    final kraTotal = sim.estimatedKraPoints ?? sim.currentPoints.toDouble();
-    final pad = widget.compact ? 16.0 : 20.0;
+
+    final weightedTotal = sim.weightedEstimatedScore;
+    final readiness = sim.preparationReadinessPercentage;
+    final readinessLabel = readiness != null
+        ? '${readiness.round()}%'
+        : 'N/A';
+    final pad = widget.compact ? 14.0 : 18.0;
+    final kraLabels = ['Instruction', 'Research', 'Extension', 'Prof. Dev.'];
+    final kraKeys = ['kra1', 'kra2', 'kra3', 'kra4'];
 
     return AnimatedBuilder(
       animation: _motion,
@@ -158,54 +169,24 @@ class _SimulationResultCardState extends State<SimulationResultCard>
         children: [
           Row(
             children: [
-              AnimatedBuilder(
-                animation: _motion,
-                builder: (context, child) {
-                  final pop = Curves.easeOutBack.transform(
-                    _motion.value.clamp(0.0, 1.0),
-                  );
-                  return Transform.scale(scale: 0.86 + (0.14 * pop), child: child);
-                },
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.white.withValues(alpha: 0.45),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    size: 18,
-                    color: AppColors.forestMid,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
               const Expanded(
                 child: Text(
                   'Simulation Result',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w800,
-                    fontSize: 16,
+                    fontSize: 15,
                     letterSpacing: 0.2,
                   ),
                 ),
               ),
-              if (widget.onTap != null)
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: Colors.white.withValues(alpha: 0.75),
-                ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.75),
+              ),
             ],
           ),
-          SizedBox(height: widget.compact ? 16 : 20),
+          SizedBox(height: widget.compact ? 12 : 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -216,49 +197,100 @@ class _SimulationResultCardState extends State<SimulationResultCard>
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.only(top: 18),
+                padding: const EdgeInsets.only(top: 16),
                 child: Icon(
                   Icons.arrow_forward_rounded,
                   color: Colors.white.withValues(alpha: 0.92),
-                  size: 18,
+                  size: 16,
                 ),
               ),
               Expanded(
                 child: _RankBlock(
-                  caption: 'Eligible For',
-                  value: sim.targetRank,
+                  caption: 'Possible Rank',
+                  value: sim.displayPossibleRank,
                   alignEnd: true,
                 ),
               ),
             ],
           ),
-          SizedBox(height: widget.compact ? 14 : 18),
-          Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-          SizedBox(height: widget.compact ? 12 : 16),
-          AnimatedBuilder(
-            animation: _motion,
-            builder: (context, _) {
-              final t = Curves.easeOutCubic.transform(_motion.value);
-              return Row(
+          SizedBox(height: widget.compact ? 10 : 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = constraints.maxWidth < 340;
+              return Column(
                 children: [
-                  _StatBlock(
-                    value: (kraTotal * t).toStringAsFixed(1),
-                    label: 'Estimated KRA Total',
-                  ),
-                  _StatBlock(
-                    value: '${(readiness * t).round()}%',
-                    label: 'Readiness',
-                  ),
-                  const _StatBlock(
-                    value: 'Pending',
-                    label: 'Status',
+                  Row(
+                    children: [
+                      for (var i = 0; i < 4; i++)
+                        Expanded(
+                          child: _KraMini(
+                            label: narrow && i == 3 ? 'Prof.' : kraLabels[i],
+                            value: _fmt(sim.contributionForKra(kraKeys[i])),
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               );
             },
           ),
+          SizedBox(height: widget.compact ? 10 : 12),
+          Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _StatBlock(
+                value: _fmt(weightedTotal),
+                label: 'Weighted Total',
+              ),
+              _StatBlock(
+                value: readinessLabel,
+                label: 'Readiness',
+              ),
+              _StatBlock(
+                value: sim.homeStatusLabel,
+                label: 'Status',
+              ),
+            ],
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _KraMini extends StatelessWidget {
+  const _KraMini({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: AppColors.mint.withValues(alpha: 0.88),
+            fontSize: 9.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -284,20 +316,22 @@ class _RankBlock extends StatelessWidget {
           caption,
           style: TextStyle(
             color: AppColors.mint.withValues(alpha: 0.88),
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.2,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 3),
         Text(
           value,
           textAlign: alignEnd ? TextAlign.right : TextAlign.left,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w800,
-            fontSize: 16,
-            height: 1.2,
+            fontSize: 14,
+            height: 1.15,
           ),
         ),
       ],
@@ -324,16 +358,17 @@ class _StatBlock extends StatelessWidget {
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w800,
-              fontSize: 22,
+              fontSize: 17,
               height: 1.1,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           Text(
             label,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: AppColors.mint.withValues(alpha: 0.92),
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w600,
             ),
           ),

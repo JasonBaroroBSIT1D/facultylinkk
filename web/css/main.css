@@ -481,17 +481,41 @@ p { margin: 0 0 0.8rem; }
 .btn-quiet:hover { color: var(--bad); background: var(--bad-bg); }
 .table-wrap { overflow-x: auto; }
 table.data { width: 100%; border-collapse: collapse; min-width: 720px; }
-table.data th, table.data td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.data th,
+table.data td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
 table.data th { font-size: 0.82rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); }
 table.data tr.is-selected { background: #f3fbfb; }
+table.data td.action-cell,
+table.data th.action-cell {
+  display: table-cell;
+  vertical-align: middle;
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+}
+table.data td.action-cell .btn,
+table.data td.action-cell a.btn {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+table.data td.action-cell .btn:first-child,
+table.data td.action-cell a.btn:first-child {
+  margin-left: 0;
+}
 .action-cell {
   display: flex;
   gap: 8px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   white-space: nowrap;
-  min-width: 280px;
+  min-width: 0;
 }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; padding: 10px 14px; }
 .btn-primary { background: var(--navy); color: white; }

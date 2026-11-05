@@ -14,16 +14,22 @@ FL.notifications = {
     return this.visible(user).filter(function (item) { return !item.read; }).length;
   },
 
-  mark: function (id, read) {
+  mark: function (id, read, session) {
     const item = FL.store.notifications.find(function (row) { return row.id === id; });
     if (!item) return Promise.resolve();
     item.read = read;
+    if (session && FL.portal && (FL.store.usesRealAdminApi() || FL.store.usesLiveReviewerApi())) {
+      return FL.portal.patchNotification(session, id, read);
+    }
     return FL.api.send("PATCH", "/api/notifications/" + encodeURIComponent(id), { read: read });
   },
 
-  markAll: function (user) {
+  markAll: function (user, session) {
     const ids = this.visible(user).filter(function (item) { return !item.read; }).map(function (item) { return item.id; });
     this.visible(user).forEach(function (item) { item.read = true; });
+    if (session && FL.portal && (FL.store.usesRealAdminApi() || FL.store.usesLiveReviewerApi())) {
+      return FL.portal.markAllNotifications(session, ids, true);
+    }
     return FL.api.send("PATCH", "/api/notifications", { ids: ids, read: true });
   },
 
@@ -59,12 +65,12 @@ FL.notifications = {
       </article>`;
   },
 
-  bind: function (user, rerender) {
+  bind: function (user, rerender, session) {
     const root = document.getElementById("page");
     const markAll = document.getElementById("mark-all");
     if (markAll) {
       markAll.addEventListener("click", function () {
-        FL.notifications.markAll(user).then(rerender).catch(function (error) {
+        FL.notifications.markAll(user, session).then(rerender).catch(function (error) {
           FL.ui.toast(error.message || "Notifications were not updated.", "danger");
         });
       });
@@ -74,7 +80,7 @@ FL.notifications = {
         const item = FL.store.notifications.find(function (row) { return row.id === button.getAttribute("data-read"); });
         if (!item) return;
         const next = !item.read;
-        FL.notifications.mark(item.id, next).then(rerender).catch(function (error) {
+        FL.notifications.mark(item.id, next, session).then(rerender).catch(function (error) {
           item.read = !next;
           FL.ui.toast(error.message || "That notification was not updated.", "danger");
         });

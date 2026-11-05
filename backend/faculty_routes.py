@@ -42,6 +42,20 @@ def faculty_dashboard():
     return jsonify(faculty_dashboard_payload(user, profile)), 200
 
 
+@faculty_bp.get("/me/sync-health")
+@perm.roles_required(ROLE_FACULTY)
+def faculty_sync_health():
+    public_id = get_jwt_identity()
+    user = aq.current_faculty_user(public_id)
+    if not user:
+        return jsonify({"message": "Faculty account was not found."}), 404
+    from portal.sync_health import faculty_sync_health_payload
+
+    resp = jsonify(faculty_sync_health_payload(user))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
 @faculty_bp.get("/me/scoring-configuration")
 @perm.roles_required(ROLE_FACULTY)
 def faculty_scoring_configuration():

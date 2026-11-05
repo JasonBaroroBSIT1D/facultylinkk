@@ -2,40 +2,60 @@ window.FL = window.FL || {};
 
 FL.reviewer = {
   renderDashboard: function (session) {
-    const mine = FL.documents.scoped(session);
+    const host = document.getElementById("page");
+    if (FL.store.usesLiveReviewerApi() && FL.portal) {
+      host.innerHTML = FL.ui.loading("Loading dashboard", "Fetching your assigned faculty and review queue…");
+      FL.portal.loadReviewerDashboard().then(function (data) {
+        FL.reviewer._paintLiveDashboard(session, data);
+      }).catch(function (error) {
+        host.innerHTML = FL.ui.emptyWithRetry(
+          "Dashboard could not load",
+          error.message || "Check that Flask is running and you are signed in as a reviewer.",
+          "reviewer-dashboard-retry"
+        );
+        const btn = document.getElementById("reviewer-dashboard-retry");
+        if (btn) btn.addEventListener("click", function () { FL.reviewer.renderDashboard(session); });
+      });
+      return;
+    }
+    FL.reviewer._paintLegacyDashboard(session);
+  },
+
+  _paintLiveDashboard: function (session, data) {
+    const summary = data.summary || {};
+    const queue = data.reviewQueue || [];
+    const activity = data.recentReviewActivity || [];
+    if (data.evaluationPeriods && data.evaluationPeriods.length) {
+      FL.store.evaluationPeriods = data.evaluationPeriods;
+    }
     const faculty = FL.store.assignedFacultyForReviewer(session);
-    const queue = mine.filter(FL.documents.needsAction);
-    const revision = mine.filter(function (doc) { return doc.status === "revision"; });
-    const feedback = mine.filter(function (doc) { return doc.feedback; }).slice(0, 4);
     document.getElementById("page").innerHTML = `
       <div class="portal-page">
       ${FL.ui.pageHeader({
         eyebrow: "FacultyLink",
         title: "Reviewer Dashboard",
-        lede: "Assigned faculty, documents awaiting validation, and recorded feedback."
+        lede: "Your assigned faculty, documents waiting for review, and recent decisions."
       })}
       ${FL.ui.metricGrid([
-        { label: "Assigned faculty", value: faculty.length, iconKey: "faculty", accent: "teal" },
-        { label: "Submitted documents", value: mine.length, iconKey: "documents" },
-        { label: "Needs validation", value: queue.length, hint: "Open the review queue", iconKey: "validation", accent: "warn" },
-        { label: "Revisions requested", value: revision.length, iconKey: "revision", accent: "warn" }
+        { label: "Assigned faculty", value: summary.assignedFaculty, iconKey: "faculty", accent: "teal", href: "assigned-faculty.html" },
+        { label: "Submitted documents", value: summary.submittedDocuments, iconKey: "documents", href: "documents.html" },
+        { label: "Waiting for review", value: summary.waitingForReview, iconKey: "validation", accent: "warn", href: "documents.html?filter=pending-review" },
+        { label: "Needs changes", value: summary.revisionsRequested, iconKey: "revision", accent: "warn", href: "documents.html?filter=revision" }
       ])}
       <article class="card">
-        <div class="card-head"><h2>Documents requiring validation</h2><a href="documents.html?filter=pending-review">Pending review</a></div>
-        ${queue.length ? `<div class="table-wrap"><table class="data"><thead><tr><th>Faculty</th><th>Document</th><th>KRA</th><th>Validation</th><th>Date</th><th></th></tr></thead><tbody>
+        <div class="card-head"><h2>Documents needing review</h2><a href="documents.html?filter=pending-review">View all</a></div>
+        ${queue.length ? `<div class="table-wrap"><table class="data portal-data-table"><thead><tr><th>Faculty</th><th>Document</th><th>KRA</th><th>Status</th><th>Date</th><th class="action-cell"></th></tr></thead><tbody>
           ${queue.map(function (doc) {
-            const person = FL.store.facultyById(doc.facultyId);
-            const result = FL.validation.evaluate(doc);
             return `<tr>
-              <td>${FL.esc(person ? person.name : "")}</td>
-              <td>${FL.esc(doc.name)}<div class="sub">${FL.esc(doc.id)}</div></td>
+              <td>${FL.esc(doc.facultyName || "")}</td>
+              <td>${FL.esc(doc.name || doc.title || doc.id)}</td>
               <td>${FL.esc(FL.documents.kraLabel(doc))}</td>
-              <td>${FL.ui.statusBadge(result.overall === "valid" ? "valid" : result.overall === "invalid" ? "invalid" : "reviewer-required")}</td>
-              <td>${FL.esc(FL.formatWhen(doc.dateSubmitted))}</td>
-              <td><a class="btn btn-small btn-primary" href="document-review.html?id=${FL.esc(doc.id)}">Open Review</a></td>
+              <td>${FL.ui.statusBadge(doc.status)}</td>
+              <td class="fl-table-datetime-cell">${FL.ui.tableDateTimeHtml(doc.submittedAt || doc.dateSubmitted)}</td>
+              <td class="action-cell"><a class="btn btn-small btn-primary" href="${FL.esc(FL.portal.reviewHref(doc))}">Review</a></td>
             </tr>`;
           }).join("")}
-        </tbody></table></div>` : FL.ui.empty("Empty review queue", "No assigned document is waiting for validation.")}
+        </tbody></table></div>` : FL.ui.empty("No documents need review right now", "New submissions from your assigned faculty will appear here.")}
       </article>
       <article class="card">
         <div class="card-head"><h2>Evaluation schedule</h2><a href="evaluation-schedule.html">Open schedule</a></div>
@@ -43,24 +63,48 @@ FL.reviewer = {
           ${(FL.store.evaluationPeriods || []).map(function (period) {
             return `<tr><td>${FL.esc(period.label || FL.admin.scheduleLabel)}</td><td>${FL.esc(FL.formatWhen(period.startDate))}</td><td>${FL.esc(FL.formatWhen(period.endDate))}</td><td>${FL.ui.statusBadge(FL.admin.scheduleStatus(period))}</td></tr>`;
           }).join("")}
-        </tbody></table></div>` : FL.ui.empty("No published schedule", "The administrator has not published the Rank Upgrade and Reclassification schedule yet.")}
+        </tbody></table></div>` : FL.ui.empty("No evaluation schedule published yet", "The administrator has not published the Rank Upgrade and Reclassification schedule yet.")}
       </article>
       <div class="split">
         <article class="card">
           <div class="card-head"><h2>Assigned faculty</h2><a href="assigned-faculty.html">Open list</a></div>
-          <ul class="activity">${faculty.map(function (person) {
-            const item = FL.compliance(person.id);
-            return `<li><a href="faculty-detail.html?id=${FL.esc(person.id)}"><strong>${FL.esc(person.name)}</strong></a><span>${FL.esc(person.rank)} · ${FL.esc(item.status)}</span></li>`;
-          }).join("")}</ul>
+          <ul class="activity">${faculty.length ? faculty.map(function (person) {
+            return `<li><a href="faculty-detail.html?id=${FL.esc(person.id)}"><strong>${FL.esc(person.name)}</strong></a><span>${FL.esc(person.rank || person.currentRank || "")}</span></li>`;
+          }).join("") : `<li><span>No faculty assigned yet.</span></li>`}
+          </ul>
         </article>
         <article class="card">
-          <div class="card-head"><h2>Reviewer feedback</h2></div>
-          ${feedback.length ? `<ul class="activity">${feedback.map(function (doc) {
-            return `<li><strong>${FL.esc(doc.id)}</strong><span>${FL.esc(doc.feedback)}</span></li>`;
-          }).join("")}</ul>` : FL.ui.empty("No feedback yet", "Feedback you record on a document will appear here.")}
+          <div class="card-head"><h2>Recent review activity</h2></div>
+          ${activity.length ? `<ul class="activity">${activity.map(function (row) {
+            return `<li><a href="${FL.esc(FL.portal.reviewHref({ id: row.documentId }))}"><strong>${FL.esc(row.title || row.documentId)}</strong></a><span>${FL.esc(FL.portal.statusLabel(row.status))} · ${FL.esc(row.facultyName || "")}</span></li>`;
+          }).join("")}</ul>` : FL.ui.empty("No recent reviews", "Decisions you record will appear here.")}
         </article>
       </div>
       </div>`;
+  },
+
+  _paintLegacyDashboard: function (session) {
+    const mine = FL.documents.scoped(session);
+    const faculty = FL.store.assignedFacultyForReviewer(session);
+    const queue = mine.filter(FL.documents.needsAction);
+    const revision = mine.filter(function (doc) { return doc.status === "revision"; });
+    FL.reviewer._paintLiveDashboard(session, {
+      summary: {
+        assignedFaculty: faculty.length,
+        submittedDocuments: mine.length,
+        waitingForReview: queue.length,
+        revisionsRequested: revision.length
+      },
+      reviewQueue: queue,
+      recentReviewActivity: mine.filter(function (doc) { return doc.feedback; }).slice(0, 4).map(function (doc) {
+        return {
+          documentId: doc.id,
+          title: doc.name,
+          facultyName: (FL.store.facultyById(doc.facultyId) || {}).name,
+          status: doc.status
+        };
+      })
+    });
   },
 
   renderProfile: function (session) {
@@ -105,7 +149,14 @@ FL.pages["reviewer-notifications"] = function (session) {
   const user = FL.store.userById(session.userId);
   const draw = function () {
     document.getElementById("page").innerHTML = FL.notifications.render(user);
-    FL.notifications.bind(user, draw);
+    FL.notifications.bind(user, draw, session);
   };
-  draw();
+  if (FL.portal && FL.store.usesLiveReviewerApi()) {
+    document.getElementById("page").innerHTML = FL.ui.loading("Loading notifications", "Fetching your alerts…");
+    FL.portal.loadNotifications(session).then(draw).catch(function (error) {
+      document.getElementById("page").innerHTML = FL.ui.empty("Notifications unavailable", error.message || "");
+    });
+  } else {
+    draw();
+  }
 };

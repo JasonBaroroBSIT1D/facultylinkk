@@ -237,7 +237,7 @@ FL.boot = function () {
       return null;
     }).then(function () {
       FL.auth.mergeUserIntoStore(session);
-      if (FL.store.usesRealAdminApi() && (page === "admin-faculty" || page === "admin-reviewers")) {
+      if (FL.store.usesRealAdminApi() && session.role === "administrator") {
         FL.store.clearAccountMocksForLiveAdmin();
       }
       const reviewerPages = [
@@ -263,6 +263,23 @@ FL.boot = function () {
         const render = FL.pages[page];
         if (render) render(session);
         else document.getElementById("page").innerHTML = FL.ui.empty("Page unavailable", "This page is not part of the FacultyLink web application.");
+      };
+      const pushEvaluationPeriods = function (chain) {
+        const schedulePages = [
+          "admin-schedule",
+          "admin-dashboard",
+          "reviewer-schedule",
+          "reviewer-dashboard"
+        ];
+        const liveCalendar =
+          (session.role === "administrator" && FL.store.usesRealAdminApi())
+          || (session.role === "reviewer" && FL.store.usesLiveReviewerApi());
+        if (liveCalendar && schedulePages.indexOf(page) !== -1) {
+          chain.push(FL.store.loadEvaluationPeriods(session).catch(function () {
+            FL.store.evaluationPeriods = [];
+            return null;
+          }));
+        }
       };
       const bootDocsThenRender = function () {
         const chain = [];
@@ -300,17 +317,7 @@ FL.boot = function () {
             return loads.length ? Promise.all(loads) : null;
           }));
         }
-        const schedulePages = ["admin-schedule", "reviewer-schedule", "reviewer-dashboard"];
-        if (
-          FL.store.usesRealAdminApi()
-          && (session.role === "administrator" || session.role === "reviewer")
-          && schedulePages.indexOf(page) !== -1
-        ) {
-          chain.push(FL.store.loadEvaluationPeriods(session).catch(function () {
-            FL.store.evaluationPeriods = [];
-            return null;
-          }));
-        }
+        pushEvaluationPeriods(chain);
         if (!chain.length) {
           finishBoot();
           return;
@@ -318,9 +325,15 @@ FL.boot = function () {
         Promise.all(chain).then(finishBoot);
       };
       if (bootReviewer && !bootDocuments) {
-        return FL.store.loadReviewerAssignedFaculty().then(finishBoot).catch(function (error) {
-          FL.store.reviewerDirectoryLoaded = false;
-          FL.store.reviewerFaculty = [];
+        const reviewerChain = [
+          FL.store.loadReviewerAssignedFaculty().catch(function (error) {
+            FL.store.reviewerDirectoryLoaded = false;
+            FL.store.reviewerFaculty = [];
+            throw error;
+          })
+        ];
+        pushEvaluationPeriods(reviewerChain);
+        return Promise.all(reviewerChain).then(finishBoot).catch(function (error) {
           finishBoot();
           FL.ui.toast(error.message || "Could not load assigned faculty from PostgreSQL.", "danger");
         });

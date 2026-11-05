@@ -366,6 +366,25 @@ def aggregate_documents_for_kra(profile: FacultyProfile, kra_key: str) -> dict[s
         block["breakdown"] = []
         return block
 
+    if kra_key == "kra4":
+        from documents.scoring.kra4_simulation_adapter import aggregate_kra4_simulation_from_documents
+        from kra_configuration.version_lock import resolve_settings_for_faculty_simulation
+
+        settings_blob, resolution = resolve_settings_for_faculty_simulation()
+        block = aggregate_kra4_simulation_from_documents(
+            docs,
+            settings=settings_blob,
+            applicable_config_present=resolution.has_applicable_row,
+        )
+        block["label"] = _KRA_LABELS[kra_key]
+        block["statusLabel"] = (
+            "Estimated from KRA IV accomplishments (A+B+C plus bonus D, capped at 100)"
+            if block.get("assessed")
+            else "Not yet assessed"
+        )
+        block["breakdown"] = []
+        return block
+
     best_by_indicator: dict[str, tuple[Document, float]] = {}
     for doc in docs:
         pts = effective_document_points(doc)

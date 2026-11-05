@@ -21,8 +21,8 @@ FIELD_SERVICE_MONTHS = "serviceDurationMonths"
 
 _FIELD_LABELS: dict[str, str] = {
     FIELD_ACTIVITY_TITLE: "Activity or project name",
-    FIELD_ORGANIZATION: "Organization or partner",
-    FIELD_FACULTY_ROLE: "Your role",
+    FIELD_ORGANIZATION: "Partner organization / beneficiary",
+    FIELD_FACULTY_ROLE: "Faculty role or contribution",
     FIELD_ACTIVITY_DATE: "Date",
     FIELD_SERVICE_START: "Start date",
     FIELD_SERVICE_END: "End date",

@@ -1,0 +1,54 @@
+{
+  "status": "PASS",
+  "checks": {
+    "catalog_nineteen_indicators": true,
+    "save_draft": true,
+    "draft_nineteen_kra4_indicators": true,
+    "version_history_readable": true,
+    "validate_publish_runs": true,
+    "publish_not_required_for_qa": true
+  },
+  "catalogKra4IndicatorCount": 19,
+  "kra4IndicatorCountInDraft": 19,
+  "publishedVersionCount": 0,
+  "validatePublishReady": false,
+  "validatePublish": {
+    "ready": false,
+    "errors": [
+      "set_indicator_incomplete",
+      "sef_indicator_incomplete"
+    ],
+    "checks": [
+      {
+        "id": "effective_date",
+        "ok": true,
+        "message": "Effective from 2026-01-01."
+      },
+      {
+        "id": "set_indicator",
+        "ok": false,
+        "message": "Student Evaluation of Teaching (SET) maximum points / multiplier is missing or invalid."
+      },
+      {
+        "id": "sef_indicator",
+        "ok": false,
+        "message": "Supervisor Evaluation of Faculty (SEF) maximum points / multiplier is missing or invalid."
+      },
+      {
+        "id": "evaluation_coverage",
+        "ok": true,
+        "message": "Standard evaluation coverage: 6 semester rating(s) before Section 10 adjustments."
+      },
+      {
+        "id": "criterion_a_totals",
+        "ok": true,
+        "message": "SET and SEF caps will apply under Teaching Effectiveness (Criterion A)."
+      },
+      {
+        "id": "verified_method",
+        "ok": false,
+        "message": "Complete the checks above before the verified SET/SEF method can be activated."
+      }
+    ]
+  }
+}

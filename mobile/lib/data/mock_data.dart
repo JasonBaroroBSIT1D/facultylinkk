@@ -159,9 +159,20 @@ abstract final class MockData {
   static const simulation = RankSimulation(
     currentRank: 'Instructor I',
     targetRank: 'Instructor II',
+    possibleRank: 'Instructor II',
     currentPoints: 72,
     requiredPoints: 100,
+    weightedEstimatedScore: 48.3,
+    preparationReadinessPercentage: 75,
+    preparationReadinessLabel: '3 of 4 applicable preparation items complete.',
+    estimatedWeightedContributions: {
+      'kra1': 42.13,
+      'kra2': 0,
+      'kra3': 2.07,
+      'kra4': 4.1,
+    },
     eligibilityLabel: 'Potentially Eligible',
+    eligibilityStatus: 'additional_requirements',
     areasToImprove: [
       ImprovementArea(
         kra: KraType.instruction,

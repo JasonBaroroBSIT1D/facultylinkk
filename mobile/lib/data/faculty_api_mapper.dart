@@ -105,16 +105,32 @@ abstract final class FacultyApiMapper {
     }
     final targetRaw = ((json['targetRank'] as String?) ?? '').trim();
     final nextRaw = ((json['nextPossibleRank'] as String?) ?? '').trim();
+    final possibleRaw = ((json['possibleRank'] as String?) ?? '').trim();
+    final displayTarget = possibleRaw.isNotEmpty
+        ? possibleRaw
+        : (nextRaw.isNotEmpty ? nextRaw : targetRaw);
     final estimatedTotal = (json['estimatedTotalKraPoints'] as num?)?.toDouble() ??
         (json['estimatedKraPoints'] as num?)?.toDouble() ??
         0;
     final validatedTotal = (json['validatedKraPoints'] as num?)?.toDouble() ?? 0;
     final weightedEstimated = (json['weightedEstimatedScore'] as num?)?.toDouble() ??
-        (json['weightedValidatedScore'] as num?)?.toDouble() ??
+        (json['estimatedWeightedTotal'] as num?)?.toDouble() ??
         (json['weightedProvisionalScore'] as num?)?.toDouble();
+    final weightedValidated = (json['weightedValidatedScore'] as num?)?.toDouble() ??
+        (json['verifiedWeightedTotal'] as num?)?.toDouble();
+    final estContrib = _contribMap(json['estimatedWeightedContributions']);
+    final verContrib = _contribMap(json['verifiedWeightedContributions']);
+    final breakdown = json['weightedContributionBreakdown'];
+    List<Map<String, dynamic>> estRows = const [];
+    List<Map<String, dynamic>> verRows = const [];
+    if (breakdown is Map) {
+      estRows = _breakdownRows(breakdown['estimated']);
+      verRows = _breakdownRows(breakdown['verified']);
+    }
     return RankSimulation(
       currentRank: (json['currentRank'] as String?) ?? '',
-      targetRank: targetRaw.isNotEmpty ? targetRaw : nextRaw,
+      targetRank: displayTarget,
+      possibleRank: possibleRaw.isNotEmpty ? possibleRaw : displayTarget,
       currentPoints: (json['currentPoints'] as num?)?.toInt() ??
           estimatedTotal.round(),
       requiredPoints: (json['requiredPoints'] as num?)?.toInt() ?? 0,
@@ -124,8 +140,21 @@ abstract final class FacultyApiMapper {
       validatedKraPoints: validatedTotal,
       provisionalKraPoints: estimatedTotal,
       weightedEstimatedScore: weightedEstimated,
-      weightedValidatedScore: weightedEstimated,
+      weightedValidatedScore: weightedValidated,
       weightedProvisionalScore: weightedEstimated,
+      scoreBracket: json['scoreBracket'] as String?,
+      subrankIncrement: (json['subrankIncrement'] as num?)?.toInt(),
+      preparationReadinessPercentage:
+          (json['preparationReadinessPercentage'] as num?)?.toDouble(),
+      preparationReadinessLabel:
+          (json['preparationReadinessLabel'] as String?) ?? '',
+      readinessChecklist: _checklist(json['readinessChecklist']),
+      estimatedWeightedContributions: estContrib,
+      verifiedWeightedContributions: verContrib,
+      weightedContributionBreakdownEstimated: estRows,
+      weightedContributionBreakdownVerified: verRows,
+      rankTransitionNote: json['rankTransitionNote'] as String?,
+      calculationReference: (json['calculationReference'] as String?) ?? '',
       teachingEffectivenessScore: teScore?.toDouble(),
       progressPercent: (json['progressPercent'] as num?)?.toDouble(),
       progressLabel: (json['progressLabel'] as String?) ?? '',
@@ -139,6 +168,31 @@ abstract final class FacultyApiMapper {
       isPlaceholder: json['isPlaceholder'] == true,
       disclaimer: (json['disclaimer'] as String?) ?? '',
     );
+  }
+
+  static Map<String, double> _contribMap(Object? raw) {
+    final out = <String, double>{};
+    if (raw is! Map) return out;
+    raw.forEach((key, value) {
+      if (value is num) out[key.toString()] = value.toDouble();
+    });
+    return out;
+  }
+
+  static List<Map<String, dynamic>> _breakdownRows(Object? raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  static List<Map<String, dynamic>> _checklist(Object? raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
   }
 
   static RankSimulation simulationFromFullPayload(Map<String, dynamic> root) {

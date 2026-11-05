@@ -51,18 +51,46 @@ FL.audit = {
   },
 
   rows: function () {
+    return FL.audit._liveRows || [];
+  },
+
+  draw: function () {
+    const host = document.getElementById("audit-table");
+    if (FL.store.usesRealAdminApi() && FL.portal) {
+      const query = (document.getElementById("audit-search").value || "").trim();
+      const roleRaw = document.getElementById("audit-role").value || "";
+      const role = roleRaw ? roleRaw.toLowerCase().replace("istrator", "istrator") : "";
+      const roleParam = roleRaw === "Administrator" ? "administrator" : roleRaw === "Reviewer" ? "reviewer" : roleRaw === "Faculty" ? "faculty" : "";
+      host.innerHTML = FL.ui.loading("Loading audit log", "Reading activity history from PostgreSQL…");
+      FL.portal.loadAdminAuditLog({ q: query, role: roleParam }).then(function (data) {
+        FL.audit._liveRows = (data.entries || []).map(function (row) {
+          return {
+            id: row.id,
+            at: row.at,
+            user: row.user,
+            role: row.role,
+            action: row.action,
+            ref: row.ref,
+            description: row.description
+          };
+        });
+        FL.audit._drawTable(host, FL.audit._liveRows);
+      }).catch(function (error) {
+        host.innerHTML = FL.ui.empty("Audit log unavailable", error.message || "Could not load audit history.");
+      });
+      return;
+    }
     const query = (document.getElementById("audit-search").value || "").trim().toLowerCase();
     const role = document.getElementById("audit-role").value;
-    return FL.store.audit.filter(function (row) {
+    const rows = FL.store.audit.filter(function (row) {
       if (role && row.role !== role) return false;
       if (!query) return true;
       return [row.user, row.role, row.action, row.ref, row.description].join(" ").toLowerCase().indexOf(query) !== -1;
     }).sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+    FL.audit._drawTable(host, rows);
   },
 
-  draw: function () {
-    const rows = this.rows();
-    const host = document.getElementById("audit-table");
+  _drawTable: function (host, rows) {
     if (!rows.length) {
       host.innerHTML = FL.ui.empty("No audit records", "No record matches this search.");
       return;

@@ -69,3 +69,87 @@ def reviewer_faculty_estimated_assessment(faculty_public_id: str):
     resp = jsonify(payload)
     resp.headers["Cache-Control"] = "no-store"
     return resp, 200
+
+
+@reviewer_bp.get("/me/dashboard")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_dashboard():
+    public_id = get_jwt_identity()
+    user = aq.current_reviewer_user(public_id)
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    from portal.dashboard_service import reviewer_dashboard_payload
+
+    resp = jsonify(reviewer_dashboard_payload(user))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
+@reviewer_bp.get("/me/sync-health")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_sync_health():
+    public_id = get_jwt_identity()
+    user = aq.current_reviewer_user(public_id)
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    from portal.sync_health import reviewer_sync_health_payload
+
+    resp = jsonify(reviewer_sync_health_payload(user))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
+@reviewer_bp.get("/me/notifications")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_notifications_list():
+    public_id = get_jwt_identity()
+    user = aq.current_reviewer_user(public_id)
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    from portal.dashboard_service import notifications_payload
+
+    return jsonify(notifications_payload(user)), 200
+
+
+@reviewer_bp.patch("/me/notifications/<public_id>")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_notification_patch(public_id: str):
+    from extensions import db
+    from flask import request
+    from models import Notification
+
+    reviewer_public = get_jwt_identity()
+    user = aq.current_reviewer_user(reviewer_public)
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    note = Notification.query.filter_by(public_id=public_id, user_id=user.id).first()
+    if not note:
+        return jsonify({"message": "Notification was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    if "read" in body:
+        note.read = bool(body.get("read"))
+        db.session.commit()
+    return jsonify({"id": note.public_id, "read": note.read}), 200
+
+
+@reviewer_bp.patch("/me/notifications")
+@perm.roles_required(ROLE_REVIEWER)
+def reviewer_notifications_mark_all():
+    from extensions import db
+    from flask import request
+    from models import Notification
+
+    reviewer_public = get_jwt_identity()
+    user = aq.current_reviewer_user(reviewer_public)
+    if not user:
+        return jsonify({"message": "Reviewer account was not found."}), 404
+    body = request.get_json(silent=True) or {}
+    read = bool(body.get("read", True))
+    ids = body.get("ids") if isinstance(body.get("ids"), list) else None
+    q = Notification.query.filter_by(user_id=user.id, read=not read)
+    if ids:
+        q = q.filter(Notification.public_id.in_(ids))
+    for note in q.all():
+        note.read = read
+    db.session.commit()
+    return jsonify({"updated": True}), 200

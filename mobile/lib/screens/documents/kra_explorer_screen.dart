@@ -5,12 +5,16 @@ import '../../data/criterion_b_catalog.dart';
 import '../../data/criterion_c_catalog.dart';
 import '../../data/kra2_catalog.dart';
 import '../../data/kra3_catalog.dart';
+import '../../data/kra4_catalog.dart';
 import '../kra2/kra2_criterion_hub_screen.dart';
 import '../kra2/kra2_main_hub_screen.dart';
 import '../kra2/kra2_wizard_screen.dart';
 import '../kra3/kra3_criterion_hub_screen.dart';
 import '../kra3/kra3_main_hub_screen.dart';
 import '../kra3/kra3_wizard_screen.dart';
+import '../kra4/kra4_criterion_hub_screen.dart';
+import '../kra4/kra4_main_hub_screen.dart';
+import '../kra4/kra4_wizard_screen.dart';
 import '../../data/kra_scoring_display.dart';
 import '../../data/mock_kra_catalog.dart';
 import '../../data/teaching_effectiveness_mapper.dart';
@@ -146,6 +150,34 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
         }
       });
     }
+    if (_criterionId == Kra4Catalog.criterionA ||
+        _criterionId == Kra4Catalog.criterionB ||
+        _criterionId == Kra4Catalog.criterionC ||
+        _criterionId == Kra4Catalog.criterionD) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final cid = _criterionId ?? '';
+        final ind = (_indicatorId ?? '').trim();
+        if (ind.isNotEmpty) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => Kra4WizardScreen(
+                criterionId: cid,
+                initialIndicatorId: ind,
+              ),
+            ),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => Kra4CriterionHubScreen(criterionId: cid),
+            ),
+          );
+        }
+      });
+    }
     if (widget.kra == KraType.research &&
         (widget.initialCriterionId == null || widget.initialCriterionId!.isEmpty) &&
         (widget.initialIndicatorId == null || widget.initialIndicatorId!.isEmpty) &&
@@ -169,6 +201,19 @@ class _KraExplorerScreenState extends State<KraExplorerScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const Kra3MainHubScreen()),
+        );
+      });
+    }
+    if (widget.kra == KraType.professionalDevelopment &&
+        (widget.initialCriterionId == null || widget.initialCriterionId!.isEmpty) &&
+        (widget.initialIndicatorId == null || widget.initialIndicatorId!.isEmpty) &&
+        (_criterionId == null || _criterionId!.isEmpty) &&
+        (_indicatorId == null || _indicatorId!.isEmpty)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const Kra4MainHubScreen()),
         );
       });
     }

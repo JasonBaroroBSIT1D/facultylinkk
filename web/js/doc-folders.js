@@ -9,6 +9,7 @@ FL.docFolders = {
       "pending-review": ["pending", "Pending review"],
       "reviewer-required": ["pending", "Reviewer required"],
       revision: ["warn", "Needs revision"],
+      "needs-revision": ["warn", "Needs revision"],
       approved: ["valid", "Approved"],
       "simulation-auto-accepted": ["valid", "Auto-accepted for simulation"],
       "simulation-reviewer-validated": ["valid", "Reviewer-validated for simulation"],
@@ -122,6 +123,23 @@ FL.docFolders = {
 
     const reviewBase = session.role === "administrator" ? "document-view.html" : "document-review.html";
 
+    function indicatorDocHref(doc) {
+      const merged = Object.assign({}, doc, {
+        facultyId: state.facultyId || doc.facultyId,
+        kraId: state.kraId || doc.kraId,
+        criterionId: state.criterionId || doc.criterionId,
+        indicatorId: state.indicatorId || doc.indicatorId
+      });
+      if (FL.reviewerNav && FL.reviewerNav.accomplishmentReviewUrl) {
+        return FL.reviewerNav.accomplishmentReviewUrl(merged);
+      }
+      return reviewBase + "?id=" + encodeURIComponent(doc.id)
+        + "&faculty=" + encodeURIComponent(state.facultyId)
+        + "&kra=" + encodeURIComponent(state.kraId)
+        + "&criterion=" + encodeURIComponent(state.criterionId)
+        + "&indicator=" + encodeURIComponent(state.indicatorId);
+    }
+
     function breadcrumbs() {
       const parts = [];
       if (rootMode === "admin") parts.push({ label: "All faculty", level: "root" });
@@ -161,7 +179,12 @@ FL.docFolders = {
     function filteredDocs(source) {
       const q = state.query.trim().toLowerCase();
       return source.filter(function (doc) {
-        if (state.status && doc.status !== state.status) return false;
+        if (state.status) {
+          const bucket = FL.evidence && FL.evidence.docStatusBucket
+            ? FL.evidence.docStatusBucket(doc)
+            : doc.status;
+          if (bucket !== state.status && doc.status !== state.status) return false;
+        }
         if (state.kraFilter && doc.kraId !== state.kraFilter) return false;
         if (state.facultyId && doc.facultyId !== state.facultyId) return false;
         if (state.kraId && doc.kraId !== state.kraId) return false;
@@ -357,11 +380,7 @@ FL.docFolders = {
         </header>` : ""}
         <div class="doc-file-grid">
           ${indicatorDocs.map(function (doc) {
-            const href = reviewBase + "?id=" + encodeURIComponent(doc.id)
-              + "&faculty=" + encodeURIComponent(state.facultyId)
-              + "&kra=" + encodeURIComponent(state.kraId)
-              + "&criterion=" + encodeURIComponent(state.criterionId)
-              + "&indicator=" + encodeURIComponent(state.indicatorId);
+            const href = indicatorDocHref(doc);
             const action = queueOnly ? "Review document" : (session.role === "administrator" ? "View document" : "Open");
             return `<article class="doc-file-card">
               <div class="doc-file-icon" aria-hidden="true">${/pdf/i.test(doc.fileName || "") ? "PDF" : "IMG"}</div>

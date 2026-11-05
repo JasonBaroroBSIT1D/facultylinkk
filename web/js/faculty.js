@@ -180,6 +180,11 @@ FL.faculty = {
   },
 
   documentHref: function (id) {
+    const doc = FL.store.documentById(id);
+    if (FL.reviewerNav && FL.reviewerNav.accomplishmentReviewUrl) {
+      if (doc) return FL.reviewerNav.accomplishmentReviewUrl(doc);
+      return id ? "documents.html?highlightDoc=" + encodeURIComponent(id) : "documents.html";
+    }
     const page = document.body.dataset.role === "administrator" ? "document-view.html" : "document-review.html";
     return page + "?id=" + encodeURIComponent(id);
   },
@@ -205,7 +210,7 @@ FL.faculty = {
       ? `<th>Source PDFs</th><th>Semester evaluations</th><th>PDF document review</th>`
       : "";
     return `
-      <table class="data">
+      <table class="data portal-data-table">
         <thead>
           <tr>
             <th>Faculty</th>
@@ -247,8 +252,10 @@ FL.faculty = {
               ${metricsCells}
               <td class="action-cell">
                 ${live
-                  ? `<button class="btn btn-small btn-ghost" type="button" data-view-faculty="${FL.esc(person.id)}">View faculty</button>`
-                  : `<a class="btn btn-small btn-ghost" href="${FL.faculty.detailHref(person.id)}">${FL.esc(action || "View faculty")}</a>`}
+                  ? `<a class="btn btn-small btn-primary" href="documents.html?faculty=${FL.esc(person.id)}&filter=all">Evidence workspace</a>
+                  <button class="btn btn-small btn-ghost" type="button" data-view-faculty="${FL.esc(person.id)}">Profile</button>`
+                  : `<a class="btn btn-small btn-primary" href="documents.html?faculty=${FL.esc(person.id)}&filter=all">Evidence workspace</a>
+                  <a class="btn btn-small btn-ghost" href="${FL.faculty.detailHref(person.id)}">${FL.esc(action || "View faculty")}</a>`}
                 ${manage ? `
                   <button class="btn btn-small btn-primary" type="button" data-change-reviewer="${FL.esc(person.id)}">Change reviewer</button>
                   <button class="btn btn-small btn-ghost" type="button" data-reissue-faculty="${FL.esc(person.id)}">Resend credentials</button>
@@ -623,7 +630,10 @@ FL.faculty = {
           <h1>${FL.esc(person.name)}</h1>
           <p class="lede">${FL.esc(person.rank)} · ${FL.esc(person.department)}</p>
         </div>
-        <div class="head-actions"><a class="btn btn-ghost" href="${backHref}">${FL.esc(backLabel)}</a></div>
+        <div class="head-actions">
+          <a class="btn btn-primary" href="documents.html?faculty=${FL.esc(person.id)}&filter=all">Evidence workspace</a>
+          <a class="btn btn-ghost" href="${backHref}">${FL.esc(backLabel)}</a>
+        </div>
       </div>
       ${assessmentBanner}
       <div class="tablist" role="tablist">

@@ -1,0 +1,305 @@
+{
+  "version": "1.0",
+  "source": "web/js/rules.js",
+  "pdfVerified": false,
+  "indicatorCount": 19,
+  "criteriaPresent": [
+    "kra4-a",
+    "kra4-b",
+    "kra4-c",
+    "kra4-d"
+  ],
+  "indicators": [
+    {
+      "id": "kra4-a-member",
+      "criterionId": "kra4-a",
+      "name": "Membership and active participation in a registered professional organization",
+      "points": 5.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": "kra4-a-member",
+      "groupMax": 20.0,
+      "perYearRate": false,
+      "evidenceHints": [
+        "Valid certificate of membership or ID",
+        "For non-APO organizations: SEC registration, organizational profile (mandate, national membership, ≥10 years existence), and evidence of annual conventions for the past three years",
+        "Evidence of active engagement beyond mere attendance"
+      ]
+    },
+    {
+      "id": "kra4-b-postmaster",
+      "criterionId": "kra4-b",
+      "name": "Post-master diploma or certificate",
+      "points": 10.0,
+      "maxPoints": 40.0,
+      "contribution": "not-applicable",
+      "group": "kra4-b-educ",
+      "groupMax": 40.0,
+      "perYearRate": false,
+      "evidenceHints": [
+        "CAV TOR / diploma / certificate; CHED equivalency for foreign degrees when required"
+      ]
+    },
+    {
+      "id": "kra4-b-postdoc",
+      "criterionId": "kra4-b",
+      "name": "Post-doctorate diploma or certificate",
+      "points": 10.0,
+      "maxPoints": 40.0,
+      "contribution": "not-applicable",
+      "group": "kra4-b-educ",
+      "groupMax": 40.0,
+      "perYearRate": false,
+      "evidenceHints": [
+        "CAV TOR / diploma / certificate; CHED equivalency for foreign degrees when required"
+      ]
+    },
+    {
+      "id": "kra4-b-masters",
+      "criterionId": "kra4-b",
+      "name": "Additional master’s degree",
+      "points": 20.0,
+      "maxPoints": 40.0,
+      "contribution": "not-applicable",
+      "group": "kra4-b-educ",
+      "groupMax": 40.0,
+      "perYearRate": false,
+      "evidenceHints": [
+        "CAV TOR / diploma / certificate; CHED equivalency for foreign degrees when required"
+      ]
+    },
+    {
+      "id": "kra4-b-doctorate",
+      "criterionId": "kra4-b",
+      "name": "Doctorate degree or additional doctorate degree",
+      "points": 40.0,
+      "maxPoints": 40.0,
+      "contribution": "not-applicable",
+      "group": "kra4-b-educ",
+      "groupMax": 40.0,
+      "perYearRate": false,
+      "evidenceHints": [
+        "CAV TOR / diploma / certificate; CHED equivalency for foreign degrees when required"
+      ]
+    },
+    {
+      "id": "kra4-b-part-local",
+      "criterionId": "kra4-b",
+      "name": "Participation in a conference, seminar, workshop, or capacity-building activity — Local",
+      "points": 1.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": "kra4-b-part",
+      "groupMax": 10.0,
+      "perYearRate": false,
+      "evidenceHints": [
+        "Certificate of participation",
+        "Evidence of Presidential / Governing Board approval as required"
+      ]
+    },
+    {
+      "id": "kra4-b-part-intl",
+      "criterionId": "kra4-b",
+      "name": "Participation in a conference, seminar, workshop, or capacity-building activity — International",
+      "points": 2.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": "kra4-b-part",
+      "groupMax": 10.0,
+      "perYearRate": false,
+      "evidenceHints": [
+        "Certificate of participation",
+        "Evidence of approval as required"
+      ]
+    },
+    {
+      "id": "kra4-b-paper-local",
+      "criterionId": "kra4-b",
+      "name": "Paper presentation in a conference — Local",
+      "points": 3.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": "kra4-b-paper",
+      "groupMax": 10.0,
+      "perYearRate": false,
+      "evidenceHints": [
+        "Letter or certificate of acceptance",
+        "Evidence of approval to present"
+      ]
+    },
+    {
+      "id": "kra4-b-paper-intl",
+      "criterionId": "kra4-b",
+      "name": "Paper presentation in a conference — International",
+      "points": 5.0,
+      "maxPoints": 10.0,
+      "contribution": "not-applicable",
+      "group": "kra4-b-paper",
+      "groupMax": 10.0,
+      "perYearRate": false,
+      "evidenceHints": [
+        "Letter or certificate of acceptance",
+        "Evidence of approval to present",
+        "Evidence that at least three countries are represented among speakers and/or participants"
+      ]
+    },
+    {
+      "id": "kra4-c-inst",
+      "criterionId": "kra4-c",
+      "name": "Institutional award",
+      "points": 2.0,
+      "maxPoints": 2.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "perYearRate": false,
+      "evidenceHints": [
+        "Short description of the award",
+        "Certificate or photo of plaque/trophy/medal",
+        "Organization profile",
+        "Evidence that SUC PRAISE Guidelines are CSC-approved"
+      ]
+    },
+    {
+      "id": "kra4-c-local",
+      "criterionId": "kra4-c",
+      "name": "Local and regional award (city, municipality, or province)",
+      "points": 3.0,
+      "maxPoints": 3.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "perYearRate": false,
+      "evidenceHints": [
+        "Short description of the award",
+        "Certificate or photo of plaque/trophy/medal",
+        "Award criteria and mechanics",
+        "Selection process",
+        "Award-giving organization profile"
+      ]
+    },
+    {
+      "id": "kra4-c-national",
+      "criterionId": "kra4-c",
+      "name": "National award",
+      "points": 4.0,
+      "maxPoints": 4.0,
+      "contribution": "not-applicable",
+      "group": null,
+      "groupMax": null,
+      "perYearRate": false,
+      "evidenceHints": [
+        "Short description of the award",
+        "Certificate or photo of plaque/trophy/medal",
+        "Award criteria and mechanics",
+        "Selection process",
+        "Award-giving organization profile"
+      ]
+    },
+    {
+      "id": "kra4-d-pres",
+      "criterionId": "kra4-d",
+      "name": "Full-time academic service — President, per year",
+      "points": 5.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": "kra4-d",
+      "groupMax": 20.0,
+      "perYearRate": true,
+      "evidenceHints": [
+        "Service record, certificate of employment, notice of appointment/designation, or similar",
+        "Brief job description"
+      ]
+    },
+    {
+      "id": "kra4-d-vp",
+      "criterionId": "kra4-d",
+      "name": "Full-time academic service — Vice President, Dean, or Director, per year",
+      "points": 4.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": "kra4-d",
+      "groupMax": 20.0,
+      "perYearRate": true,
+      "evidenceHints": [
+        "Service record or certificate of employment",
+        "Brief job description"
+      ]
+    },
+    {
+      "id": "kra4-d-head",
+      "criterionId": "kra4-d",
+      "name": "Full-time academic service — Department or Program Head, per year",
+      "points": 3.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": "kra4-d",
+      "groupMax": 20.0,
+      "perYearRate": true,
+      "evidenceHints": [
+        "Service record or certificate of employment",
+        "Brief job description"
+      ]
+    },
+    {
+      "id": "kra4-d-faculty",
+      "criterionId": "kra4-d",
+      "name": "Full-time academic service — Faculty member, per year",
+      "points": 2.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": "kra4-d",
+      "groupMax": 20.0,
+      "perYearRate": true,
+      "evidenceHints": [
+        "Service record or certificate of employment",
+        "Brief job description"
+      ]
+    },
+    {
+      "id": "kra4-d-mgr",
+      "criterionId": "kra4-d",
+      "name": "Industry experience — Managerial or supervisory, per year",
+      "points": 4.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": "kra4-d",
+      "groupMax": 20.0,
+      "perYearRate": true,
+      "evidenceHints": [
+        "Service record, certificate of employment, or notice of appointment",
+        "Brief job description"
+      ]
+    },
+    {
+      "id": "kra4-d-tech",
+      "criterionId": "kra4-d",
+      "name": "Industry experience — Technical and skilled, per year",
+      "points": 3.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": "kra4-d",
+      "groupMax": 20.0,
+      "perYearRate": true,
+      "evidenceHints": [
+        "Service record or certificate of employment",
+        "Brief job description"
+      ]
+    },
+    {
+      "id": "kra4-d-support",
+      "criterionId": "kra4-d",
+      "name": "Industry experience — Support or administrative staff, per year",
+      "points": 2.0,
+      "maxPoints": 20.0,
+      "contribution": "not-applicable",
+      "group": "kra4-d",
+      "groupMax": 20.0,
+      "perYearRate": true,
+      "evidenceHints": [
+        "Service record or certificate of employment",
+        "Brief job description"
+      ]
+    }
+  ]
+}

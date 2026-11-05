@@ -31,11 +31,14 @@ class RankUpgradeSimulationCard extends StatelessWidget {
       );
     }
 
-    final target = simulation.targetRank.trim().isEmpty
+    final target = simulation.displayPossibleRank == '—'
         ? 'Pathway under assessment'
-        : simulation.targetRank;
+        : simulation.displayPossibleRank;
+    final prep = simulation.preparationReadinessPercentage;
+    final showPrep = prep != null;
     final progress = simulation.progressPercent;
-    final showProgress = progress != null && simulation.requiredPoints > 0;
+    final showThresholdProgress =
+        !showPrep && progress != null && simulation.requiredPoints > 0;
 
     return Card(
       elevation: 0,
@@ -77,13 +80,42 @@ class RankUpgradeSimulationCard extends StatelessWidget {
                 ),
                 Expanded(
                   child: _RankColumn(
-                    caption: 'Possible rank upgrade',
+                    caption: 'Possible rank (estimated)',
                     value: target,
                     alignEnd: true,
                   ),
                 ),
               ],
             ),
+            if (simulation.scoreBracket != null ||
+                simulation.subrankIncrement != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                [
+                  if (simulation.scoreBracket != null)
+                    'Score bracket: ${simulation.scoreBracket}',
+                  if (simulation.subrankIncrement != null)
+                    'Sub-rank increment: +${simulation.subrankIncrement}',
+                ].join(' · '),
+                style: TextStyle(
+                  color: AppColors.mint.withValues(alpha: 0.88),
+                  fontSize: 11,
+                  height: 1.35,
+                ),
+              ),
+            ],
+            if (simulation.rankTransitionNote != null &&
+                simulation.rankTransitionNote!.trim().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                simulation.rankTransitionNote!,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontSize: 10,
+                  height: 1.35,
+                ),
+              ),
+            ],
             const SizedBox(height: 18),
             Divider(color: Colors.white.withValues(alpha: 0.15), height: 1),
             const SizedBox(height: 16),
@@ -91,20 +123,20 @@ class RankUpgradeSimulationCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _Metric(
-                    label: 'Estimated KRA pts',
-                    value: _fmt(simulation.estimatedKraPoints),
-                  ),
-                ),
-                Expanded(
-                  child: _Metric(
-                    label: 'Teaching effectiveness',
-                    value: _fmt(simulation.teachingEffectivenessScore),
-                  ),
-                ),
-                Expanded(
-                  child: _Metric(
-                    label: 'Weighted estimate',
+                    label: 'Weighted total (est.)',
                     value: _fmt(simulation.weightedEstimatedScore),
+                  ),
+                ),
+                Expanded(
+                  child: _Metric(
+                    label: 'Weighted total (verified)',
+                    value: _fmt(simulation.weightedValidatedScore),
+                  ),
+                ),
+                Expanded(
+                  child: _Metric(
+                    label: 'Raw KRA total (est.)',
+                    value: _fmt(simulation.estimatedKraPoints),
                   ),
                 ),
               ],
@@ -112,8 +144,8 @@ class RankUpgradeSimulationCard extends StatelessWidget {
             if (simulation.weightedEstimatedScore != null) ...[
               const SizedBox(height: 12),
               Text(
-                'Weighted score (Table 2.2${simulation.weightBand.isNotEmpty ? ': ${simulation.weightBand}' : ''}): '
-                '${_fmt(simulation.weightedEstimatedScore)} / 100',
+                'Table 2.2 weights (${simulation.weightBand.isNotEmpty ? simulation.weightBand : 'current rank'}): '
+                '${_fmt(simulation.weightedEstimatedScore)} / 100 estimated',
                 style: TextStyle(
                   color: AppColors.mint.withValues(alpha: 0.9),
                   fontSize: 11,
@@ -122,7 +154,46 @@ class RankUpgradeSimulationCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 16),
-            if (showProgress) ...[
+            if (showPrep) ...[
+              Row(
+                children: [
+                  ProgressRing(
+                    progress: (prep / 100).clamp(0, 1),
+                    size: 52,
+                    strokeWidth: 6,
+                    color: AppColors.forestLight,
+                    backgroundColor: Colors.white.withValues(alpha: 0.12),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${prep.toStringAsFixed(1)}% preparation readiness',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          simulation.preparationReadinessLabel.isNotEmpty
+                              ? simulation.preparationReadinessLabel
+                              : 'Completion of applicable preparation requirements',
+                          style: TextStyle(
+                            color: AppColors.mint.withValues(alpha: 0.88),
+                            fontSize: 11,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ] else if (showThresholdProgress) ...[
               Row(
                 children: [
                   ProgressRing(

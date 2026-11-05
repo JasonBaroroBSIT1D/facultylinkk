@@ -70,41 +70,7 @@
   line-height: 1.45;
 }
 
-/* Folder breadcrumbs — compact row below header */
-.evidence-crumb-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 4px;
-  font-size: 0.8rem;
-  color: var(--fl-muted);
-  line-height: 1.45;
-  padding: 6px 0 2px;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-.evidence-crumb-bar .evidence-crumb-link {
-  background: none;
-  border: 0;
-  color: var(--fl-info);
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
-  text-decoration: none;
-  max-width: 100%;
-}
-
-.evidence-crumb-bar .evidence-crumb-link:hover { text-decoration: underline; }
-
-.evidence-crumb-bar .evidence-crumb-segment {
-  color: var(--fl-muted);
-}
-
-.evidence-crumb-bar .evidence-crumb-current {
-  color: var(--fl-primary);
-  font-weight: 600;
-}
+/* Legacy crumb bar removed — see evidence-nav-header in evidence-workspace.css */
 
 /* Cards inside portal pages */
 .portal-page .card,
@@ -196,6 +162,69 @@
 
 .page table.data tbody tr:hover {
   background: #f8fafc;
+}
+
+/* Shared portal table utilities (Admin + Reviewer) */
+.fl-table-datetime {
+  display: inline-block;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--fl-primary, var(--navy));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fl-table-datetime-date,
+.fl-table-datetime-time {
+  display: inline;
+}
+
+.fl-table-datetime-sep {
+  opacity: 0.65;
+}
+
+.fl-table-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.3;
+}
+
+.fl-table-stack-main {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fl-primary, var(--navy));
+}
+
+.fl-table-stack-sub {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+table.data.portal-data-table td.action-cell {
+  white-space: normal;
+  max-width: 18rem;
+}
+
+@media (max-width: 1280px) {
+  .fl-table-datetime {
+    white-space: normal;
+    max-width: 9.25rem;
+  }
+
+  .fl-table-datetime-sep {
+    display: none;
+  }
+
+  .fl-table-datetime-date,
+  .fl-table-datetime-time {
+    display: block;
+  }
+
+  .fl-table-datetime-time {
+    font-size: 0.75rem;
+    color: var(--fl-muted, var(--muted));
+  }
 }
 
 /* Buttons — consistent with workspace */

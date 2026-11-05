@@ -57,7 +57,91 @@ FL.evidence = {
     return criterionId === "kra2-a" || criterionId === "kra2-b" || criterionId === "kra2-c";
   },
 
-  /** KRA II uses accomplishment list + document review — not per-indicator PDF grids. */
+  isKra3CriterionId: function (criterionId) {
+    return (
+      criterionId === "kra3-a" ||
+      criterionId === "kra3-b" ||
+      criterionId === "kra3-c" ||
+      criterionId === "kra3-d"
+    );
+  },
+
+  isKra4CriterionId: function (criterionId) {
+    return (
+      criterionId === "kra4-a" ||
+      criterionId === "kra4-b" ||
+      criterionId === "kra4-c" ||
+      criterionId === "kra4-d"
+    );
+  },
+
+  isKra34CriterionId: function (criterionId) {
+    return FL.evidence.isKra3CriterionId(criterionId) || FL.evidence.isKra4CriterionId(criterionId);
+  },
+
+  /** Normalize live/mock document rows to filter buckets (pending-review | revision | approved | rejected | other). */
+  docStatusBucket: function (doc) {
+    if (!doc) return "other";
+    const raw = (
+      doc.documentWorkflowStatus
+      || doc.reviewDisplayStatus
+      || doc.status
+      || ""
+    ).toString().toLowerCase().replace(/_/g, "-");
+    if (raw === "system-approved" || raw === "valid" || raw === "approved") return "approved";
+    if (raw === "needs-revision" || raw === "revision") return "revision";
+    if (raw === "rejected") return "rejected";
+    if (
+      raw === "pending-review"
+      || raw === "reviewer-required"
+      || raw === "invalid"
+      || raw === "pending"
+      || raw === "processing"
+    ) {
+      return "pending-review";
+    }
+    if (raw === "draft") {
+      return doc.hasFile === false ? "other" : "pending-review";
+    }
+    return "other";
+  },
+
+  applyDocStatusFilter: function (docs, filterKey) {
+    const list = docs || [];
+    if (!filterKey || filterKey === "all") return list.slice();
+    return list.filter(function (d) {
+      return FL.evidence.docStatusBucket(d) === filterKey;
+    });
+  },
+
+  documentReviewBadge: function (doc) {
+    if (FL.documents && FL.documents.displayReviewStatus) {
+      return FL.documents.displayReviewStatus(doc);
+    }
+    return FL.evidence.statusBadge(doc.status || "pending-review");
+  },
+
+  criterionScrollStorageKey: function (facultyId, criterionId) {
+    return "fl_evidence_scroll_" + (facultyId || "") + "_" + (criterionId || "");
+  },
+
+  highlightAccomplishmentCard: function (documentId) {
+    if (!documentId) return;
+    var sel =
+      '[data-accomplishment-doc-id="' + String(documentId).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"]' +
+      ',[data-doc-id="' + String(documentId).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"]';
+    var card = document.querySelector(sel);
+    if (!card) return;
+    card.classList.add("evidence-accomplishment-card--highlight");
+    requestAnimationFrame(function () {
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    if (FL.evidence.pushLocation) {
+      FL.evidence.pushLocation({ highlightDoc: "" });
+    }
+  },
+
+  /** Accomplishment-based KRAs use criterion overview — not per-indicator PDF grids. */
   _stripKra2IndicatorDocRoute: function (state) {
     if (!state || !state.facultyId || !state.indicatorId) return;
     const ind = String(state.indicatorId);
@@ -65,19 +149,37 @@ FL.evidence = {
       state.kraId === "kra2" ||
       FL.evidence.isKra2CriterionId(state.criterionId) ||
       ind.indexOf("kra2-") === 0;
-    if (!onKra2) return;
+    const onKra3 =
+      state.kraId === "kra3" ||
+      FL.evidence.isKra3CriterionId(state.criterionId) ||
+      ind.indexOf("kra3-") === 0;
+    const onKra4 =
+      state.kraId === "kra4" ||
+      FL.evidence.isKra4CriterionId(state.criterionId) ||
+      ind.indexOf("kra4-") === 0;
+    if (!onKra2 && !onKra3 && !onKra4) return;
     const hit = FL.rules.findIndicator(ind);
     if (hit && hit.criterion && hit.criterion.id) {
       state.criterionId = hit.criterion.id;
-      state.kraId = "kra2";
+      if (onKra4) state.kraId = "kra4";
+      else if (onKra3) state.kraId = "kra3";
+      else state.kraId = "kra2";
     }
     state.indicatorId = "";
     FL.evidence.pushLocation(state);
   },
 
   reviewDocHref: function (doc, reviewBase) {
+    doc = doc || {};
+    if (doc.teachingEvaluationId || doc.tevId) {
+      doc = Object.assign({}, doc, { teachingEvaluationId: doc.teachingEvaluationId || doc.tevId });
+    }
+    if (FL.reviewerNav && FL.reviewerNav.accomplishmentReviewUrl) {
+      return FL.reviewerNav.accomplishmentReviewUrl(doc);
+    }
     const tevId = doc.teachingEvaluationId || doc.tevId || "";
-    return reviewBase + "?id=" + encodeURIComponent(doc.id || doc.documentId)
+    const base = reviewBase || "documents.html";
+    return base + "?id=" + encodeURIComponent(doc.id || doc.documentId)
       + (doc.facultyId ? "&faculty=" + encodeURIComponent(doc.facultyId) : "")
       + (doc.kraId ? "&kra=" + encodeURIComponent(doc.kraId) : "")
       + (doc.criterionId ? "&criterion=" + encodeURIComponent(doc.criterionId) : "")
@@ -1430,11 +1532,9 @@ FL.evidence = {
     const opts = options || {};
     const reviewBase = opts.reviewBase || "document-review.html";
     const actionLabel = opts.actionLabel || "Review";
-    const href = reviewBase + "?id=" + encodeURIComponent(doc.id)
-      + (doc.facultyId ? "&faculty=" + encodeURIComponent(doc.facultyId) : "")
-      + (doc.kraId ? "&kra=" + encodeURIComponent(doc.kraId) : "")
-      + (doc.criterionId ? "&criterion=" + encodeURIComponent(doc.criterionId) : "")
-      + (doc.indicatorId ? "&indicator=" + encodeURIComponent(doc.indicatorId) : "");
+    const href = opts.reviewHref
+      ? opts.reviewHref(doc)
+      : FL.evidence.reviewDocHref(doc, reviewBase);
     const fileName = doc.fileName || doc.name || doc.id;
     const ft = FL.evidence.fileTypeInfo(doc);
     const ocr = FL.evidence.ocrStatusMeta(doc);
@@ -1448,10 +1548,10 @@ FL.evidence = {
       <div class="ev-doc-card-row">
         <div class="ev-file-icon ${ft.mod}" aria-hidden="true">${FL.esc(ft.short)}</div>
         <div class="ev-doc-card-main">
-          <h3 class="ev-doc-title" title="${FL.esc(fileName)}">${FL.esc(fileName)}</h3>
+          <h3 class="ev-doc-title"><a href="${FL.esc(href)}" title="${FL.esc(fileName)}">${FL.esc(fileName)}</a></h3>
           <p class="ev-doc-meta">${FL.esc(ft.short)} · ${FL.esc(dateStr)}</p>
           <div class="ev-doc-status-inline">
-            <span class="ev-pill"><span class="ev-pill-label">Review</span>${FL.evidence.statusBadge(doc.status)}</span>
+            <span class="ev-pill"><span class="ev-pill-label">Review</span>${FL.evidence.documentReviewBadge(doc)}</span>
             <span class="ev-pill"><span class="ev-pill-label">OCR</span>${FL.ui.statusBadge(ocr.badge, ocr.label)}</span>
           </div>
         </div>
@@ -1479,6 +1579,10 @@ FL.evidence = {
       criterionId: params.get("criterion") || "",
       indicatorId: params.get("indicator") || "",
       docFilter: params.get("filter") || "all",
+      focusDoc: params.get("focusDoc") || "",
+      scrollDoc: params.get("scrollDoc") || "",
+      highlightDoc: params.get("highlightDoc") || "",
+      tev: params.get("tev") || "",
       page: Math.max(1, parseInt(params.get("page") || "1", 10) || 1),
       pageSize: parseInt(params.get("pageSize") || "20", 10) || 20,
       q: params.get("q") || "",
@@ -1502,6 +1606,14 @@ FL.evidence = {
     if (next.kraId) params.set("kra", next.kraId);
     if (next.criterionId) params.set("criterion", next.criterionId);
     if (next.indicatorId) params.set("indicator", next.indicatorId);
+    if (next.focusDoc) params.set("focusDoc", next.focusDoc);
+    else params.delete("focusDoc");
+    if (next.scrollDoc) params.set("scrollDoc", next.scrollDoc);
+    else params.delete("scrollDoc");
+    if (next.highlightDoc) params.set("highlightDoc", next.highlightDoc);
+    else params.delete("highlightDoc");
+    if (next.tev) params.set("tev", next.tev);
+    else params.delete("tev");
     const qs = params.toString();
     const path = window.location.pathname;
     window.history.replaceState(null, "", qs ? path + "?" + qs : path);
@@ -1513,7 +1625,8 @@ FL.evidence = {
     const state = FL.evidence.parseLocation();
     if (opts.initialFilter) state.docFilter = opts.initialFilter;
     const page = document.getElementById("page");
-    page.innerHTML = FL.ui.loading("Loading Evidence Workspace…");
+    const soft = opts.soft === true && !!document.querySelector(".evidence-workspace");
+    if (!soft) page.innerHTML = FL.ui.loading("Loading Evidence Workspace…");
 
     const finish = function () {
       FL.evidence._render(session, state, isAdmin);
@@ -1529,19 +1642,12 @@ FL.evidence = {
       jobs.push(FL.evidence._loadDirectory(session, state, isAdmin));
     } else {
       if (state.facultyId) {
-        const kra2Criterion =
-          state.kraId === "kra2" &&
-          (state.criterionId === "kra2-a" ||
-            state.criterionId === "kra2-b" ||
-            state.criterionId === "kra2-c");
-        if (kra2Criterion) {
-          FL.store.loadFacultyDocuments(session, state.facultyId).catch(function () {
-            return null;
-          });
-        } else {
-          jobs.push(FL.store.loadFacultyDocuments(session, state.facultyId));
-        }
-      } else jobs.push(FL.store.loadLiveDocuments(session));
+        jobs.push(FL.store.loadFacultyDocuments(session, state.facultyId).catch(function () {
+          return null;
+        }));
+      } else {
+        jobs.push(FL.store.loadLiveDocuments(session));
+      }
     }
     Promise.all(jobs).then(finish).catch(function (err) {
       page.innerHTML = FL.ui.empty("Workspace unavailable", err.message || "Could not load evidence data.");
@@ -1566,13 +1672,22 @@ FL.evidence = {
     const jobs = [FL.evidence._loadStats(session, isAdmin)];
     if (facultyId) {
       jobs.push(FL.store.loadFacultyDocuments(session, facultyId).catch(function () { return null; }));
+    } else {
+      jobs.push(FL.store.loadLiveDocuments(session).catch(function () { return null; }));
     }
     return Promise.all(jobs).then(function () {
+      const state = FL.evidence.parseLocation();
       if (document.getElementById("evidence-stats")) {
-        FL.evidence._paintStats(FL.store.evidenceStats || {}, isAdmin, FL.evidence.parseLocation());
+        FL.evidence._paintStats(FL.store.evidenceStats || {}, isAdmin, state);
+      }
+      if (document.getElementById("evidence-body") && state.facultyId) {
+        if (state.focusDoc) {
+          return null;
+        }
+        FL.evidence._render(session, state, isAdmin);
+        return null;
       }
       if (!document.querySelector(".evidence-directory") || !FL.store.evidenceDirectory) return;
-      const state = FL.evidence.parseLocation();
       if (state.facultyId || state.docFilter !== "all") return;
       return FL.evidence._loadDirectory(session, state, isAdmin).then(function () {
         FL.evidence._paintDirectory(session, state, isAdmin);
@@ -1603,6 +1718,8 @@ FL.evidence = {
       pendingReview: pdfPending,
       approvedEvidence: docs.filter(function (d) { return d.status === "approved"; }).length,
       needsRevision: docs.filter(function (d) { return d.status === "revision"; }).length,
+      rejected: docs.filter(function (d) { return d.status === "rejected"; }).length,
+      assignedFaculty: FL.store.assignedFacultyForReviewer(session).length,
       evaluationRecordsPending: semPending,
       evaluationRecordsValidated: semValidated
     };
@@ -1689,10 +1806,10 @@ FL.evidence = {
     FL.evidence._stripKra2IndicatorDocRoute(state);
     const stats = FL.store.evidenceStats || {};
     const page = document.getElementById("page");
-    const inFolder = !!(state.facultyId || state.kraId || state.indicatorId);
+    const inFolder = !!(state.facultyId || state.kraId || state.criterionId || state.indicatorId);
     const pendingMode = state.docFilter !== "all" && !inFolder;
 
-    const showFilters = !inFolder;
+    const showFilters = !pendingMode;
     page.innerHTML = `
       <div class="evidence-workspace">
         ${FL.ui.pageHeader({
@@ -1702,12 +1819,13 @@ FL.evidence = {
             ? "Monitor and organize supporting documents across faculty."
             : "Manage and review supporting documents for your assigned faculty."
         })}
-        ${isAdmin && FL.store.usesRealAdminApi() ? `<section class="card set-sef-policy-card" id="set-sef-policy-panel" aria-label="SET/SEF simulation auto-accept policy"><p class="note">Loading simulation auto-accept policy…</p></section>` : ""}
-        <nav class="evidence-crumb-bar" id="evidence-crumb" aria-label="Breadcrumb"></nav>
-        ${inFolder ? `<div class="evidence-nav-bar"><button type="button" class="btn btn-ghost btn-small" id="evidence-back">← Previous level</button></div>` : ""}
+        ${inFolder ? `<header class="evidence-nav-header card" id="evidence-nav-header" aria-label="Workspace location"></header>` : ""}
         <div class="evidence-stats" id="evidence-stats"></div>
         ${showFilters || pendingMode ? `<div class="evidence-toolbar">
-          ${showFilters ? `<div class="evidence-filters" role="tablist">${FL.evidence._filterTabs(state.docFilter)}</div>` : ""}
+          ${showFilters ? `<div class="evidence-filters" role="tablist">${FL.evidence._filterTabs(state.docFilter, state)}</div>` : ""}
+          ${state.facultyId && state.docFilter && state.docFilter !== "all"
+            ? `<p class="note evidence-filter-note">Showing source PDFs with status: <strong>${FL.esc(FL.evidence._filterLabel(state.docFilter))}</strong>. Approved and rejected files stay in the list when you choose All documents.</p>`
+            : ""}
           ${!inFolder && !pendingMode ? `<label class="search evidence-search"><span class="sr-only">Search faculty</span>
             <input id="evidence-search" type="search" placeholder="Search name, email, or employee ID" value="${FL.esc(state.q)}"></label>` : ""}
         </div>` : ""}
@@ -1715,14 +1833,14 @@ FL.evidence = {
       </div>`;
 
     FL.evidence._paintStats(stats, isAdmin, state);
-    if (isAdmin && FL.store.usesRealAdminApi()) FL.evidence._paintSetSefSimulationPolicy(session);
-    FL.evidence._paintCrumb(state, isAdmin, session);
-    FL.evidence._bindBack(state, session);
+    if (inFolder) FL.evidence._paintNavHeader(state, isAdmin, session);
+    FL.evidence._bindNavHeader(state, session);
     if (pendingMode) FL.evidence._paintPendingList(session, state, isAdmin);
     else if (
       state.kraId &&
       state.facultyId &&
-      FL.evidence.isKra2CriterionId(state.criterionId)
+      (FL.evidence.isKra2CriterionId(state.criterionId) ||
+        FL.evidence.isKra34CriterionId(state.criterionId))
     ) {
       FL.evidence._paintCriteria(session, state, isAdmin);
     } else if (state.indicatorId && state.facultyId) {
@@ -1736,11 +1854,13 @@ FL.evidence = {
     page.querySelectorAll("[data-doc-filter]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         state.docFilter = btn.getAttribute("data-doc-filter");
-        state.facultyId = "";
-        state.kraId = "";
-        state.criterionId = "";
-        state.indicatorId = "";
-        state.page = 1;
+        if (!inFolder) {
+          state.facultyId = "";
+          state.kraId = "";
+          state.criterionId = "";
+          state.indicatorId = "";
+          state.page = 1;
+        }
         FL.evidence.pushLocation(state);
         FL.evidence.mount(session);
       });
@@ -1763,48 +1883,49 @@ FL.evidence = {
     }
   },
 
-  _paintSetSefSimulationPolicy: function (session) {
-    const host = document.getElementById("set-sef-policy-panel");
-    if (!host) return;
-    FL.store.fetchSetSefSimulationPolicy().then(function (data) {
-      const policy = (data && data.policy) || {};
-      const active = policy.active === true;
-      const toggleOk = policy.adminToggleAllowed === true || policy.envForcedOn === true;
-      const disabledNote = !toggleOk
-        ? "<p class=\"note\">Server has not allowed Admin toggling. Set <code>SET_SEF_AUTO_APPROVAL_ALLOW_ADMIN_TOGGLE=true</code> and restart the API.</p>"
-        : "";
-      host.innerHTML = `
-        <div class="card-head">
-          <h2>SET/SEF simulation auto-accept</h2>
-          ${FL.ui.badge(active ? "valid" : "pending", active ? "Active" : "Inactive")}
-        </div>
-        <p class="note">When active, OCR-complete SET/SEF uploads with valid evaluation metadata are auto-accepted for simulation scoring only — not official document certification.</p>
-        <p class="sub">Policy version ${FL.esc(String(policy.policyVersion || "—"))}${policy.enabledAt ? " · enabled " + FL.esc(FL.formatDocStamp(policy.enabledAt)) : ""}</p>
-        ${disabledNote}
-        <label class="field field-inline">
-          <input type="checkbox" id="set-sef-policy-enabled" ${active ? "checked" : ""} ${toggleOk ? "" : "disabled"}>
-          <span>Enable simulation auto-accept for new OCR completions</span>
-        </label>
-        <p class="sub">Existing pending documents are not changed until you run a controlled reassessment (CLI) after enabling.</p>`;
-      const box = document.getElementById("set-sef-policy-enabled");
-      if (!box || !toggleOk) return;
-      box.addEventListener("change", function () {
-        const want = box.checked;
-        FL.store.saveSetSefSimulationPolicy(want).then(function (res) {
-          const p = (res && res.policy) || {};
-          FL.ui.toast(want ? "Simulation auto-accept enabled." : "Simulation auto-accept disabled.", "ok");
-          FL.evidence._paintSetSefSimulationPolicy(session);
-        }).catch(function (err) {
-          box.checked = !want;
-          FL.ui.toast(err.message || "Policy was not updated.", "danger");
-        });
-      });
-    }).catch(function (err) {
-      host.innerHTML = `<p class="note">Could not load simulation auto-accept policy: ${FL.esc(err.message || "error")}</p>`;
-    });
+  /** Admin Evidence Workspace no longer renders simulation auto-accept; FL.store policy APIs unchanged. */
+  _paintSetSefSimulationPolicy: function (_session) {},
+
+  _filterLabel: function (key) {
+    const map = {
+      all: "All documents",
+      "pending-review": "Pending review",
+      revision: "Needs revision",
+      approved: "Approved",
+      rejected: "Rejected"
+    };
+    return map[key] || key;
   },
 
-  _filterTabs: function (active) {
+  _filterCounts: function (state) {
+    const fid = state && state.facultyId;
+    if (fid && FL.store.facultyDocumentStats && FL.store.facultyDocumentStats[fid]) {
+      const s = FL.store.facultyDocumentStats[fid];
+      return {
+        all: s.total,
+        "pending-review": s.pendingReview,
+        revision: s.needsRevision,
+        approved: s.approved,
+        rejected: s.rejected
+      };
+    }
+    const session = (FL.portal && FL.portal._sessionFromStorage) ? FL.portal._sessionFromStorage() : null;
+    const scoped = fid
+      ? FL.store.documents.filter(function (d) { return d.facultyId === fid; })
+      : (session ? FL.documents.scoped(session) : FL.store.documents);
+    const counts = { all: scoped.length, "pending-review": 0, revision: 0, approved: 0, rejected: 0 };
+    scoped.forEach(function (d) {
+      const b = FL.evidence.docStatusBucket(d);
+      if (b === "pending-review") counts["pending-review"] += 1;
+      else if (b === "revision") counts.revision += 1;
+      else if (b === "approved") counts.approved += 1;
+      else if (b === "rejected") counts.rejected += 1;
+    });
+    return counts;
+  },
+
+  _filterTabs: function (active, state) {
+    const counts = FL.evidence._filterCounts(state || {});
     const tabs = [
       ["all", "All documents"],
       ["pending-review", "Pending review"],
@@ -1814,9 +1935,62 @@ FL.evidence = {
     ];
     return tabs.map(function (pair) {
       const sel = pair[0] === active ? " is-active" : "";
-      const hot = pair[0] === "pending-review" ? " evidence-filter-hot" : "";
-      return `<button type="button" class="evidence-filter${sel}${hot}" data-doc-filter="${pair[0]}" role="tab">${FL.esc(pair[1])}</button>`;
+      const n = counts[pair[0]];
+      const suffix = n == null ? "" : " (" + n + ")";
+      return `<button type="button" class="evidence-filter${sel}" data-doc-filter="${pair[0]}" role="tab">${FL.esc(pair[1] + suffix)}</button>`;
     }).join("");
+  },
+
+  _paintReviewerOverviewStatCard: function (card) {
+    const accent = card.accent ? " is-accent-" + card.accent : "";
+    const val = card.value == null ? "—" : card.value;
+    return `<article class="evidence-overview-card evidence-stat${accent}">
+      <span class="evidence-stat-icon" aria-hidden="true">${FL.evidence.statIcon(card.iconKey)}</span>
+      <div class="evidence-stat-body">
+        <span class="evidence-overview-card-label">${FL.esc(card.label)}</span>
+        <strong>${FL.esc(String(val))}</strong>
+      </div>
+    </article>`;
+  },
+
+  _paintReviewerOverviewSecondaryItem: function (item) {
+    const val = item.value == null ? "—" : item.value;
+    const tone = item.tone ? " evidence-overview-secondary-item--" + item.tone : "";
+    return `<div class="evidence-overview-secondary-item${tone}" role="listitem">
+      <span class="evidence-overview-secondary-dot" aria-hidden="true"></span>
+      <span class="evidence-overview-secondary-label">${FL.esc(item.label)}</span>
+      <strong class="evidence-overview-secondary-value">${FL.esc(String(val))}</strong>
+    </div>`;
+  },
+
+  _paintReviewerStatsOverview: function (stats) {
+    const primary = [
+      {
+        label: "Assigned Faculty",
+        value: stats.assignedFaculty != null ? stats.assignedFaculty : stats.facultyWithDocuments,
+        iconKey: "faculty",
+        accent: "teal"
+      },
+      { label: "Total Documents", value: stats.totalDocuments, iconKey: "documents", accent: "" },
+      { label: "Pending Review", value: stats.pendingReview, iconKey: "pending", accent: "warn" },
+      { label: "Approved", value: stats.approvedEvidence, iconKey: "approved", accent: "ok" }
+    ];
+    const secondary = [
+      { label: "Needs Revision", value: stats.needsRevision, tone: "warn" },
+      { label: "Rejected", value: stats.rejected, tone: "danger" },
+      { label: "SET/SEF Pending", value: stats.evaluationRecordsPending, tone: "warn" },
+      { label: "SET/SEF Validated", value: stats.evaluationRecordsValidated, tone: "ok" }
+    ];
+    return (
+      '<section class="evidence-overview" aria-labelledby="evidence-overview-title">' +
+      '<h2 id="evidence-overview-title" class="evidence-overview-title">Evidence Overview</h2>' +
+      '<div class="evidence-overview-primary">' +
+      primary.map(function (c) { return FL.evidence._paintReviewerOverviewStatCard(c); }).join("") +
+      "</div>" +
+      '<div class="evidence-overview-secondary" role="list">' +
+      secondary.map(function (item) { return FL.evidence._paintReviewerOverviewSecondaryItem(item); }).join("") +
+      "</div></section>"
+    );
   },
 
   _paintStats: function (stats, isAdmin, state) {
@@ -1829,30 +2003,29 @@ FL.evidence = {
       FL.evidence.isKra2CriterionId(state.criterionId)
     ) {
       host.innerHTML = "";
+      host.className = "evidence-stats";
       return;
     }
     if (state && state.kraId === "kra2" && state.facultyId) {
       host.innerHTML =
         '<p class="muted" style="margin:0 0 1rem">Select a criterion to view KRA II accomplishment statistics.</p>';
+      host.className = "evidence-stats";
       return;
     }
-    const cards = isAdmin
-      ? [
-          { label: "Faculty with documents", value: stats.facultyWithDocuments, iconKey: "faculty", accent: "teal" },
-          { label: "Source PDFs (total)", value: stats.totalDocuments, iconKey: "documents", accent: "" },
-          { label: "Source PDFs pending document review", value: stats.pendingReview, iconKey: "pending", accent: "warn" },
-          { label: "Source PDFs approved", value: stats.approvedEvidence, iconKey: "approved", accent: "ok" },
-          { label: "SET/SEF semester records pending", value: stats.evaluationRecordsPending, iconKey: "pending", accent: "warn" },
-          { label: "SET/SEF semester records validated", value: stats.evaluationRecordsValidated, iconKey: "approved", accent: "ok" }
-        ]
-      : [
-          { label: "Assigned faculty", value: stats.assignedFaculty ?? stats.facultyWithDocuments, iconKey: "faculty", accent: "teal" },
-          { label: "Source PDFs pending document review", value: stats.pendingReview, iconKey: "pending", accent: "warn" },
-          { label: "Source PDFs approved", value: stats.approvedEvidence, iconKey: "approved", accent: "ok" },
-          { label: "SET/SEF semester records pending", value: stats.evaluationRecordsPending, iconKey: "pending", accent: "warn" },
-          { label: "SET/SEF semester records validated", value: stats.evaluationRecordsValidated, iconKey: "approved", accent: "ok" },
-          { label: "Needs revision (PDFs)", value: stats.needsRevision, iconKey: "revision", accent: "warn" }
-        ];
+    if (!isAdmin) {
+      host.className = "evidence-stats evidence-stats--reviewer-overview";
+      host.innerHTML = FL.evidence._paintReviewerStatsOverview(stats);
+      return;
+    }
+    const cards = [
+      { label: "Faculty with documents", value: stats.facultyWithDocuments, iconKey: "faculty", accent: "teal" },
+      { label: "Source PDFs (total)", value: stats.totalDocuments, iconKey: "documents", accent: "" },
+      { label: "Source PDFs pending document review", value: stats.pendingReview, iconKey: "pending", accent: "warn" },
+      { label: "Source PDFs approved", value: stats.approvedEvidence, iconKey: "approved", accent: "ok" },
+      { label: "SET/SEF semester records pending", value: stats.evaluationRecordsPending, iconKey: "pending", accent: "warn" },
+      { label: "SET/SEF semester records validated", value: stats.evaluationRecordsValidated, iconKey: "approved", accent: "ok" }
+    ];
+    host.className = "evidence-stats";
     host.innerHTML = cards.map(function (c) {
       const accent = c.accent ? " is-accent-" + c.accent : "";
       const val = c.value == null ? "—" : c.value;
@@ -1863,26 +2036,20 @@ FL.evidence = {
     }).join("");
   },
 
-  _bindBack: function (state, session) {
-    const btn = document.getElementById("evidence-back");
-    if (!btn) return;
-    btn.addEventListener("click", function () {
-      if (state.indicatorId) state.indicatorId = "";
-      else if (state.criterionId) state.criterionId = "";
-      else if (state.kraId) state.kraId = "";
-      else if (state.facultyId) state.facultyId = "";
-      FL.evidence.pushLocation(state);
-      FL.evidence.mount(session);
-    });
+  _navRootGo: function () {
+    return { facultyId: "", kraId: "", criterionId: "", indicatorId: "" };
   },
 
-  _paintCrumb: function (state, isAdmin, session) {
-    const host = document.getElementById("evidence-crumb");
-    if (!host) return;
-    const parts = [{ label: isAdmin ? "All faculty" : "Assigned faculty", go: { facultyId: "", kraId: "", criterionId: "", indicatorId: "" } }];
+  _crumbParts: function (state, isAdmin) {
+    const rootGo = FL.evidence._navRootGo();
+    const parts = [{ label: "Evidence Workspace", go: rootGo }];
+    parts.push({ label: isAdmin ? "All faculty" : "Assigned faculty", go: rootGo });
     if (state.facultyId) {
       const person = FL.store.facultyById(state.facultyId) || { name: state.facultyId };
-      parts.push({ label: person.name, go: { facultyId: state.facultyId, kraId: "", criterionId: "", indicatorId: "" } });
+      parts.push({
+        label: person.name,
+        go: { facultyId: state.facultyId, kraId: "", criterionId: "", indicatorId: "" }
+      });
     }
     if (state.kraId) {
       const kra = FL.rules.findKra(state.kraId);
@@ -1909,21 +2076,110 @@ FL.evidence = {
     ) {
       parts.push({ label: "Documents", go: null });
     }
-    host.innerHTML = parts.map(function (part, i) {
-      const sep = i ? `<span class="evidence-crumb-segment" aria-hidden="true">›</span>` : "";
-      if (!part.go) {
-        return sep + `<span class="evidence-crumb-current">${FL.esc(part.label)}</span>`;
+    return parts;
+  },
+
+  _navHeaderDisplay: function (state) {
+    const person = state.facultyId
+      ? (FL.store.facultyById(state.facultyId) || { name: state.facultyId, department: "" })
+      : null;
+    let title = "";
+    let subtitle = "";
+    if (state.indicatorId) {
+      const hit = FL.rules.findIndicator(state.indicatorId);
+      title = hit ? hit.indicator.name : state.indicatorId;
+    } else if (state.criterionId) {
+      title = FL.evidence._criterionLabel(state.kraId, state.criterionId);
+    } else if (state.kraId) {
+      const kra = FL.rules.findKra(state.kraId);
+      title = kra ? kra.code : state.kraId;
+      if (kra && kra.name) subtitle = kra.name;
+    } else if (person) {
+      title = person.name;
+    }
+    if (person) {
+      const dept = (person.department || "").trim();
+      if (state.kraId || state.criterionId || state.indicatorId) {
+        subtitle = [person.name, dept].filter(Boolean).join(" · ");
+      } else if (dept) {
+        subtitle = dept;
       }
-      return sep + `<button type="button" class="evidence-crumb-link" data-crumb='${FL.esc(JSON.stringify(part.go))}'>${FL.esc(part.label)}</button>`;
-    }).join("");
-    host.querySelectorAll(".evidence-crumb-link").forEach(function (btn) {
+    }
+    return { person: person, title: title, subtitle: subtitle };
+  },
+
+  _navigateWorkspace: function (session, state) {
+    FL.evidence.pushLocation(state);
+    FL.evidence.mount(session, { soft: true });
+  },
+
+  _stepBackState: function (state) {
+    const next = Object.assign({}, state);
+    if (next.indicatorId) next.indicatorId = "";
+    else if (next.criterionId) next.criterionId = "";
+    else if (next.kraId) next.kraId = "";
+    else if (next.facultyId) next.facultyId = "";
+    return next;
+  },
+
+  _bindNavHeader: function (state, session) {
+    const header = document.getElementById("evidence-nav-header");
+    if (!header) return;
+    const back = header.querySelector("#evidence-back");
+    if (back) {
+      back.addEventListener("click", function () {
+        FL.evidence._navigateWorkspace(session, FL.evidence._stepBackState(state));
+      });
+    }
+    header.querySelectorAll(".evidence-nav-trail-link").forEach(function (btn) {
       btn.addEventListener("click", function () {
         const go = JSON.parse(btn.getAttribute("data-crumb"));
         Object.assign(state, go);
-        FL.evidence.pushLocation(state);
-        FL.evidence.mount(session);
+        FL.evidence._navigateWorkspace(session, state);
       });
     });
+  },
+
+  _paintNavHeader: function (state, isAdmin, session) {
+    const host = document.getElementById("evidence-nav-header");
+    if (!host) return;
+    const parts = FL.evidence._crumbParts(state, isAdmin);
+    const display = FL.evidence._navHeaderDisplay(state);
+    const person = display.person;
+    const showAssigned =
+      !isAdmin &&
+      session &&
+      person &&
+      person.reviewerId != null &&
+      String(person.reviewerId) === String(session.userId);
+    const trailHtml = parts.map(function (part, i) {
+      const sep = i ? `<span class="evidence-nav-trail-sep" aria-hidden="true">›</span>` : "";
+      if (!part.go) {
+        return sep + `<span class="evidence-nav-trail-current">${FL.esc(part.label)}</span>`;
+      }
+      return sep + `<button type="button" class="evidence-nav-trail-link" data-crumb='${FL.esc(JSON.stringify(part.go))}'>${FL.esc(part.label)}</button>`;
+    }).join("");
+    const badgeHtml = showAssigned
+      ? `<span class="evidence-nav-badge">Assigned</span>`
+      : "";
+    const subtitleHtml = display.subtitle
+      ? `<p class="evidence-nav-subtitle">${FL.esc(display.subtitle)}</p>`
+      : "";
+    host.innerHTML = `
+      <div class="evidence-nav-header-inner">
+        <button type="button" class="evidence-nav-back" id="evidence-back">
+          <span class="evidence-nav-back-icon">${FL.navIcons.icon("chevron-left")}</span>
+          <span class="evidence-nav-back-label">Back</span>
+        </button>
+        <div class="evidence-nav-body">
+          <nav class="evidence-nav-trail" aria-label="Breadcrumb">${trailHtml}</nav>
+          <div class="evidence-nav-hero">
+            <h2 class="evidence-nav-title">${FL.esc(display.title || "Evidence")}</h2>
+            ${badgeHtml}
+          </div>
+          ${subtitleHtml}
+        </div>
+      </div>`;
   },
 
   _paintDirectory: function (session, state, isAdmin) {
@@ -1954,9 +2210,19 @@ FL.evidence = {
         <p class="evidence-result-count">${FL.esc(String(data.pagination.total))} faculty</p>
       </div>
       <div class="table-wrap">
-        <table class="data evidence-directory">
+        <table class="data evidence-directory portal-data-table">
+          <colgroup>
+            <col class="evidence-col-faculty">
+            <col class="evidence-col-dept">
+            <col class="evidence-col-reviewer">
+            <col class="evidence-col-count">
+            <col class="evidence-col-semester">
+            <col class="evidence-col-pdf-review">
+            <col class="evidence-col-activity">
+            <col class="evidence-col-actions">
+          </colgroup>
           <thead><tr>
-            <th>Faculty</th><th>Department</th><th>Assigned reviewer</th><th>Source PDFs</th><th>Semester evaluations</th><th title="Counts source PDFs still in pending/reviewer-required workflow. Criterion C PDFs become approved when the reviewer saves accomplishment approval.">PDF document review</th><th>Last activity</th><th>Actions</th>
+            <th>Faculty</th><th>Department</th><th>Assigned reviewer</th><th>Source PDFs</th><th>Semester evaluations</th><th title="Counts source PDFs still in pending/reviewer-required workflow. Criterion C PDFs become approved when the reviewer saves accomplishment approval.">PDF document review</th><th>Last activity</th><th class="action-cell">Actions</th>
           </tr></thead>
           <tbody>
             ${rows.map(function (row) {
@@ -1969,8 +2235,7 @@ FL.evidence = {
                 ? row.sourcePdfPendingWorkflow
                 : (row.documentPending || 0);
               const semCell = semTotal
-                ? `<div>${FL.esc(String(semVal))}/${FL.esc(String(semTotal))} validated</div>
-                   <div class="sub">${semPending ? FL.esc(String(semPending)) + " pending" : "0 pending"}</div>`
+                ? `<div class="fl-table-stack"><span class="fl-table-stack-main">${FL.esc(String(semVal))}/${FL.esc(String(semTotal))} validated</span><span class="sub fl-table-stack-sub">${semPending ? FL.esc(String(semPending)) + " pending" : "0 pending"}</span></div>`
                 : `<span class="sub">—</span>`;
               const pdfCell = pdfPending
                 ? `<button type="button" class="btn btn-ghost btn-small evidence-pdf-pending-open" data-open-faculty="${FL.esc(row.id)}" title="Open faculty evidence workspace to review pending source PDFs">${FL.ui.badge("pending", String(pdfPending) + " pending")}</button>`
@@ -1981,9 +2246,9 @@ FL.evidence = {
                 <td>${FL.esc(row.department || "—")}</td>
                 <td>${FL.esc(row.reviewerName || "Unassigned")}</td>
                 <td>${FL.esc(String(row.sourcePdfTotal != null ? row.sourcePdfTotal : row.documentTotal || 0))}</td>
-                <td>${semCell}</td>
-                <td>${pdfCell}</td>
-                <td>${FL.esc(row.lastActivity ? FL.formatWhen(row.lastActivity) : "—")}</td>
+                <td class="evidence-dir-semester">${semCell}</td>
+                <td class="evidence-dir-pdf-review">${pdfCell}</td>
+                <td class="evidence-dir-activity">${FL.ui.tableDateTimeHtml(row.lastActivity)}</td>
                 <td class="action-cell"><button type="button" class="btn btn-ghost btn-small" data-open-faculty="${FL.esc(row.id)}">Open</button></td>
               </tr>`;
             }).join("")}
@@ -2019,8 +2284,7 @@ FL.evidence = {
         state.kraId = "";
         state.criterionId = "";
         state.indicatorId = "";
-        FL.evidence.pushLocation(state);
-        FL.evidence.mount(session);
+        FL.evidence._navigateWorkspace(session, state);
       });
     });
 
@@ -2048,8 +2312,10 @@ FL.evidence = {
     });
   },
 
-  _facultyDocs: function (session, facultyId) {
-    return FL.store.documents.filter(function (d) { return d.facultyId === facultyId; });
+  _facultyDocs: function (session, facultyId, state) {
+    const st = state || FL.evidence.parseLocation();
+    const rows = FL.store.documents.filter(function (d) { return d.facultyId === facultyId; });
+    return FL.evidence.applyDocStatusFilter(rows, st.docFilter);
   },
 
   _paintKraGrid: function (session, state, isAdmin) {
@@ -2085,8 +2351,7 @@ FL.evidence = {
         state.kraId = btn.getAttribute("data-kra");
         state.criterionId = "";
         state.indicatorId = "";
-        FL.evidence.pushLocation(state);
-        FL.evidence.mount(session);
+        FL.evidence._navigateWorkspace(session, state);
       });
     });
   },
@@ -2120,8 +2385,7 @@ FL.evidence = {
       host.querySelectorAll("[data-criterion]").forEach(function (btn) {
         btn.addEventListener("click", function () {
           state.criterionId = btn.getAttribute("data-criterion");
-          FL.evidence.pushLocation(state);
-          FL.evidence.mount(session);
+          FL.evidence._navigateWorkspace(session, state);
         });
       });
       return;
@@ -2178,6 +2442,23 @@ FL.evidence = {
         FL.kra2AReview.mountAccomplishmentListInWorkspace(session, state, isAdmin, host, criterion);
       } else {
         host.innerHTML = FL.ui.empty("KRA III unavailable", "Reload the page to open accomplishments.");
+      }
+      return;
+    }
+    if (
+      state.criterionId === "kra4-a" ||
+      state.criterionId === "kra4-b" ||
+      state.criterionId === "kra4-c" ||
+      state.criterionId === "kra4-d"
+    ) {
+      if (state.indicatorId) {
+        state.indicatorId = "";
+        FL.evidence.pushLocation(state);
+      }
+      if (FL.kra2AReview && FL.kra2AReview.mountAccomplishmentListInWorkspace) {
+        FL.kra2AReview.mountAccomplishmentListInWorkspace(session, state, isAdmin, host, criterion);
+      } else {
+        host.innerHTML = FL.ui.empty("KRA IV unavailable", "Reload the page to open accomplishments.");
       }
       return;
     }
@@ -2300,7 +2581,13 @@ FL.evidence = {
     if (
       state.kraId === "kra2" ||
       FL.evidence.isKra2CriterionId(state.criterionId) ||
-      (state.indicatorId && String(state.indicatorId).indexOf("kra2-") === 0)
+      (state.indicatorId && String(state.indicatorId).indexOf("kra2-") === 0) ||
+      state.kraId === "kra3" ||
+      state.kraId === "kra4" ||
+      FL.evidence.isKra34CriterionId(state.criterionId) ||
+      (state.indicatorId &&
+        (String(state.indicatorId).indexOf("kra3-") === 0 ||
+          String(state.indicatorId).indexOf("kra4-") === 0))
     ) {
       FL.evidence._stripKra2IndicatorDocRoute(state);
       FL.evidence._paintCriteria(session, state, isAdmin);
@@ -2369,18 +2656,23 @@ FL.evidence = {
       return;
     }
 
-    const docList = state.criterionId === "kra1-b" ? primaryDocs : docs;
+    const docList = docs;
     host.innerHTML = `
       ${hit ? `<div class="evidence-indicator-head"><h2>${FL.esc(hit.indicator.name)}</h2>
         ${hit.indicator.evidence && hit.indicator.evidence.length ? `<p class="sub">Required: ${FL.esc(hit.indicator.evidence.join("; "))}</p>` : ""}</div>` : ""}
-      ${state.criterionId === "kra1-b" ? `<p class="note">Open a <strong>primary claim</strong> to review its evidence bundle. Supporting uploads are linked inside the claim review.</p>` : ""}
+      ${state.criterionId === "kra1-b" ? `<p class="note">Every source PDF is listed here. Open a <strong>primary claim</strong> to review its bundle; supporting files are labeled and open the same review page.</p>` : ""}
       <div class="evidence-file-grid">${docList.map(function (doc) {
-        return FL.evidence.documentCardHtml(doc, {
+        const isPrimary = primaryDocs.indexOf(doc) !== -1;
+        const card = FL.evidence.documentCardHtml(doc, {
           reviewBase: reviewBase,
           actionLabel: isAdmin ? "Monitor document" : "Review document",
           allowDownload: false
         });
-      }).join("") || FL.ui.empty("No documents uploaded", "No evidence files for this indicator yet.")}</div>`;
+        if (state.criterionId === "kra1-b" && !isPrimary) {
+          return `<div class="ev-doc-card-wrap"><p class="sub">Supporting file</p>${card}</div>`;
+        }
+        return card;
+      }).join("") || FL.ui.empty("No documents uploaded", "No evidence files match this filter.")}</div>`;
   },
 
   _paintSetSefIndicatorTable: function (host, session, state, isAdmin, hit, localDocs, reviewBase, block) {
@@ -2457,28 +2749,16 @@ FL.evidence = {
   _paintPendingList: function (session, state, isAdmin) {
     const host = document.getElementById("evidence-body");
     let docs = FL.documents.scoped(session);
-    const map = {
-      "pending-review": function (d) { return d.status === "pending-review" || d.status === "reviewer-required" || d.status === "invalid"; },
-      revision: function (d) { return d.status === "revision"; },
-      approved: function (d) { return d.status === "approved" || d.status === "system-approved"; },
-      rejected: function (d) { return d.status === "rejected"; }
-    };
-    const fn = map[state.docFilter];
-    if (fn) docs = docs.filter(fn);
-    if (state.docFilter === "pending-review") docs = docs.filter(FL.documents.needsAction);
+    docs = FL.evidence.applyDocStatusFilter(docs, state.docFilter);
     const reviewBase = isAdmin ? "document-view.html" : "document-review.html";
     host.innerHTML = `
       <div class="table-wrap">
-        <table class="data">
-          <thead><tr><th>Faculty</th><th>Document</th><th>KRA</th><th>Indicator</th><th>Submitted</th><th>Review</th><th>OCR</th><th>Actions</th></tr></thead>
+        <table class="data portal-data-table">
+          <thead><tr><th>Faculty</th><th>Document</th><th>KRA</th><th>Indicator</th><th>Submitted</th><th>Review</th><th>OCR</th><th class="action-cell">Actions</th></tr></thead>
           <tbody>${docs.map(function (doc) {
             const faculty = FL.store.facultyById(doc.facultyId);
             const hit = doc.indicatorId ? FL.rules.findIndicator(doc.indicatorId) : null;
-            const href = reviewBase + "?id=" + encodeURIComponent(doc.id)
-              + "&faculty=" + encodeURIComponent(doc.facultyId || "")
-              + "&kra=" + encodeURIComponent(doc.kraId || "")
-              + "&criterion=" + encodeURIComponent(doc.criterionId || "")
-              + "&indicator=" + encodeURIComponent(doc.indicatorId || "");
+            const href = FL.evidence.reviewDocHref(doc, reviewBase);
             const ocr = FL.evidence.ocrStatusMeta(doc);
             const fileName = doc.fileName || doc.name || doc.id;
             return `<tr>
@@ -2486,8 +2766,8 @@ FL.evidence = {
               <td><span title="${FL.esc(fileName)}">${FL.esc(fileName.length > 48 ? fileName.slice(0, 47) + "…" : fileName)}</span></td>
               <td>${FL.esc(doc.kraId || "—")}</td>
               <td>${FL.esc(hit ? hit.indicator.name : doc.indicatorId || "—")}</td>
-              <td>${FL.esc(FL.evidence.docTimestamp(doc))}</td>
-              <td>${FL.evidence.statusBadge(doc.status)}</td>
+              <td class="fl-table-datetime-cell">${FL.ui.tableDateTimeHtml(doc.submittedAt || doc.uploadedAt || doc.dateSubmitted)}</td>
+              <td>${FL.evidence.documentReviewBadge(doc)}</td>
               <td>${FL.ui.statusBadge(ocr.badge, ocr.label)}</td>
               <td class="action-cell"><a class="btn btn-ghost btn-small" href="${href}">${isAdmin ? "Monitor" : "Review"}</a></td>
             </tr>`;

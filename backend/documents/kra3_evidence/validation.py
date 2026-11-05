@@ -90,12 +90,8 @@ def validate_kra3_bundle(bundle: dict[str, Any] | None, *, indicator_id: str) ->
                 "Verify evidence and save feedback; numeric score approval requires administrator-verified scoring rules."
             )
 
-    confirmed = bundle.get("metadataConfirmed") if isinstance(bundle.get("metadataConfirmed"), dict) else {}
     if not bundle.get("submittedForReviewAt"):
         flags.append("not_submitted")
-    elif not all(confirmed.get(k) for k in metadata_field_ids(ind)):
-        flags.append("metadata_not_confirmed")
-        reviewer_blockers.append(message_for_field("metadata_not_confirmed"))
 
     if "duplicate_income_amount" in (bundle.get("duplicateFlags") or []):
         flags.append("duplicate_income_amount")

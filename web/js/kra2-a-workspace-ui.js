@@ -206,9 +206,13 @@ FL.kra2AWorkspaceUi = {
     role_certification: "Certification of role (director, organizer, dean, etc.)"
   },
 
-  facultyStatusMeta: function (bundle) {
-    var rs = FL.kra2AWorkspaceUi.normalizeReviewStatus({ bundle: bundle });
-    var submitted = !!(bundle && bundle.submittedForReviewAt);
+  facultyStatusMeta: function (bundle, state) {
+    var ctx = state || { bundle: bundle };
+    if (!ctx.bundle) ctx.bundle = bundle;
+    var rs = FL.kra2AWorkspaceUi.normalizeReviewStatus(ctx);
+    var submitted = FL.reviewerAccomplishmentState
+      ? FL.reviewerAccomplishmentState.isSubmittedForReview(ctx)
+      : !!(bundle && bundle.submittedForReviewAt);
     if (rs === "approved") {
       return { key: "approved", label: "Approved", hint: "Reviewer verified this accomplishment." };
     }
@@ -218,26 +222,21 @@ FL.kra2AWorkspaceUi = {
     if (submitted) {
       return { key: "under-review", label: "Under Review", hint: "Waiting for reviewer verification." };
     }
-    return { key: "draft", label: "Draft", hint: "Faculty has not submitted for review yet." };
+    return {
+      key: "draft",
+      label: "Waiting for faculty submission",
+      hint: "The faculty is still preparing this accomplishment."
+    };
   },
 
   /** Authoritative review status from API bundle (not stale validation labels). */
   normalizeReviewStatus: function (state) {
-    var bundle = (state && state.bundle) || {};
-    var validation = (state && state.validation) || {};
-    var ra = bundle.reviewerAssessment || {};
-    var candidates = [
-      bundle.reviewStatus,
-      ra.reviewStatus,
-      validation.reviewStatus,
-      state && state.doc && state.doc.reviewStatus
-    ];
-    for (var i = 0; i < candidates.length; i++) {
-      var raw = (candidates[i] || "").toString().trim().toLowerCase();
-      if (raw === "approved" || raw === "rejected" || raw === "pending") return raw;
+    if (FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.normalizeReviewStatus) {
+      return FL.reviewerAccomplishmentState.normalizeReviewStatus(state);
     }
+    var bundle = (state && state.bundle) || {};
     if (bundle.submittedForReviewAt) return "pending";
-    return "pending";
+    return "draft";
   },
 
   isAccomplishmentApproved: function (state) {
@@ -271,6 +270,9 @@ FL.kra2AWorkspaceUi = {
   },
 
   isPendingSubmittedReview: function (state) {
+    if (FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.isPendingSubmittedReview) {
+      return FL.reviewerAccomplishmentState.isPendingSubmittedReview(state);
+    }
     var bundle = (state && state.bundle) || {};
     if (!bundle.submittedForReviewAt) return false;
     if (FL.kra2AWorkspaceUi.isAccomplishmentApproved(state)) return false;
@@ -279,10 +281,48 @@ FL.kra2AWorkspaceUi = {
   },
 
   canEditReviewerAssessment: function (state) {
-    var bundle = (state && state.bundle) || {};
-    if (!bundle.submittedForReviewAt || !state.canDecide) return false;
+    if (!state || !state.canDecide) return false;
     if (FL.kra2AWorkspaceUi.isReassessmentSessionActive(state)) return false;
+    if (
+      FL.reviewerAccomplishmentState &&
+      FL.reviewerAccomplishmentState.isDraftAwaitingFaculty(state)
+    ) {
+      return false;
+    }
     return true;
+  },
+
+  evidenceVerificationSummaryHtml: function (state) {
+    var items = state.evidenceItems || [];
+    if (!items.length) return "";
+    var esc = FL.esc;
+    var rows = items
+      .map(function (item) {
+        var st =
+          item.status === "verified"
+            ? "Verified"
+            : item.status === "reviewer_required"
+              ? "Needs clarification"
+              : item.status === "missing"
+                ? "Missing"
+                : "Pending";
+        return (
+          "<li><strong>" +
+          esc(item.label) +
+          "</strong> — " +
+          esc(st) +
+          (item.fileName ? " · " + esc(item.fileName) : "") +
+          "</li>"
+        );
+      })
+      .join("");
+    return (
+      '<div class="kra2-evidence-verify-summary">' +
+      "<h4 class=\"kra2-subheading\">Evidence verification summary</h4>" +
+      '<ul class="plain kra2-evidence-verify-list">' +
+      rows +
+      "</ul></div>"
+    );
   },
 
   pendingApprovalBlockersHtml: function (state) {
@@ -427,8 +467,16 @@ FL.kra2AWorkspaceUi = {
     }
     decisionActions += "</div>";
 
+    if (
+      FL.reviewerAccomplishmentState &&
+      FL.reviewerAccomplishmentState.isDraftAwaitingFaculty(state)
+    ) {
+      return "";
+    }
+
     return (
       '<div class="kra2-unified-assessment">' +
+      FL.kra2AWorkspaceUi.evidenceVerificationSummaryHtml(state) +
       '<div class="kra2-scoring-row"><span>Status</span><strong>' + esc(statusLabel) + "</strong></div>" +
       (approvedPts != null
         ? '<div class="kra2-scoring-row kra2-scoring-row--approved"><span>Current approved points</span><strong>' +
@@ -533,6 +581,7 @@ FL.kra2AWorkspaceUi = {
       (state && state.doc && state.doc.criterionId) ||
       (state && state.bundle && state.bundle.criterionId) ||
       "";
+    if (String(crit).indexOf("kra4-") === 0) return "KRA IV accomplishment review";
     if (String(crit).indexOf("kra3-") === 0) return "KRA III accomplishment review";
     return "KRA II accomplishment review";
   },
@@ -758,9 +807,14 @@ FL.kra2AWorkspaceUi = {
             var est = row.estimatedPoints != null ? row.estimatedPoints : "—";
             var assessed =
               row.reviewerAssessedPoints != null ? row.reviewerAssessedPoints : "—";
-            var title = row.activityTitle || row.outputTitle || row.title || "Accomplishment";
+            var title = row.activityTitle || row.outputTitle || row.inventionTitle || row.title || "Accomplishment";
             var submitted = FL.kra2AWorkspaceUi.formatSubmittedDate(row);
             var href = params.reviewHref(row);
+            var extraBadge = row.needsClassification
+              ? ' <span class="badge badge-warn">Needs classification</span>'
+              : !row.submittedForReview
+                ? ' <span class="badge badge-pending">Not submitted for review</span>'
+                : "";
             var verified =
               row.validatedPoints != null
                 ? row.validatedPoints
@@ -768,7 +822,9 @@ FL.kra2AWorkspaceUi = {
                   ? row.reviewerAssessedPoints
                   : "—";
             return (
-              '<article class="evidence-accomplishment-card">' +
+              '<article class="evidence-accomplishment-card" data-accomplishment-doc-id="' +
+              esc(row.documentId || "") +
+              '">' +
               '<div class="evidence-accomplishment-head">' +
               "<h3>" +
               esc(title) +
@@ -777,7 +833,9 @@ FL.kra2AWorkspaceUi = {
               esc(meta.key) +
               '">' +
               esc(meta.label) +
-              "</span></div>" +
+              "</span>" +
+              extraBadge +
+              "</div>" +
               '<dl class="kv-grid kv-grid--compact evidence-accomplishment-meta">' +
               FL.documents.kvRow("Faculty", esc(facultyName)) +
               FL.documents.kvRow("Submitted", esc(submitted)) +
@@ -854,49 +912,71 @@ FL.kra2AWorkspaceUi = {
     var bundle = state.bundle || {};
     var doc = state.doc || {};
     var scoring = state.scoring || {};
-    var statusMeta = FL.kra2AWorkspaceUi.facultyStatusMeta(bundle);
+    var statusMeta = FL.kra2AWorkspaceUi.facultyStatusMeta(bundle, state);
+    var draftBanner =
+      FL.reviewerAccomplishmentState &&
+      FL.reviewerAccomplishmentState.isDraftAwaitingFaculty(state)
+        ? FL.reviewerAccomplishmentState.draftBannerHtml()
+        : "";
+    var prepNotes =
+      FL.reviewerAccomplishmentState &&
+      FL.reviewerAccomplishmentState.canSavePreparationNotes(state)
+        ? FL.reviewerAccomplishmentState.preparationNotesSectionHtml(state)
+        : "";
     var indicatorId = FL.kra2AWorkspaceUi.resolveIndicatorId(bundle, state.payload, doc);
     var indLabel = FL.kra2AWorkspaceUi.indicatorLabel(indicatorId, bundle);
-    var venueLabel = FL.kra2AWorkspaceUi.venueFieldLabel(indicatorId);
-    var confirmed = bundle.metadataConfirmed || {};
-    var userBlockers = (state.validation && state.validation.userBlockers) || [];
-    var confirmNote = "Confirmed metadata is shown below. OCR suggestions in Supporting documents are advisory only.";
-    if (userBlockers.length) {
-      confirmNote =
-        "Some required metadata is missing or unconfirmed: " + userBlockers.slice(0, 3).join(" ");
-    } else if (bundle.submittedForReviewAt && confirmed) {
-      confirmNote = "Faculty confirmed metadata at submission.";
+    var isKra34 = FL.kra34Metadata && FL.kra34Metadata.isKra34Indicator(indicatorId);
+    var details;
+    if (isKra34) {
+      details = FL.kra34Metadata.accomplishmentDetailsHtml(state);
+    } else {
+      var venueLabel = FL.kra2AWorkspaceUi.venueFieldLabel(indicatorId);
+      var confirmed = bundle.metadataConfirmed || {};
+      var userBlockers = (state.validation && state.validation.userBlockers) || [];
+      var confirmNote = "Confirmed metadata is shown below. OCR suggestions in Supporting documents are advisory only.";
+      if (userBlockers.length) {
+        confirmNote =
+          "Some required metadata is missing or unconfirmed: " + userBlockers.slice(0, 3).join(" ");
+      } else if (bundle.submittedForReviewAt && confirmed) {
+        confirmNote = "Faculty confirmed metadata at submission.";
+      }
+      details =
+        '<section class="card cc-compact-section kra2-section-details">' +
+        "<h2>Accomplishment details</h2>" +
+        '<p class="muted kra2-section-lede">' +
+        esc(confirmNote) +
+        "</p>" +
+        '<dl class="kv-grid kv-grid--compact">' +
+        FL.documents.kvRow("Title", esc(bundle.outputTitle || doc.title || "—")) +
+        FL.documents.kvRow("Faculty", esc(state.facultyName || "—")) +
+        FL.documents.kvRow("Accomplishment type", esc(indLabel)) +
+        FL.documents.kvRow(venueLabel, esc(bundle.outputVenue || bundle.journalTitle || "—")) +
+        FL.documents.kvRow("Authors / inventors", esc(bundle.authorsLine || "—")) +
+        FL.documents.kvRow("Date", esc(bundle.publicationDate || bundle.registrationDate || "—")) +
+        (bundle.registrationNumber
+          ? FL.documents.kvRow("Registration no.", esc(bundle.registrationNumber))
+          : "") +
+        (bundle.citationContext ? FL.documents.kvRow("Citation context", esc(bundle.citationContext)) : "") +
+        FL.documents.kvRow("Reference (DOI/ISBN/etc.)", esc(bundle.publicationReference || "—")) +
+        (bundle.contribution === "declared"
+          ? FL.documents.kvRow("Declared contribution", esc(String(bundle.declaredContributionPercent || "—")) + "%")
+          : "") +
+        FL.documents.kvRow(
+          "Official scoring rule",
+          esc(FL.kra2AWorkspaceUi.scoringRuleLine(scoring, doc, bundle))
+        ) +
+        "</dl></section>";
     }
-    var details =
-      '<section class="card cc-compact-section kra2-section-details">' +
-      "<h2>Accomplishment details</h2>" +
-      '<p class="muted kra2-section-lede">' +
-      esc(confirmNote) +
-      "</p>" +
-      '<dl class="kv-grid kv-grid--compact">' +
-      FL.documents.kvRow("Title", esc(bundle.outputTitle || doc.title || "—")) +
-      FL.documents.kvRow("Faculty", esc(state.facultyName || "—")) +
-      FL.documents.kvRow("Accomplishment type", esc(indLabel)) +
-      FL.documents.kvRow(venueLabel, esc(bundle.outputVenue || bundle.journalTitle || "—")) +
-      FL.documents.kvRow("Authors / inventors", esc(bundle.authorsLine || "—")) +
-      FL.documents.kvRow("Date", esc(bundle.publicationDate || bundle.registrationDate || "—")) +
-      (bundle.registrationNumber
-        ? FL.documents.kvRow("Registration no.", esc(bundle.registrationNumber))
-        : "") +
-      (bundle.citationContext ? FL.documents.kvRow("Citation context", esc(bundle.citationContext)) : "") +
-      FL.documents.kvRow("Reference (DOI/ISBN/etc.)", esc(bundle.publicationReference || "—")) +
-      (bundle.contribution === "declared"
-        ? FL.documents.kvRow("Declared contribution", esc(String(bundle.declaredContributionPercent || "—")) + "%")
-        : "") +
-      FL.documents.kvRow(
-        "Official scoring rule",
-        esc(FL.kra2AWorkspaceUi.scoringRuleLine(scoring, doc, bundle))
-      ) +
-      "</dl></section>";
 
     var primaryDocLabel = doc.fileName || doc.title || bundle.outputTitle || "Primary document";
     var docsHtml = FL.kra2AWorkspaceUi.evidenceCardsHtml(state);
+    var extractedHtml = isKra34 ? FL.kra34Metadata.extractedDocumentInfoHtml(state) : "";
+    var ocrSubsection = isKra34
+      ? ""
+      : '<h3 class="kra2-subheading">OCR-extracted details (advisory)</h3>' +
+        FL.kra2AWorkspaceUi.ocrExtractionHtml(state.payload || {});
     var previewHtml =
+      (extractedHtml || "") +
       '<section class="card cc-compact-section kra2-section-documents">' +
       "<h2>Supporting documents</h2>" +
       '<h3 class="kra2-subheading">Document preview</h3>' +
@@ -906,8 +986,7 @@ FL.kra2AWorkspaceUi = {
       '<div class="original-file-frame kra2-doc-preview-frame" data-doc-preview-id="' +
       esc(doc.id || "") +
       '"></div>' +
-      '<h3 class="kra2-subheading">OCR-extracted details (advisory)</h3>' +
-      FL.kra2AWorkspaceUi.ocrExtractionHtml(state.payload || {}) +
+      ocrSubsection +
       docsHtml +
       "</section>";
     var decisionHtml = FL.kra2AWorkspaceUi.decisionSectionHtml(state);
@@ -935,15 +1014,25 @@ FL.kra2AWorkspaceUi = {
       " — " +
       esc(statusMeta.hint) +
       "</p></header>" +
+      draftBanner +
       details +
       FL.kra2AWorkspaceUi.reviewerMetadataPanelHtml(state) +
       previewHtml +
+      prepNotes +
       decisionHtml +
       "</div>"
     );
   },
 
   ocrFieldValue: function (payload, fieldId) {
+    if (FL.kra34Metadata && payload) {
+      var ind =
+        (payload.effectiveIndicatorId || payload.indicatorId || "").trim() ||
+        ((payload.bundle || {}).indicatorId || "").trim();
+      if (FL.kra34Metadata.isKra34Indicator(ind)) {
+        return FL.kra34Metadata.ocrFieldValue(payload, fieldId);
+      }
+    }
     var extraction = (payload && payload.ocrExtraction) || {};
     var fields = extraction.fields || {};
     var block = fields[fieldId];
@@ -1075,8 +1164,11 @@ FL.kra2AWorkspaceUi = {
     return profiles[sub] || profiles.literary;
   },
 
-  metadataFormFields: function (indicatorId) {
+  metadataFormFields: function (indicatorId, payload) {
     var iid = (indicatorId || "").trim();
+    if (FL.kra34Metadata && FL.kra34Metadata.isKra34Indicator(iid)) {
+      return FL.kra34Metadata.formFields(iid, payload);
+    }
     if (iid.indexOf("kra2-c-") === 0) {
       var cLabels = FL.kra2AWorkspaceUi.criterionCMetadataLabels(indicatorId);
       var cFields = [
@@ -1175,7 +1267,7 @@ FL.kra2AWorkspaceUi = {
     var payload = state.payload || {};
     var indicatorId =
       (state.bundle && state.bundle.indicatorId) || (state.doc && state.doc.indicatorId) || "";
-    var fields = FL.kra2AWorkspaceUi.metadataFormFields(indicatorId);
+    var fields = FL.kra2AWorkspaceUi.metadataFormFields(indicatorId, payload);
     var filled = [];
     fields.forEach(function (f) {
       var el = document.getElementById(f.inputId);
@@ -1203,7 +1295,7 @@ FL.kra2AWorkspaceUi = {
   collectReviewerMetadataBody: function (state) {
     var indicatorId =
       (state.bundle && state.bundle.indicatorId) || (state.doc && state.doc.indicatorId) || "";
-    var fields = FL.kra2AWorkspaceUi.metadataFormFields(indicatorId);
+    var fields = FL.kra2AWorkspaceUi.metadataFormFields(indicatorId, state.payload);
     var body = {};
     fields.forEach(function (f) {
       var el = document.getElementById(f.inputId);
@@ -1219,7 +1311,10 @@ FL.kra2AWorkspaceUi = {
   validateReviewerMetadata: function (state) {
     var indicatorId =
       (state.bundle && state.bundle.indicatorId) || (state.doc && state.doc.indicatorId) || "";
-    var fields = FL.kra2AWorkspaceUi.metadataFormFields(indicatorId);
+    if (FL.kra34Metadata && FL.kra34Metadata.isKra34Indicator(indicatorId)) {
+      return { ok: true, message: "", body: FL.kra34Metadata.collectCorrectionBody(state) };
+    }
+    var fields = FL.kra2AWorkspaceUi.metadataFormFields(indicatorId, state.payload);
     var missing = [];
     fields.forEach(function (f) {
       if (!f.required) return;
@@ -1239,6 +1334,11 @@ FL.kra2AWorkspaceUi = {
   },
 
   metadataPanelNeeded: function (state) {
+    var indicatorId =
+      (state.bundle && state.bundle.indicatorId) || (state.doc && state.doc.indicatorId) || "";
+    if (FL.kra34Metadata && FL.kra34Metadata.isKra34Indicator(indicatorId)) {
+      return false;
+    }
     var v = state.validation || {};
     var flags = v.flags || [];
     if (flags.indexOf("metadata_not_confirmed") >= 0) return true;
@@ -1387,7 +1487,12 @@ FL.kra2AWorkspaceUi = {
       (ready ? " is-ready" : "") +
       '" id="kra2-approval-checklist">' +
       "<h3 class=\"kra2-subheading\">Approval requirements</h3>" +
-      '<p class="muted kra2-test-notice">Fictional test PDF — confirm metadata explicitly; OCR is advisory only.</p>' +
+      (FL.kra34Metadata &&
+      FL.kra34Metadata.isKra34Indicator(
+        (state.bundle && state.bundle.indicatorId) || (state.doc && state.doc.indicatorId) || ""
+      )
+        ? '<p class="muted kra2-test-notice">OCR is advisory only and never auto-approves points.</p>'
+        : '<p class="muted kra2-test-notice">Fictional test PDF — confirm metadata explicitly; OCR is advisory only.</p>') +
       '<ul class="cc-blocker-list">' +
       rows +
       "</ul></div>"
@@ -1447,16 +1552,30 @@ FL.kra2AWorkspaceUi = {
 
   evidenceCardsHtml: function (state) {
     var esc = FL.esc;
-    var canDecide = !!state.canDecide && !FL.kra2AWorkspaceUi.isReviewDecisionLocked(state);
+    var canVerify =
+      FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.canVerifyEvidence
+        ? FL.reviewerAccomplishmentState.canVerifyEvidence(state)
+        : !!state.canDecide && !FL.kra2AWorkspaceUi.isReviewDecisionLocked(state);
+    var draftAwaiting =
+      FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.isDraftAwaitingFaculty
+        ? FL.reviewerAccomplishmentState.isDraftAwaitingFaculty(state)
+        : false;
+    var checklist = (state.bundle && state.bundle.checklist) || {};
     var items = state.evidenceItems || [];
     var cards = items
       .map(function (item, idx) {
+        var entry = checklist[item.slotId] || {};
         var statusLabel =
-          item.status === "verified"
-            ? "Verified"
-            : item.status === "missing"
-              ? "Missing"
-              : "Pending verification";
+          FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.slotVerificationDisplayLabel
+            ? FL.reviewerAccomplishmentState.slotVerificationDisplayLabel(state, item.status)
+            : item.status === "verified"
+              ? "Verified"
+              : item.status === "reviewer_required"
+                ? "Needs clarification"
+                : item.status === "missing"
+                  ? "Missing"
+                  : "Pending verification";
+        var note = (entry && entry.reviewerNote) || "";
         var previewBtn = "";
         if (item.documentId) {
           previewBtn =
@@ -1467,7 +1586,7 @@ FL.kra2AWorkspaceUi = {
             '">Preview</button>';
         }
         var verifyCtrl = "";
-        if (canDecide && item.documentId) {
+        if (canVerify && item.documentId) {
           verifyCtrl =
             '<label class="cc-slot-verify-label">Verification ' +
             '<select class="kra2-slot-status" data-slot="' +
@@ -1488,25 +1607,44 @@ FL.kra2AWorkspaceUi = {
             '<span class="cc-save-indicator" id="kra2-save-' +
             esc(item.slotId) +
             '"></span>';
+        } else if (draftAwaiting && item.documentId) {
+          verifyCtrl =
+            '<p class="muted kra2-evidence-readonly-verify">Verification: ' +
+            esc(statusLabel) +
+            "</p>";
         }
         return (
           '<article class="card cc-evidence-card">' +
           "<h3>" +
           esc(item.label) +
           "</h3>" +
-          '<p class="muted">' +
+          '<p class="muted kra2-evidence-file">' +
           esc(item.fileName) +
-          " · " +
+          "</p>" +
+          '<p class="kra2-evidence-status-line"><span class="kra2-evidence-status-label">Status</span> ' +
           esc(statusLabel) +
           "</p>" +
-          '<div class="cc-evidence-card-actions">' +
+          (note
+            ? '<p class="muted kra2-evidence-note"><span class="kra2-evidence-status-label">Note</span> ' +
+              esc(note) +
+              "</p>"
+            : "") +
+          '<div class="cc-evidence-card-actions kra2-evidence-card-actions">' +
           previewBtn +
           verifyCtrl +
           "</div></article>"
         );
       })
       .join("");
-    return '<div class="kra2-evidence-checklist"><h3 class="kra2-subheading">Evidence verification</h3>' + cards + "</div>";
+    return (
+      '<div class="kra2-evidence-checklist">' +
+      '<h3 class="kra2-subheading">Evidence verification</h3>' +
+      (draftAwaiting
+        ? '<p class="muted kra2-evidence-lede">Evidence is view-only until the faculty submits this accomplishment for review.</p>'
+        : '<p class="muted kra2-evidence-lede">Verify each uploaded file independently. This does not approve the accomplishment.</p>') +
+      cards +
+      "</div>"
+    );
   },
 
   approvedDecisionSectionHtml: function (state) {
@@ -1750,13 +1888,13 @@ FL.kra2AWorkspaceUi = {
     var criterionCap = scoring.criterionMaxPoints;
     var critId = (scoring.criterionId || (state.doc && state.doc.criterionId) || "").trim();
     var criterionLabel =
-      critId === "kra3-a" || critId === "kra2-a"
+      critId === "kra3-a" || critId === "kra4-a" || critId === "kra2-a"
         ? "Criterion A maximum (subtotal cap)"
-        : critId === "kra3-b"
+        : critId === "kra3-b" || critId === "kra4-b"
           ? "Criterion B maximum (subtotal cap)"
-          : critId === "kra3-c"
+          : critId === "kra3-c" || critId === "kra4-c"
             ? "Criterion C maximum (subtotal cap)"
-            : critId === "kra3-d"
+            : critId === "kra3-d" || critId === "kra4-d"
               ? "Criterion D maximum (subtotal cap)"
               : "Criterion maximum (subtotal cap)";
 
@@ -1857,14 +1995,27 @@ FL.kra2AWorkspaceUi = {
         FL.kra2AWorkspaceUi.unifiedReviewerAssessmentHtml(state) +
         FL.kra2AWorkspaceUi.reassessmentRequestSupplementHtml(state) +
         "</div>";
-    } else if (canDecide && bundle.submittedForReviewAt) {
+    } else if (
+      canDecide &&
+      FL.reviewerAccomplishmentState &&
+      !FL.reviewerAccomplishmentState.isDraftAwaitingFaculty(state)
+    ) {
       assessmentWorkflowHtml =
-        '<p class="muted">You do not have permission to assess or decide on this accomplishment.</p>';
+        '<div class="kra2-scoring-panel kra2-scoring-panel--assessment">' +
+        FL.kra2AWorkspaceUi.unifiedReviewerAssessmentHtml(state) +
+        "</div>";
+    }
+
+    if (
+      FL.reviewerAccomplishmentState &&
+      FL.reviewerAccomplishmentState.isDraftAwaitingFaculty(state)
+    ) {
+      return "";
     }
 
     return (
       '<section class="card cc-compact-section cc-decision-section kra2-complete-review">' +
-      "<h2>Complete review</h2>" +
+      "<h2>Reviewer Assessment &amp; Feedback</h2>" +
       checklistHtml +
       scoringContextHtml +
       assessmentWorkflowHtml +

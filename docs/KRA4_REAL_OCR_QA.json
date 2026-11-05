@@ -1,0 +1,22 @@
+{
+  "status": "PASS",
+  "checks": {
+    "upload_ok": true,
+    "worker_processed": true,
+    "extracted_text_present": true,
+    "kra4_hints": true
+  },
+  "documentId": "doc_44cad8fc23df",
+  "ocrJobsProcessed": 0,
+  "ocrStatus": "completed",
+  "extractedTextLength": 120,
+  "ocrExtraction": {
+    "version": "1.0",
+    "indicatorId": "kra4-a-member",
+    "workflowFamily": "organization",
+    "hints": {
+      "organizationName": "QA Professional Society"
+    },
+    "advisoryOnly": true
+  }
+}

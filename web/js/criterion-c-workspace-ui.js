@@ -903,10 +903,25 @@ FL.criterionCWorkspaceUi = {
       return '<section class="card cc-evidence-checklist"><p class="note">No evidence checklist configured.</p></section>';
     }
     var canDecide = !!params.canDecide;
+    var reviewState = params.state || null;
+    var canVerify =
+      params.canVerifyEvidence != null
+        ? params.canVerifyEvidence
+        : reviewState && FL.reviewerAccomplishmentState
+          ? FL.reviewerAccomplishmentState.canVerifyEvidence(reviewState)
+          : canDecide;
+    var draftAwaiting =
+      reviewState && FL.reviewerAccomplishmentState
+        ? FL.reviewerAccomplishmentState.isDraftAwaitingFaculty(reviewState)
+        : false;
     var rows = items
       .map(function (item) {
         var stMeta = ui.slotStatusMeta(item.status);
         var missing = !item.fileDoc || item.status === "missing" || !item.entry.documentId;
+        var displayLabel =
+          draftAwaiting && !missing
+            ? FL.reviewerAccomplishmentState.slotVerificationDisplayLabel(reviewState, item.status)
+            : stMeta.label;
         var open =
           !missing && item.fileDoc && item.fileDoc.fileUrl
             ? '<a class="btn btn-ghost btn-small" target="_blank" rel="noopener" href="' +
@@ -914,7 +929,7 @@ FL.criterionCWorkspaceUi = {
               '">Open</a>'
             : "";
         var verify = "";
-        if (canDecide && !missing) {
+        if (canVerify && !missing) {
           verify =
             '<select class="cc-evidence-slot-select" data-cc-slot="' +
             esc(item.slotId) +
@@ -937,7 +952,7 @@ FL.criterionCWorkspaceUi = {
         } else if (missing) {
           verify = '<span class="note warn">Not uploaded</span>';
         } else {
-          verify = esc(stMeta.label);
+          verify = esc(displayLabel);
         }
         return (
           "<tr>" +
@@ -958,7 +973,9 @@ FL.criterionCWorkspaceUi = {
     return (
       '<section class="card cc-evidence-checklist">' +
       '<h2 class="cb-subhead">Evidence checklist</h2>' +
-      '<p class="note">Checklist verification is separate from accomplishment approval — confirm each file here before you approve below.</p>' +
+      (draftAwaiting
+        ? '<p class="note">Evidence is view-only until the faculty submits this accomplishment for review.</p>'
+        : '<p class="note">Checklist verification is separate from accomplishment approval — confirm each file here before you approve below.</p>') +
       '<table class="cc-evidence-checklist-table"><thead><tr><th>Document</th><th>Status</th><th>Review</th></tr></thead>' +
       "<tbody>" +
       rows +
@@ -1084,20 +1101,29 @@ FL.criterionCWorkspaceUi = {
       "</p></header>" +
       ui.researchDetailsCardHtml(researchParams) +
       mentorshipBlock +
+      (FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.isDraftAwaitingFaculty(state)
+        ? FL.reviewerAccomplishmentState.draftBannerHtml()
+        : "") +
       ui.evidenceChecklistCompactHtml({
         evidenceItems: state.evidenceItems,
-        canDecide: state.canDecide
-      }) +
-      ui.compactDecisionSectionHtml({
-        validation: state.validation,
-        scoring: state.scoring,
-        bundle: bundle,
-        doc: state.doc,
         canDecide: state.canDecide,
-        remarks: state.remarks,
-        assessedPoints: state.assessedPoints,
-        refKraSettings: state.refKraSettings
+        state: state
       }) +
+      (FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.canSavePreparationNotes(state)
+        ? FL.reviewerAccomplishmentState.preparationNotesSectionHtml(state)
+        : "") +
+      (FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.isDraftAwaitingFaculty(state)
+        ? ""
+        : ui.compactDecisionSectionHtml({
+            validation: state.validation,
+            scoring: state.scoring,
+            bundle: bundle,
+            doc: state.doc,
+            canDecide: state.canDecide,
+            remarks: state.remarks,
+            assessedPoints: state.assessedPoints,
+            refKraSettings: state.refKraSettings
+          })) +
       "</div>"
     );
   },

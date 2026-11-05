@@ -123,6 +123,9 @@ def register_routes(app: Flask) -> None:
         try:
             db.session.execute(text("SELECT 1"))
             payload["database"] = "connected"
+            from portal.sync_health import database_identity
+
+            payload["databaseIdentity"] = database_identity()
         except SQLAlchemyError as error:
             payload["database"] = "error"
             payload["databaseMessage"] = "Could not reach PostgreSQL. Check DATABASE_URL and that the server is running."

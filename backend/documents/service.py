@@ -272,8 +272,14 @@ def create_upload(
             attach_supporting_upload_link as attach_kra3_supporting,
             maybe_initialize_kra3_bundle,
         )
+        from documents.kra4_evidence.service import (
+            Kra4EvidenceError,
+            attach_supporting_upload_link as attach_kra4_supporting,
+            maybe_initialize_kra4_bundle,
+        )
         from kra_configuration.kra2_annex import is_kra2_criterion
         from kra_configuration.kra3_annex import is_kra3_criterion
+        from kra_configuration.kra4_annex import is_kra4_criterion
 
         slot = (evidence_slot or "").strip()
         primary_ref = (bundle_primary_public_id or "").strip()
@@ -299,6 +305,12 @@ def create_upload(
                     primary_public_id=primary_ref,
                     evidence_slot=slot,
                 )
+            elif primary_doc and is_kra4_criterion(crit):
+                attach_kra4_supporting(
+                    doc,
+                    primary_public_id=primary_ref,
+                    evidence_slot=slot,
+                )
             else:
                 attach_b_supporting(
                     doc,
@@ -310,7 +322,8 @@ def create_upload(
             maybe_initialize_criterion_b_bundle(doc)
             maybe_initialize_kra2_bundle(doc)
             maybe_initialize_kra3_bundle(doc)
-    except (CriterionBEvidenceError, CriterionCEvidenceError, Kra2EvidenceError, Kra3EvidenceError) as error:
+            maybe_initialize_kra4_bundle(doc)
+    except (CriterionBEvidenceError, CriterionCEvidenceError, Kra2EvidenceError, Kra3EvidenceError, Kra4EvidenceError) as error:
         db.session.rollback()
         stored = resolve_path(relative)
         if stored and stored.is_file():

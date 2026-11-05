@@ -363,3 +363,173 @@ def put_evaluation_periods():
         return jsonify({"message": "Evaluation schedule was not saved."}), 500
 
     return jsonify({"evaluationPeriods": saved, "message": "Evaluation schedule saved."}), 200
+
+
+@admin_bp.get("/dashboard")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_dashboard():
+    if not _admin_user():
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from portal.dashboard_service import admin_dashboard_payload
+
+    resp = jsonify(admin_dashboard_payload())
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
+@admin_bp.get("/sync-health")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_sync_health():
+    user = _admin_user()
+    if not user:
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from portal.sync_health import admin_sync_health_payload
+
+    resp = jsonify(admin_sync_health_payload(user))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
+@admin_bp.get("/reports")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_reports():
+    if not _admin_user():
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from portal.dashboard_service import admin_reports_payload
+
+    college = (request.args.get("college") or "").strip()
+    faculty_id = (request.args.get("facultyId") or request.args.get("faculty_id") or "").strip()
+    kra_id = (request.args.get("kraId") or request.args.get("kra_id") or "").strip()
+    status = (request.args.get("status") or "").strip()
+    try:
+        page = int(request.args.get("page") or 1)
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(request.args.get("pageSize") or request.args.get("page_size") or 50)
+    except (TypeError, ValueError):
+        page_size = 50
+    payload = admin_reports_payload(
+        college=college,
+        faculty_public_id=faculty_id,
+        kra_id=kra_id,
+        status=status,
+        page=page,
+        page_size=page_size,
+    )
+    if (request.args.get("format") or "").lower() == "csv":
+        import csv
+        import io
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(
+            [
+                "Faculty",
+                "College",
+                "Rank",
+                "KRA I (est.)",
+                "KRA II (est.)",
+                "KRA III (est.)",
+                "KRA IV (est.)",
+                "Weighted score (est.)",
+                "Preparation readiness %",
+                "Status",
+            ]
+        )
+        for row in payload.get("facultyReadiness") or []:
+            writer.writerow(
+                [
+                    row.get("name"),
+                    row.get("college"),
+                    row.get("rank"),
+                    row.get("kra1"),
+                    row.get("kra2"),
+                    row.get("kra3"),
+                    row.get("kra4"),
+                    row.get("weightedScore"),
+                    row.get("preparationReadiness"),
+                    row.get("status"),
+                ]
+            )
+        from flask import Response
+
+        return Response(
+            buf.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="facultylink-readiness-report.csv"'},
+        )
+    resp = jsonify(payload)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
+@admin_bp.get("/audit-log")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_audit_log():
+    if not _admin_user():
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from portal.dashboard_service import audit_log_payload
+
+    query = (request.args.get("q") or request.args.get("query") or "").strip()
+    role = (request.args.get("role") or "").strip()
+    try:
+        page = int(request.args.get("page") or 1)
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(request.args.get("pageSize") or 40)
+    except (TypeError, ValueError):
+        page_size = 40
+    resp = jsonify(audit_log_payload(query=query, role=role, page=page, page_size=page_size))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 200
+
+
+@admin_bp.get("/notifications")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_notifications_list():
+    user = _admin_user()
+    if not user:
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from portal.dashboard_service import notifications_payload
+
+    return jsonify(notifications_payload(user)), 200
+
+
+@admin_bp.patch("/notifications/<public_id>")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_notification_patch(public_id: str):
+    user = _admin_user()
+    if not user:
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from models import Notification
+
+    note = Notification.query.filter_by(public_id=public_id, user_id=user.id).first()
+    if not note:
+        return jsonify({"message": "Notification was not found."}), 404
+    body = _json_body()
+    if "read" in body:
+        note.read = bool(body.get("read"))
+        db.session.commit()
+    return jsonify({"id": note.public_id, "read": note.read}), 200
+
+
+@admin_bp.patch("/notifications")
+@perm.roles_required(ROLE_ADMINISTRATOR)
+def admin_notifications_mark_all():
+    user = _admin_user()
+    if not user:
+        return jsonify({"message": "You do not have permission to perform this action."}), 403
+    from models import Notification
+
+    body = _json_body()
+    read = bool(body.get("read", True))
+    ids = body.get("ids") if isinstance(body.get("ids"), list) else None
+    q = Notification.query.filter_by(user_id=user.id, read=not read)
+    if ids:
+        q = q.filter(Notification.public_id.in_(ids))
+    for note in q.all():
+        note.read = read
+    db.session.commit()
+    return jsonify({"updated": True}), 200

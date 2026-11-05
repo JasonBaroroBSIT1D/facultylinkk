@@ -55,6 +55,7 @@ def _rank_weights_policy(resolution) -> dict[str, Any]:
         "publishedRankWeightsPresent": has_published,
         "note": (
             "When published rank weights are empty, rank simulation uses DBM–CHED Joint Circular "
-            "Table 2.2 defaults defined in the backend engine (not generated arbitrarily)."
+            "Table 2.2 defaults defined in the backend engine (not generated arbitrarily). "
+            "Table 3.1 score brackets use published `scoreBrackets` when present, otherwise engine defaults."
         ),
     }

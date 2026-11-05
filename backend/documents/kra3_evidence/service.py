@@ -23,7 +23,12 @@ from documents.kra3_evidence.bundle import (
     persist_link,
 )
 from documents.kra3_evidence.slots import required_slots, slot_label
+from documents.kra3_evidence.checklist_reconcile import reconcile_kra3_checklist_from_links
 from documents.kra3_evidence.submission_state import accomplishment_submitted
+from documents.kra2_evidence.service import (
+    _persist_reviewer_prep_remarks,
+    _remarks_only_assessment,
+)
 from documents.kra3_evidence.reviewer_assessment import apply_reviewer_accomplishment_decision
 from documents.kra3_evidence.scoring import estimated_points_for_bundle
 from documents.kra3_evidence.validation import validate_kra3_bundle
@@ -389,6 +394,8 @@ def reviewer_update_kra3(
     bundle = bundle_from_document(primary)
     if not bundle:
         raise Kra3EvidenceError("bundle_not_initialized")
+    if reconcile_kra3_checklist_from_links(primary, bundle):
+        persist_bundle(primary, bundle)
     indicator_id = _indicator_for_doc(primary)
 
     if reassessment_action:
@@ -478,7 +485,42 @@ def reviewer_update_kra3(
         or bool((remarks or "").strip())
         or bool((score_adjustment_reason or "").strip())
     )
-    if (slot_id or review_status or assessment_fields) and not accomplishment_submitted(bundle):
+    if (
+        not slot_id
+        and not review_status
+        and not metadata
+        and assessment_fields
+        and not accomplishment_submitted(bundle)
+        and _remarks_only_assessment(assessed_points, score_adjustment_reason, remarks)
+    ):
+        _persist_reviewer_prep_remarks(bundle, reviewer_user=reviewer_user, remarks=remarks)
+        import json
+
+        db.session.add(
+            AuditLog(
+                actor_user_id=int(reviewer_user.id),
+                action="KRA III reviewer preparation notes",
+                target_id=primary.public_id,
+                detail=json.dumps(
+                    {"documentId": primary.public_id, "indicatorId": indicator_id},
+                    ensure_ascii=False,
+                )[:2000],
+            )
+        )
+        validation = _apply_validation_to_bundle(
+            bundle,
+            indicator_id=indicator_id,
+            faculty_profile_id=primary.faculty_profile_id,
+            public_id=primary.public_id,
+        )
+        persist_bundle(primary, bundle)
+        db.session.commit()
+        return primary, validation
+    if review_status and not accomplishment_submitted(bundle):
+        raise Kra3EvidenceError("accomplishment_not_submitted")
+    if slot_id and not accomplishment_submitted(bundle):
+        raise Kra3EvidenceError("accomplishment_not_submitted")
+    if assessment_fields and not accomplishment_submitted(bundle):
         raise Kra3EvidenceError("accomplishment_not_submitted")
     prior_review = (bundle.get("reviewStatus") or "").strip().lower()
     if prior_review == "approved" and review_status:
@@ -693,8 +735,11 @@ def bundle_api_payload(doc: Document, *, viewer_user=None) -> dict[str, Any]:
 
     bundle = bundle_from_document(doc)
     indicator_id = _indicator_for_doc(doc)
-    if isinstance(bundle, dict) and (bundle.get("indicatorId") or "").strip() != indicator_id:
-        bundle["indicatorId"] = indicator_id
+    if isinstance(bundle, dict):
+        if reconcile_kra3_checklist_from_links(doc, bundle):
+            persist_bundle(doc, bundle)
+        if (bundle.get("indicatorId") or "").strip() != indicator_id:
+            bundle["indicatorId"] = indicator_id
     validation = validate_kra3_bundle(bundle, indicator_id=indicator_id)
     if isinstance(bundle, dict):
         validation = _apply_validation_to_bundle(

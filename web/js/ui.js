@@ -38,6 +38,31 @@ FL.formatDocStamp = function (value) {
 };
 
 FL.ui = {
+  /** Compact date/time for data tables (single line desktop; clean two-line when narrow). */
+  tableDateTimeHtml: function (value) {
+    if (!value) return "—";
+    const parts = FL.splitWhen(value);
+    const title = FL.formatDocStamp(value);
+    if (!parts.time || parts.time === "—") {
+      return (
+        '<span class="fl-table-datetime fl-table-datetime--date-only" title="' +
+        FL.esc(title) +
+        '">' +
+        FL.esc(parts.date) +
+        "</span>"
+      );
+    }
+    return (
+      '<span class="fl-table-datetime" title="' +
+      FL.esc(title) +
+      '"><span class="fl-table-datetime-date">' +
+      FL.esc(parts.date) +
+      '</span><span class="fl-table-datetime-sep" aria-hidden="true"> · </span><span class="fl-table-datetime-time">' +
+      FL.esc(parts.time) +
+      "</span></span>"
+    );
+  },
+
   statIcon: function (key) {
     const map = {
       faculty: "users",
@@ -70,14 +95,16 @@ FL.ui = {
       const accent = c.accent ? " is-accent-" + c.accent : "";
       const val = c.value == null ? "—" : c.value;
       const hint = c.hint ? `<small>${FL.esc(c.hint)}</small>` : "";
-      return `<div class="evidence-stat${accent}">
-        <span class="evidence-stat-icon" aria-hidden="true">${FL.ui.statIcon(c.iconKey || "documents")}</span>
+      const inner = `<span class="evidence-stat-icon" aria-hidden="true">${FL.ui.statIcon(c.iconKey || "documents")}</span>
         <div class="evidence-stat-body">
           <span>${FL.esc(c.label)}</span>
           <strong>${FL.esc(String(val))}</strong>
           ${hint}
-        </div>
-      </div>`;
+        </div>`;
+      if (c.href) {
+        return `<a class="evidence-stat evidence-stat-link${accent}" href="${FL.esc(c.href)}">${inner}</a>`;
+      }
+      return `<div class="evidence-stat${accent}">${inner}</div>`;
     }).join("")}</div>`;
   },
 

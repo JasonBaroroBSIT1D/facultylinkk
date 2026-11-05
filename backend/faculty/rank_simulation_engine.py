@@ -20,6 +20,7 @@ from kra_configuration.published_limits import (
 from kra_configuration.resolver import resolution_metadata
 from kra_configuration.service import get_published_row
 from kra_configuration.version_lock import resolve_settings_for_faculty_simulation
+from faculty.rank_hierarchy import apply_subrank_increment
 
 SIMULATION_DISCLAIMER = (
     "Estimated KRA scores and potential rank eligibility are provided for faculty self-assessment "
@@ -42,6 +43,22 @@ TABLE_22_DEFAULTS: dict[str, dict[str, float]] = {
     "Professor": {"kra1": 30, "kra2": 40, "kra3": 20, "kra4": 10},
     "College/University Professor": {"kra1": 20, "kra2": 50, "kra3": 20, "kra4": 10},
 }
+
+# Table 3.1 — score bracket → sub-rank increment (inclusive bounds).
+TABLE_31_DEFAULTS: tuple[dict[str, Any], ...] = (
+    {"min": 41, "max": 50, "increment": 1, "label": "41–50"},
+    {"min": 51, "max": 60, "increment": 2, "label": "51–60"},
+    {"min": 61, "max": 70, "increment": 3, "label": "61–70"},
+    {"min": 71, "max": 80, "increment": 4, "label": "71–80"},
+    {"min": 81, "max": 90, "increment": 5, "label": "81–90"},
+    {"min": 91, "max": 100, "increment": 6, "label": "91–100"},
+)
+
+CALCULATION_REFERENCE = (
+    "Weighted contribution per KRA = (KRA score ÷ applicable KRA maximum) × Table 2.2 weight in points; "
+    "total weighted score = sum of four contributions (out of 100). "
+    "Sub-rank increment from Table 3.1 uses the estimated weighted total unless noted."
+)
 
 ELIGIBILITY_ELIGIBLE = "eligible_validated"
 ELIGIBILITY_PROVISIONAL = "provisionally_on_track"
@@ -128,6 +145,29 @@ def unified_teaching_validated_points(te: dict[str, Any]) -> float | None:
     return None
 
 
+def _kra_weighted_contribution(
+    block: dict[str, Any],
+    weight_points: float,
+    *,
+    points: float | None,
+) -> float | None:
+    if points is None:
+        return None
+    try:
+        raw = float(points)
+    except (TypeError, ValueError):
+        return None
+    cap = block.get("maxPoints")
+    try:
+        cap_f = float(cap) if cap is not None else 100.0
+    except (TypeError, ValueError):
+        cap_f = 100.0
+    if cap_f <= 0:
+        cap_f = 100.0
+    raw = min(raw, cap_f)
+    return _round2((raw / cap_f) * float(weight_points))
+
+
 def _weighted_estimated_total(kra_points: dict[str, dict[str, Any]], weights: dict[str, float]) -> float | None:
     any_assessed = False
     total = 0.0
@@ -138,11 +178,11 @@ def _weighted_estimated_total(kra_points: dict[str, dict[str, Any]], weights: di
         pts = block.get("estimatedPoints")
         if pts is None:
             continue
+        contrib = _kra_weighted_contribution(block, weights.get(kra_id, 0), points=float(pts))
+        if contrib is None:
+            continue
         any_assessed = True
-        cap = block.get("maxPoints")
-        if cap is not None:
-            pts = min(float(pts), float(cap))
-        total += float(pts) * (weights.get(kra_id, 0) / 100.0)
+        total += contrib
     if not any_assessed:
         return None
     return _round2(total)
@@ -174,14 +214,161 @@ def _weighted_total(kra_points: dict[str, dict[str, Any]], weights: dict[str, fl
             pts = block.get("validatedPoints")
             if pts is None:
                 continue
+        contrib = _kra_weighted_contribution(block, weights.get(kra_id, 0), points=float(pts))
+        if contrib is None:
+            continue
         any_assessed = True
-        cap = block.get("maxPoints")
-        if cap is not None:
-            pts = min(float(pts), float(cap))
-        total += float(pts) * (weights.get(kra_id, 0) / 100.0)
+        total += contrib
     if not any_assessed:
         return None
     return _round2(total)
+
+
+def _score_brackets_from_settings(settings: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    raw = settings.get("scoreBrackets") or settings.get("table31SubrankIncrements")
+    if not isinstance(raw, list) or not raw:
+        return TABLE_31_DEFAULTS
+    parsed: list[dict[str, Any]] = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        try:
+            parsed.append(
+                {
+                    "min": float(row.get("min") or row.get("minimum")),
+                    "max": float(row.get("max") or row.get("maximum")),
+                    "increment": int(row.get("increment") or row.get("subrankIncrement") or 0),
+                    "label": str(row.get("label") or f"{row.get('min')}–{row.get('max')}"),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+    return tuple(parsed) if parsed else TABLE_31_DEFAULTS
+
+
+def _score_bracket_and_increment(
+    weighted_score: float | None,
+    brackets: tuple[dict[str, Any], ...],
+) -> tuple[str | None, int]:
+    if weighted_score is None:
+        return None, 0
+    try:
+        score = float(weighted_score)
+    except (TypeError, ValueError):
+        return None, 0
+    for row in brackets:
+        try:
+            lo = float(row["min"])
+            hi = float(row["max"])
+            inc = int(row["increment"])
+            label = str(row.get("label") or f"{lo:g}–{hi:g}")
+        except (KeyError, TypeError, ValueError):
+            continue
+        if lo <= score <= hi:
+            return label, inc
+    return None, 0
+
+
+def _build_weighted_breakdown(
+    kra_points: dict[str, dict[str, Any]],
+    weights: dict[str, float],
+    *,
+    use_validated: bool,
+) -> dict[str, Any]:
+    key = "validatedPoints" if use_validated else "estimatedPoints"
+    rows: list[dict[str, Any]] = []
+    contributions: dict[str, float | None] = {}
+    raw_scores: dict[str, float | None] = {}
+    for kra_id in MOBILE_KRA_KEYS:
+        block = kra_points.get(kra_id) or {}
+        pts = block.get(key) if use_validated else block.get("estimatedPoints")
+        if not use_validated and pts is None:
+            pts = block.get("provisionalPoints")
+        raw_scores[kra_id] = _round2(float(pts)) if pts is not None else None
+        w = weights.get(kra_id, 0)
+        contrib = (
+            _kra_weighted_contribution(block, w, points=float(pts))
+            if pts is not None and block.get("assessed")
+            else None
+        )
+        contributions[kra_id] = contrib
+        rows.append(
+            {
+                "kraId": kra_id,
+                "label": KRA_LABELS[kra_id],
+                "rawScore": raw_scores[kra_id],
+                "maxPoints": block.get("maxPoints"),
+                "weightPercent": w,
+                "weightedContribution": contrib,
+            }
+        )
+    total = _weighted_total(kra_points, weights, use_validated=use_validated)
+    return {
+        "rows": rows,
+        "contributions": contributions,
+        "rawScores": raw_scores,
+        "weightedTotal": total,
+    }
+
+
+def _preparation_readiness(
+    *,
+    config_complete: bool,
+    te: dict[str, Any],
+    kra_points: dict[str, dict[str, Any]],
+) -> tuple[float | None, list[dict[str, Any]], str]:
+    """Checklist completion % separate from weighted KRA score."""
+    if not config_complete:
+        return (
+            None,
+            [],
+            "Not available — published official scoring configuration is incomplete.",
+        )
+    items: list[dict[str, Any]] = []
+
+    for label, block_key in (("SET semester records", "set"), ("SEF semester records", "sef")):
+        block = te.get(block_key) if isinstance(te.get(block_key), dict) else {}
+        cov = block.get("coverageSummary") if isinstance(block.get("coverageSummary"), dict) else {}
+        required = cov.get("requiredPeriods")
+        included = cov.get("includedPeriods") or cov.get("acceptedPeriods") or 0
+        uploads = cov.get("totalUploads") or 0
+        missing = block.get("missingPeriods") or []
+        applicable = required is not None and int(required) > 0
+        if not applicable and uploads <= 0:
+            continue
+        if not applicable:
+            applicable = uploads > 0 or bool(missing)
+        completed = applicable and not missing and (uploads == 0 or included >= (required or 0))
+        items.append(
+            {
+                "id": block_key,
+                "label": label,
+                "completed": completed,
+                "applicable": applicable,
+            }
+        )
+
+    for kra_id in MOBILE_KRA_KEYS:
+        block = kra_points.get(kra_id) or {}
+        items.append(
+            {
+                "id": kra_id,
+                "label": f"{KRA_LABELS[kra_id]} evidence assessed",
+                "completed": bool(block.get("assessed")),
+                "applicable": True,
+            }
+        )
+
+    applicable_items = [i for i in items if i.get("applicable")]
+    if not applicable_items:
+        return (
+            None,
+            items,
+            "Not available — no applicable preparation requirements could be determined.",
+        )
+    done = sum(1 for i in applicable_items if i.get("completed"))
+    pct = round((done / len(applicable_items)) * 100.0, 1)
+    return pct, items, f"{done} of {len(applicable_items)} applicable preparation items complete."
 
 
 def _doc_counts(profile: FacultyProfile) -> dict[str, int]:
@@ -555,6 +742,28 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
             config_complete = False
 
     weighted_estimated = _weighted_estimated_total(kra_points, weights)
+    weighted_validated = _weighted_total(kra_points, weights, use_validated=True)
+    score_brackets = _score_brackets_from_settings(sim_settings)
+    score_bracket, subrank_increment = _score_bracket_and_increment(weighted_estimated, score_brackets)
+    transition_rules = sim_settings.get("rankCategoryTransitions")
+    if not isinstance(transition_rules, dict):
+        transition_rules = None
+    rank_step = apply_subrank_increment(current_rank, subrank_increment, transition_rules=transition_rules)
+    possible_rank = rank_step.possible_rank if rank_step.current_rank_recognized else None
+    if possible_rank and rank_step.rank_transition_note:
+        possible_rank_display = possible_rank
+    elif possible_rank:
+        possible_rank_display = possible_rank
+    else:
+        possible_rank_display = ""
+
+    est_breakdown = _build_weighted_breakdown(kra_points, weights, use_validated=False)
+    ver_breakdown = _build_weighted_breakdown(kra_points, weights, use_validated=True)
+    prep_pct, prep_checklist, prep_label = _preparation_readiness(
+        config_complete=config_complete,
+        te=te,
+        kra_points=kra_points,
+    )
 
     thresholds = _rank_thresholds(sim_settings)
     target_key = target_rank or band
@@ -587,7 +796,13 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
     elif weighted_estimated is not None:
         progress_label = "Estimated weighted score available — rank threshold not configured"
 
-    kra_list = [kra_points[k] for k in MOBILE_KRA_KEYS]
+    kra_list = []
+    for k in MOBILE_KRA_KEYS:
+        row = dict(kra_points[k])
+        row["estimatedWeightedContribution"] = est_breakdown["contributions"].get(k)
+        row["verifiedWeightedContribution"] = ver_breakdown["contributions"].get(k)
+        row["weightPercent"] = weights.get(k)
+        kra_list.append(row)
     estimated_sum = sum(
         float(kra_points[k].get("estimatedPoints") or 0)
         for k in MOBILE_KRA_KEYS
@@ -599,18 +814,42 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
         if kra_points[k].get("assessed")
     )
 
+    config_version = (
+        sim_settings.get("version")
+        or (published_row.settings_json or {}).get("version")
+        if published_row and isinstance(published_row.settings_json, dict)
+        else None
+    )
+
     return {
         "currentRank": current_rank,
         "targetRank": target_rank,
-        "nextPossibleRank": target_rank or "",
+        "possibleRank": possible_rank_display,
+        "nextPossibleRank": possible_rank_display or target_rank or "",
         "weightBand": band,
         "appliedWeights": weights,
-        "kraConfigVersion": (
-            sim_settings.get("version")
-            or (published_row.settings_json or {}).get("version")
-            if published_row and isinstance(published_row.settings_json, dict)
-            else None
-        ),
+        "kraWeights": weights,
+        "scoreBracket": score_bracket,
+        "subrankIncrement": subrank_increment,
+        "subrankIncrementApplied": rank_step.subrank_increment_applied,
+        "rankTransitionBlocked": rank_step.rank_transition_blocked,
+        "rankTransitionNote": rank_step.rank_transition_note,
+        "estimatedKraScores": est_breakdown["rawScores"],
+        "verifiedKraScores": ver_breakdown["rawScores"],
+        "estimatedWeightedContributions": est_breakdown["contributions"],
+        "verifiedWeightedContributions": ver_breakdown["contributions"],
+        "weightedContributionBreakdown": {
+            "estimated": est_breakdown["rows"],
+            "verified": ver_breakdown["rows"],
+        },
+        "estimatedWeightedTotal": weighted_estimated,
+        "verifiedWeightedTotal": weighted_validated,
+        "preparationReadinessPercentage": prep_pct,
+        "preparationReadinessLabel": prep_label,
+        "readinessChecklist": prep_checklist,
+        "calculationReference": CALCULATION_REFERENCE,
+        "applicableConfigurationVersion": config_version,
+        "kraConfigVersion": config_version,
         "scoringConfiguration": resolution_metadata(sim_resolution),
         "rankWeightsPolicy": {
             "source": "published_admin_configuration"
@@ -620,7 +859,9 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
                 sim_settings.get("rankWeights") or (published_row.rank_weights if published_row else {})
             ),
         },
-        "scoringFormula": "Weighted Final Score = Σ (KRA points × Table 2.2 rank weight %)",
+        "scoringFormula": (
+            "Weighted Final Score = Σ ((KRA score ÷ KRA max) × Table 2.2 weight in points); total out of 100."
+        ),
         "teachingEffectiveness": {
             "combinedProvisionalPoints": te.get("combinedProvisionalPoints"),
             "combinedValidatedPoints": te.get("combinedValidatedPoints"),
@@ -633,7 +874,7 @@ def compute_rank_simulation(profile: FacultyProfile) -> dict[str, Any]:
         "validatedKraPoints": _round2(validated_sum) if validated_sum else 0,
         "provisionalKraPoints": _round2(estimated_sum) if estimated_sum else None,
         "weightedEstimatedScore": weighted_estimated,
-        "weightedValidatedScore": _weighted_total(kra_points, weights, use_validated=True),
+        "weightedValidatedScore": weighted_validated,
         "weightedProvisionalScore": weighted_estimated,
         "requiredWeightedScore": required_score,
         "progressPercent": progress_percent,
@@ -691,7 +932,8 @@ def simulation_for_mobile(profile: FacultyProfile) -> dict[str, Any]:
     sim = compute_rank_simulation(profile)
     return {
         "currentRank": sim["currentRank"],
-        "targetRank": sim["nextPossibleRank"] or sim["targetRank"],
+        "targetRank": sim.get("possibleRank") or sim["nextPossibleRank"] or sim["targetRank"],
+        "possibleRank": sim.get("possibleRank") or sim["nextPossibleRank"] or "",
         "currentPoints": sim["currentPoints"],
         "requiredPoints": sim["requiredPoints"],
         "eligibilityLabel": sim["eligibilityLabel"],
@@ -703,6 +945,20 @@ def simulation_for_mobile(profile: FacultyProfile) -> dict[str, Any]:
         "weightedEstimatedScore": sim.get("weightedEstimatedScore"),
         "weightedValidatedScore": sim["weightedValidatedScore"],
         "weightedProvisionalScore": sim["weightedProvisionalScore"],
+        "estimatedWeightedTotal": sim.get("estimatedWeightedTotal"),
+        "verifiedWeightedTotal": sim.get("verifiedWeightedTotal"),
+        "scoreBracket": sim.get("scoreBracket"),
+        "subrankIncrement": sim.get("subrankIncrement"),
+        "subrankIncrementApplied": sim.get("subrankIncrementApplied"),
+        "rankTransitionNote": sim.get("rankTransitionNote"),
+        "preparationReadinessPercentage": sim.get("preparationReadinessPercentage"),
+        "preparationReadinessLabel": sim.get("preparationReadinessLabel"),
+        "readinessChecklist": sim.get("readinessChecklist"),
+        "estimatedWeightedContributions": sim.get("estimatedWeightedContributions"),
+        "verifiedWeightedContributions": sim.get("verifiedWeightedContributions"),
+        "weightedContributionBreakdown": sim.get("weightedContributionBreakdown"),
+        "calculationReference": sim.get("calculationReference"),
+        "applicableConfigurationVersion": sim.get("applicableConfigurationVersion"),
         "teachingEffectivenessScore": sim["teachingEffectiveness"].get("combinedProvisionalPoints")
         or sim["teachingEffectiveness"].get("combinedValidatedPoints"),
         "disclaimer": sim.get("disclaimer") or SIMULATION_DISCLAIMER,

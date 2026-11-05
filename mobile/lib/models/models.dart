@@ -784,6 +784,7 @@ class RankSimulation {
     required this.requiredPoints,
     required this.eligibilityLabel,
     required this.areasToImprove,
+    this.possibleRank = '',
     this.kraConfigVersion = 0,
     this.scoringFormula =
         'Weighted Final Score = Σ (KRA points × Table 2.2 rank weight %)',
@@ -802,10 +803,22 @@ class RankSimulation {
     this.progressLabel = '',
     this.missingRequirements = const [],
     this.disclaimer = '',
+    this.scoreBracket,
+    this.subrankIncrement,
+    this.preparationReadinessPercentage,
+    this.preparationReadinessLabel = '',
+    this.readinessChecklist = const [],
+    this.estimatedWeightedContributions = const {},
+    this.verifiedWeightedContributions = const {},
+    this.weightedContributionBreakdownEstimated = const [],
+    this.weightedContributionBreakdownVerified = const [],
+    this.rankTransitionNote,
+    this.calculationReference = '',
   });
 
   final String currentRank;
   final String targetRank;
+  final String possibleRank;
   final int currentPoints;
   final int requiredPoints;
   final String eligibilityLabel;
@@ -827,6 +840,51 @@ class RankSimulation {
   final String progressLabel;
   final List<Map<String, dynamic>> missingRequirements;
   final String disclaimer;
+  final String? scoreBracket;
+  final int? subrankIncrement;
+  final double? preparationReadinessPercentage;
+  final String preparationReadinessLabel;
+  final List<Map<String, dynamic>> readinessChecklist;
+  final Map<String, double> estimatedWeightedContributions;
+  final Map<String, double> verifiedWeightedContributions;
+  final List<Map<String, dynamic>> weightedContributionBreakdownEstimated;
+  final List<Map<String, dynamic>> weightedContributionBreakdownVerified;
+  final String? rankTransitionNote;
+  final String calculationReference;
+
+  String get displayPossibleRank {
+    final p = possibleRank.trim();
+    if (p.isNotEmpty) return p;
+    final t = targetRank.trim();
+    if (t.isNotEmpty) return t;
+    return '—';
+  }
+
+  String get homeStatusLabel {
+    switch (eligibilityStatus) {
+      case 'eligible_validated':
+        return 'On track';
+      case 'provisionally_on_track':
+        return 'Estimated';
+      case 'additional_requirements':
+        return 'Needs docs';
+      case 'rules_unavailable':
+        return 'Rules N/A';
+      default:
+        return 'Assessing';
+    }
+  }
+
+  double? contributionForKra(String kraId) {
+    final v = estimatedWeightedContributions[kraId];
+    if (v != null) return v;
+    for (final row in weightedContributionBreakdownEstimated) {
+      if (row['kraId'] == kraId && row['weightedContribution'] is num) {
+        return (row['weightedContribution'] as num).toDouble();
+      }
+    }
+    return null;
+  }
 
   double get progress {
     if (progressPercent != null) return (progressPercent! / 100).clamp(0, 1);

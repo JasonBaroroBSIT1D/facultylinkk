@@ -1,0 +1,70 @@
+{
+  "checks": {
+    "validated_nonzero": true,
+    "cap_ok": true,
+    "qa_db_counts_qa": true
+  },
+  "status": "PASS",
+  "kra4Simulation": {
+    "kraId": "kra4",
+    "estimatedPoints": 100.0,
+    "validatedPoints": 100.0,
+    "maxPoints": 100.0,
+    "assessed": true,
+    "documentCount": 214,
+    "scoringSource": "kra4_evidence_bundle",
+    "aggregationPolicy": "abc_sum_plus_bonus_cap_at_kra_max",
+    "regularSubtotalEstimated": 95.0,
+    "regularSubtotalValidated": 88.01,
+    "bonusEstimated": 20.0,
+    "bonusValidated": 20.0,
+    "criterionTotals": {
+      "kra4-a": {
+        "estimatedPoints": 15.0,
+        "validatedPoints": 10.0,
+        "maxPoints": 20.0
+      },
+      "kra4-b": {
+        "estimatedPoints": 60.0,
+        "validatedPoints": 58.01,
+        "maxPoints": 60.0
+      },
+      "kra4-c": {
+        "estimatedPoints": 20.0,
+        "validatedPoints": 20.0,
+        "maxPoints": 20.0
+      },
+      "kra4-d": {
+        "estimatedPoints": 20.0,
+        "validatedPoints": 20.0,
+        "maxPoints": 20.0
+      }
+    },
+    "simulationAdapterEnabled": true,
+    "label": "Professional Development",
+    "statusLabel": "Estimated from KRA IV accomplishments (A+B+C plus bonus D, capped at 100)",
+    "breakdown": [],
+    "targetPoints": 100,
+    "provisionalPoints": 100.0,
+    "currentPoints": 100
+  },
+  "criterionSummaries": {
+    "kra4-a": {
+      "validatedPoints": 10.0,
+      "maxPoints": 20.0
+    },
+    "kra4-b": {
+      "validatedPoints": 58.01,
+      "maxPoints": 60.0
+    },
+    "kra4-c": {
+      "validatedPoints": 20.0,
+      "maxPoints": 20.0
+    },
+    "kra4-d": {
+      "validatedPoints": 20.0,
+      "maxPoints": 20.0
+    }
+  },
+  "pendingDocCount": 50
+}

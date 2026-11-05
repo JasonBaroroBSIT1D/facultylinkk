@@ -363,12 +363,33 @@ FL.documents = {
     ];
   },
 
+  _kraIdFromCriterion: function (criterionId) {
+    const cid = criterionId || "";
+    if (cid.indexOf("kra4-") === 0) return "kra4";
+    if (cid.indexOf("kra3-") === 0) return "kra3";
+    if (cid.indexOf("kra2-") === 0) return "kra2";
+    if (cid.indexOf("kra1-") === 0) return "kra1";
+    return "";
+  },
+
   reviewContextBackHref: function (doc, canDecide) {
     const params = new URLSearchParams(window.location.search);
     const facultyId = params.get("faculty") || doc.facultyId || "";
-    const kraId = params.get("kra") || doc.kraId || "";
     const criterionId = params.get("criterion") || doc.criterionId || "";
+    let kraId = params.get("kra") || doc.kraId || "";
+    if (!kraId && criterionId) {
+      kraId = FL.documents._kraIdFromCriterion(criterionId);
+    }
     const indicatorId = params.get("indicator") || doc.indicatorId || "";
+    const kra34 =
+      FL.documents._isKra3Criterion(criterionId) || FL.documents._isKra4Criterion(criterionId);
+    if (facultyId && criterionId && kra34) {
+      const back = new URLSearchParams();
+      back.set("faculty", facultyId);
+      if (kraId) back.set("kra", kraId);
+      back.set("criterion", criterionId);
+      return "documents.html?" + back.toString();
+    }
     if (facultyId && (indicatorId || kraId)) {
       const back = new URLSearchParams();
       back.set("faculty", facultyId);
@@ -388,6 +409,16 @@ FL.documents = {
     }
     if (criterionId === "kra1-c") {
       return "Back to Criterion C accomplishments";
+    }
+    if (
+      FL.documents._isKra3Criterion(criterionId) ||
+      FL.documents._isKra4Criterion(criterionId)
+    ) {
+      const crit = FL.rules.findCriterionById && FL.rules.findCriterionById(criterionId);
+      const name = crit
+        ? FL.rules.criterionUserLabel(criterionId, crit.name)
+        : criterionId;
+      return "Back to " + name;
     }
     const indicatorId = params.get("indicator") || doc.indicatorId || "";
     if (indicatorId && FL.rules.findIndicator(indicatorId)) {
@@ -550,7 +581,16 @@ FL.documents = {
     return rule ? rule.kra.code + " — " + rule.kra.name : "—";
   },
 
-  href: function (id) {
+  href: function (idOrDoc) {
+    const doc = typeof idOrDoc === "object" && idOrDoc
+      ? idOrDoc
+      : FL.store.documentById(idOrDoc);
+    if (FL.reviewerNav && FL.reviewerNav.accomplishmentReviewUrl) {
+      if (doc) return FL.reviewerNav.accomplishmentReviewUrl(doc);
+      const fallbackId = typeof idOrDoc === "object" ? (idOrDoc.id || idOrDoc.documentId) : idOrDoc;
+      return fallbackId ? "documents.html?highlightDoc=" + encodeURIComponent(fallbackId) : "documents.html";
+    }
+    const id = typeof idOrDoc === "object" && idOrDoc ? (idOrDoc.id || idOrDoc.documentId) : idOrDoc;
     const page = document.body.dataset.role === "administrator" ? "document-view.html" : "document-review.html";
     return page + "?id=" + encodeURIComponent(id);
   },
@@ -632,7 +672,7 @@ FL.documents = {
                 <td>${scoreCell}</td>
                 <td>${FL.esc(reviewer ? reviewer.name : "—")}</td>
                 <td>${FL.esc(FL.formatWhen(doc.dateSubmitted))}</td>
-                <td><a class="btn btn-small btn-primary" href="${FL.documents.href(doc.id)}">${FL.esc(options.action)}</a></td>
+                <td><a class="btn btn-small btn-primary" href="${FL.documents.href(doc)}">${FL.esc(options.action)}</a></td>
               </tr>`;
             }).join("")}
           </tbody>
@@ -655,6 +695,11 @@ FL.documents = {
     loadDoc.then(function (doc) {
       if (!doc || (session.role === "reviewer" && !FL.documents.scoped(session).some(function (item) { return item.id === doc.id; }))) {
         page.innerHTML = FL.ui.empty("Missing document", "The document record was not found, or it is not assigned to you.");
+        return;
+      }
+      if (FL.reviewerNav && FL.reviewerNav.accomplishmentReviewUrl) {
+        doc = FL.reviewerNav.enrichDocFromUrlParams(doc, params);
+        window.location.replace(FL.reviewerNav.accomplishmentReviewUrl(doc));
         return;
       }
       const tevFocus = params.get("tev");
@@ -697,6 +742,15 @@ FL.documents = {
     );
   },
 
+  _isKra4Criterion: function (criterionId) {
+    return (
+      criterionId === "kra4-a" ||
+      criterionId === "kra4-b" ||
+      criterionId === "kra4-c" ||
+      criterionId === "kra4-d"
+    );
+  },
+
   _isKra2PrimaryAccomplishment: function (doc) {
     if (!doc || !FL.documents._isKra2Criterion(doc.criterionId)) return false;
     var ev = doc.kra2Evidence;
@@ -713,7 +767,18 @@ FL.documents = {
     return true;
   },
 
+  _isKra4PrimaryAccomplishment: function (doc) {
+    if (!doc || !FL.documents._isKra4Criterion(doc.criterionId)) return false;
+    var link = doc.extractedInfo && doc.extractedInfo.kra4EvidenceLink;
+    if (link && link.role === "supporting") return false;
+    return true;
+  },
+
   paintReview: function (session, doc, canDecide) {
+    if (FL.reviewerNav && FL.reviewerNav.accomplishmentReviewUrl) {
+      window.location.replace(FL.reviewerNav.accomplishmentReviewUrl(FL.reviewerNav.enrichDocFromUrlParams(doc)));
+      return;
+    }
     const faculty = FL.store.facultyById(doc.facultyId);
     const reviewer = FL.store.userById(doc.reviewerId);
     const scored = FL.scoring.scoreDocument(doc);
@@ -750,7 +815,9 @@ FL.documents = {
       (FL.documents._isKra2Criterion(doc.criterionId) &&
         FL.documents._isKra2PrimaryAccomplishment(doc)) ||
       (FL.documents._isKra3Criterion(doc.criterionId) &&
-        FL.documents._isKra3PrimaryAccomplishment(doc))
+        FL.documents._isKra3PrimaryAccomplishment(doc)) ||
+      (FL.documents._isKra4Criterion(doc.criterionId) &&
+        FL.documents._isKra4PrimaryAccomplishment(doc))
     ) {
       if (FL.kra2AReview) {
         FL.kra2AReview.paintReviewPage(session, doc, canDecide, {
@@ -2518,5 +2585,25 @@ FL.pages["reviewer-queue"] = function (session) {
   window.location.replace("documents.html?filter=pending-review");
 };
 
-FL.pages["reviewer-review"] = function (session) { FL.documents.renderReview(session, true); };
-FL.pages["admin-document-view"] = function (session) { FL.documents.renderReview(session, false); };
+FL.pages["reviewer-review"] = function (session) {
+  var page = document.getElementById("page");
+  page.innerHTML = FL.ui.loading("Opening accomplishment review", "Taking you to the Evidence Workspace…");
+  if (FL.reviewerNav && FL.reviewerNav.redirectLegacyDocumentReview) {
+    FL.reviewerNav.redirectLegacyDocumentReview(session).catch(function (err) {
+      page.innerHTML = FL.ui.empty("Could not open review", (err && err.message) || "Try again from the Evidence Workspace.");
+    });
+    return;
+  }
+  FL.documents.renderReview(session, true);
+};
+FL.pages["admin-document-view"] = function (session) {
+  var page = document.getElementById("page");
+  page.innerHTML = FL.ui.loading("Opening accomplishment monitor", "Taking you to the Evidence Workspace…");
+  if (FL.reviewerNav && FL.reviewerNav.redirectLegacyDocumentReview) {
+    FL.reviewerNav.redirectLegacyDocumentReview(session).catch(function (err) {
+      page.innerHTML = FL.ui.empty("Could not open monitor view", (err && err.message) || "Try again from the Evidence Workspace.");
+    });
+    return;
+  }
+  FL.documents.renderReview(session, false);
+};

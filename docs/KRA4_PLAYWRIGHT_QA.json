@@ -1,0 +1,20 @@
+{
+  "runAt": "2026-11-05T06:30:00+08:00",
+  "apiBase": "http://127.0.0.1:5001",
+  "webBase": "http://127.0.0.1:8090",
+  "database": "facultylink_qa",
+  "results": {
+    "reviewerApiFacultyAndCriteria": "PASS",
+    "reviewerApiEvidenceBundleAndPdf": "PASS",
+    "reviewerBrowserDocumentReview": "PASS",
+    "adminApiDraftNineteenIndicators": "PASS",
+    "adminBrowserKraConfiguration": "PASS"
+  },
+  "screenshots": [
+    "docs/qa-screenshots/kra4/kra4-document-review.png"
+  ],
+  "notes": [
+    "Use FLASK_API_BASE pointing at a QA-backed Flask instance (port 5001 in this run).",
+    "Static web must be served from web/ (port 8090 here; port 8080 was occupied by another server)."
+  ]
+}

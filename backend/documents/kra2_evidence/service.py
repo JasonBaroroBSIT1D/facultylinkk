@@ -23,6 +23,7 @@ from documents.kra2_evidence.bundle import (
     persist_link,
 )
 from documents.kra2_evidence.slots import required_slots, slot_label
+from documents.kra2_evidence.checklist_reconcile import reconcile_kra2_checklist_from_links
 from documents.kra2_evidence.submission_state import accomplishment_submitted
 from documents.kra2_evidence.reviewer_assessment import apply_reviewer_accomplishment_decision
 from documents.kra2_evidence.scoring import estimated_points_for_bundle
@@ -34,6 +35,37 @@ class Kra2EvidenceError(ValueError):
     def __init__(self, code: str, message: str = ""):
         super().__init__(message or code)
         self.code = code
+
+
+def _remarks_only_assessment(
+    assessed_points: float | int | str | None,
+    score_adjustment_reason: str,
+    remarks: str,
+) -> bool:
+    return (
+        bool((remarks or "").strip())
+        and assessed_points is None
+        and not (score_adjustment_reason or "").strip()
+    )
+
+
+def _persist_reviewer_prep_remarks(
+    bundle: dict[str, Any],
+    *,
+    reviewer_user,
+    remarks: str,
+) -> None:
+    from documents.kra2_evidence.bundle import _utcnow_iso
+
+    text = (remarks or "").strip()
+    bundle["reviewerRemarks"] = text
+    ra = bundle.get("reviewerAssessment")
+    ra = dict(ra) if isinstance(ra, dict) else {}
+    ra["draftRemarks"] = text
+    ra["draftSavedAt"] = _utcnow_iso()
+    ra["draftReviewerUserId"] = int(reviewer_user.id)
+    ra["draftReviewerDisplayName"] = getattr(reviewer_user, "full_name", "") or None
+    bundle["reviewerAssessment"] = ra
 
 
 def _indicator_for_doc(doc: Document) -> str:
@@ -393,6 +425,8 @@ def reviewer_update_kra2(
     bundle = bundle_from_document(primary)
     if not bundle:
         raise Kra2EvidenceError("bundle_not_initialized")
+    if reconcile_kra2_checklist_from_links(primary, bundle):
+        persist_bundle(primary, bundle)
     indicator_id = _indicator_for_doc(primary)
 
     if reassessment_action:
@@ -482,7 +516,42 @@ def reviewer_update_kra2(
         or bool((remarks or "").strip())
         or bool((score_adjustment_reason or "").strip())
     )
-    if (slot_id or review_status or assessment_fields) and not accomplishment_submitted(bundle):
+    if (
+        not slot_id
+        and not review_status
+        and not metadata
+        and assessment_fields
+        and not accomplishment_submitted(bundle)
+        and _remarks_only_assessment(assessed_points, score_adjustment_reason, remarks)
+    ):
+        _persist_reviewer_prep_remarks(bundle, reviewer_user=reviewer_user, remarks=remarks)
+        import json
+
+        db.session.add(
+            AuditLog(
+                actor_user_id=int(reviewer_user.id),
+                action="KRA II reviewer preparation notes",
+                target_id=primary.public_id,
+                detail=json.dumps(
+                    {"documentId": primary.public_id, "indicatorId": indicator_id},
+                    ensure_ascii=False,
+                )[:2000],
+            )
+        )
+        validation = _apply_validation_to_bundle(
+            bundle,
+            indicator_id=indicator_id,
+            faculty_profile_id=primary.faculty_profile_id,
+            public_id=primary.public_id,
+        )
+        persist_bundle(primary, bundle)
+        db.session.commit()
+        return primary, validation
+    if review_status and not accomplishment_submitted(bundle):
+        raise Kra2EvidenceError("accomplishment_not_submitted")
+    if slot_id and not accomplishment_submitted(bundle):
+        raise Kra2EvidenceError("accomplishment_not_submitted")
+    if assessment_fields and not accomplishment_submitted(bundle):
         raise Kra2EvidenceError("accomplishment_not_submitted")
     prior_review = (bundle.get("reviewStatus") or "").strip().lower()
     if prior_review == "approved" and review_status:
@@ -697,8 +766,11 @@ def bundle_api_payload(doc: Document, *, viewer_user=None) -> dict[str, Any]:
 
     bundle = bundle_from_document(doc)
     indicator_id = _indicator_for_doc(doc)
-    if isinstance(bundle, dict) and (bundle.get("indicatorId") or "").strip() != indicator_id:
-        bundle["indicatorId"] = indicator_id
+    if isinstance(bundle, dict):
+        if reconcile_kra2_checklist_from_links(doc, bundle):
+            persist_bundle(doc, bundle)
+        if (bundle.get("indicatorId") or "").strip() != indicator_id:
+            bundle["indicatorId"] = indicator_id
     validation = validate_kra2_bundle(bundle, indicator_id=indicator_id)
     if isinstance(bundle, dict):
         validation = _apply_validation_to_bundle(
@@ -883,6 +955,7 @@ def list_faculty_accomplishments(
         assessment = (bundle or {}).get("reviewerAssessment")
         assessed_pts = assessment.get("assessedPoints") if isinstance(assessment, dict) else None
         submitted = doc.submitted_at.isoformat() if getattr(doc, "submitted_at", None) else None
+        submitted_for_review = accomplishment_submitted(bundle)
         rows.append(
             {
                 "documentId": doc.public_id,
@@ -891,6 +964,8 @@ def list_faculty_accomplishments(
                 "criterionId": doc.criterion_id,
                 "status": doc.status,
                 "accomplishmentId": (bundle or {}).get("accomplishmentId"),
+                "submittedForReview": submitted_for_review,
+                "needsClassification": not submitted_for_review,
                 "reviewStatus": (bundle or {}).get("reviewStatus") or "pending",
                 "validationStatus": (validation or {}).get("validationStatus"),
                 "outputTitle": (bundle or {}).get("outputTitle"),

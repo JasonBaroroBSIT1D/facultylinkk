@@ -7,6 +7,7 @@ from sqlalchemy import case, desc, func, or_
 from extensions import db
 from models import Document, FacultyProfile, User
 
+from documents.serializers import stats_from_documents
 from documents.set_sef_parent_context import workspace_teaching_evaluation_stats
 from documents.status_map import is_awaiting_review
 
@@ -73,6 +74,7 @@ def workspace_stats(*, reviewer_user_id: int | None = None) -> dict:
                 "approvedEvidence": 0,
                 "needsRevision": 0,
                 "rejected": 0,
+                "documentStatusBreakdown": stats_from_documents([]),
             }
             base.update(workspace_teaching_evaluation_stats([]))
             if reviewer_user_id is not None:
@@ -95,28 +97,21 @@ def workspace_stats(*, reviewer_user_id: int | None = None) -> dict:
 
     tev_stats = workspace_teaching_evaluation_stats(docs)
 
-    if reviewer_user_id is None:
-        total_faculty = faculty_q.count()
-        return {
-            "totalFaculty": total_faculty,
-            "facultyWithDocuments": faculty_with_docs,
-            "totalDocuments": len(docs),
-            "pendingReview": pending,
-            "approvedEvidence": approved,
-            "needsRevision": revision,
-            "rejected": rejected,
-            **tev_stats,
-        }
-    return {
-        "assignedFaculty": faculty_q.count(),
+    status_breakdown = stats_from_documents(docs)
+    base = {
         "facultyWithDocuments": faculty_with_docs,
         "totalDocuments": len(docs),
         "pendingReview": pending,
         "approvedEvidence": approved,
         "needsRevision": revision,
         "rejected": rejected,
+        "documentStatusBreakdown": status_breakdown,
         **tev_stats,
     }
+    if reviewer_user_id is None:
+        total_faculty = faculty_q.count()
+        return {"totalFaculty": total_faculty, **base}
+    return {"assignedFaculty": faculty_q.count(), **base}
 
 
 def paginated_faculty_directory(

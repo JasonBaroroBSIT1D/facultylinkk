@@ -11,93 +11,131 @@ FL.admin = {
   },
 
   renderDashboard: function () {
-    const faculty = FL.store.faculty;
-    const docs = FL.store.documents;
-    const pending = docs.filter(function (doc) { return doc.status === "pending-review" || doc.status === "reviewer-required" || doc.status === "invalid"; }).length;
-    const approved = docs.filter(function (doc) { return doc.status === "approved"; }).length;
-    const attention = faculty.filter(function (person) { return FL.compliance(person.id).status !== "On track"; }).length;
-    const counts = FL.admin.validationCounts();
-    const kraBars = FL.rules.kras.map(function (kra) {
-      const total = faculty.reduce(function (sum, person) {
-        const row = FL.scoring.simulation(person.id).aggregate.kras.find(function (item) { return item.id === kra.id; });
-        return sum + (row ? row.earned : 0);
-      }, 0);
-      const average = faculty.length ? FL.scoring.round(total / faculty.length) : 0;
-      return { label: kra.code, average: average, max: kra.maxPoints };
-    });
-    const maxAverage = Math.max.apply(null, kraBars.map(function (bar) { return bar.max; }));
+    const host = document.getElementById("page");
+    host.innerHTML = FL.ui.loading("Loading dashboard", "Fetching live counts from PostgreSQL…");
+    if (FL.store.usesRealAdminApi() && FL.portal) {
+      FL.portal.loadAdminDashboard().then(function (data) {
+        FL.admin._paintLiveDashboard(data);
+      }).catch(function (error) {
+        host.innerHTML = FL.ui.emptyWithRetry(
+          "Dashboard could not load",
+          error.message || "Check that Flask is running and you are signed in as an administrator.",
+          "admin-dashboard-retry"
+        );
+        const btn = document.getElementById("admin-dashboard-retry");
+        if (btn) btn.addEventListener("click", function () { FL.admin.renderDashboard(); });
+      });
+      return;
+    }
+    FL.admin._paintLegacyDashboard();
+  },
+
+  _paintLiveDashboard: function (data) {
+    const summary = data.summary || {};
+    const kraRows = (data.kraOverview && data.kraOverview.estimated) || [];
+    const maxKra = Math.max.apply(null, kraRows.map(function (k) { return k.maxPoints || 100; }).concat([100]));
+    const facultyRows = data.facultyProgress || [];
+    const attention = data.attentionRequired || [];
+    const recent = data.recentDocuments || [];
     document.getElementById("page").innerHTML = `
       <div class="portal-page">
       ${FL.ui.pageHeader({
         eyebrow: "FacultyLink",
         title: "Administrator Dashboard",
-        lede: "Overview of faculty readiness, evidence, and reviewer activity."
+        lede: "Who is registered, what was submitted, and what still needs your attention."
       })}
       ${FL.ui.metricGrid([
-        { label: "Faculty", value: faculty.length, hint: attention + " need attention", iconKey: "faculty", accent: "teal" },
-        { label: "Documents", value: docs.length, hint: approved + " approved", iconKey: "documents" },
-        { label: "Awaiting validation", value: pending, hint: "Invalid, unclassified, or in queue", iconKey: "validation", accent: "warn" },
-        { label: "Valid documents", value: counts.valid, hint: counts.invalid + " invalid · " + counts["reviewer-required"] + " for reviewer", iconKey: "approved", accent: "ok" }
+        { label: "Total faculty", value: summary.totalFaculty, hint: "Active faculty accounts", iconKey: "faculty", accent: "teal", href: "faculty.html" },
+        { label: "Submitted documents", value: summary.submittedDocuments, hint: "Uploaded PDF files", iconKey: "documents", href: "documents.html" },
+        { label: "Waiting for review", value: summary.waitingForReview, hint: "Needs a reviewer decision", iconKey: "validation", accent: "warn", href: "documents.html?filter=pending-review" },
+        { label: "Approved documents", value: summary.approvedDocuments, hint: "Reviewer-approved files", iconKey: "approved", accent: "ok", href: "documents.html?filter=approved" }
       ])}
       <div class="split">
         <article class="card">
-          <div class="card-head"><h2>KRA estimates</h2></div>
-          <div class="bars">${kraBars.map(function (bar) {
-            const width = Math.round((bar.average / maxAverage) * 100);
-            return `<div class="bar-row"><span>${FL.esc(bar.label)}</span><div class="track"><span style="width:${width}%"></span></div><strong>${bar.average}</strong></div>`;
+          <div class="card-head"><h2>KRA progress overview</h2><span class="badge badge-info">Estimated average</span></div>
+          <div class="bars">${kraRows.map(function (bar) {
+            const avg = bar.averagePoints;
+            const width = avg == null ? 0 : Math.round((avg / maxKra) * 100);
+            const label = avg == null ? "—" : avg;
+            return `<div class="bar-row"><span>${FL.esc(bar.label)}</span><div class="track"><span style="width:${width}%"></span></div><strong>${label}</strong></div>`;
           }).join("")}</div>
-          <p class="note">Average approved points per faculty. Each KRA maximum is 100, before any bonus points stated in the circular.</p>
+          <p class="note">Average estimated KRA points across faculty with scores. Not an official promotion result.</p>
         </article>
         <article class="card">
-          <div class="card-head"><h2>Validation</h2></div>
-          <div class="bars">
-            <div class="bar-row"><span>Valid</span><div class="track"><span class="ok" style="width:${docs.length ? (counts.valid / docs.length) * 100 : 0}%"></span></div><strong>${counts.valid}</strong></div>
-            <div class="bar-row"><span>Reviewer</span><div class="track"><span class="warn" style="width:${docs.length ? (counts["reviewer-required"] / docs.length) * 100 : 0}%"></span></div><strong>${counts["reviewer-required"]}</strong></div>
-            <div class="bar-row"><span>Invalid</span><div class="track"><span class="bad" style="width:${docs.length ? (counts.invalid / docs.length) * 100 : 0}%"></span></div><strong>${counts.invalid}</strong></div>
-          </div>
+          <div class="card-head"><h2>Attention required</h2></div>
+          ${attention.length ? `<ul class="activity">${attention.map(function (item) {
+            return `<li><a href="${FL.esc(item.href || "documents.html")}"><strong>${FL.esc(item.title)}</strong></a><span>${FL.esc(item.detail || "")}</span></li>`;
+          }).join("")}</ul>` : FL.ui.empty("All clear", "No urgent administrator actions right now.")}
         </article>
       </div>
       <article class="card">
-        <div class="card-head"><h2>Compliance monitoring</h2><a href="reports.html">Open reports</a></div>
+        <div class="card-head"><h2>Faculty progress</h2><a href="reports.html">Open reports</a></div>
         <div class="table-wrap"><table class="data">
-          <thead><tr><th>Faculty</th><th>Rank</th><th>Submitted</th><th>Validated</th><th>Missing or held</th><th>Revision</th><th>KRA progress</th><th>Status</th></tr></thead>
-          <tbody>${faculty.map(function (person) {
-            const item = FL.compliance(person.id);
-            const sim = FL.scoring.simulation(person.id);
+          <thead><tr><th>Faculty</th><th>Current rank</th><th>Submitted</th><th>Approved</th><th>Waiting</th><th>Preparation</th><th></th></tr></thead>
+          <tbody>${facultyRows.length ? facultyRows.map(function (row) {
             return `<tr>
-              <td><a href="faculty-detail.html?id=${FL.esc(person.id)}">${FL.esc(person.name)}</a></td>
-              <td>${FL.esc(person.rank)}</td>
-              <td>${item.submitted}</td>
-              <td>${item.validated}</td>
-              <td>${item.missing}</td>
-              <td>${item.revision}</td>
-              <td class="progress-cell">${FL.ui.progress(sim.aggregate.kras.filter(function (kra) { return kra.earned > 0; }).length, 4, "")}</td>
-              <td>${FL.ui.statusBadge(item.status)}</td>
+              <td><a href="faculty-detail.html?id=${FL.esc(row.id)}">${FL.esc(row.name)}</a></td>
+              <td>${FL.esc(row.rank || "—")}</td>
+              <td>${row.documentTotal || 0}</td>
+              <td>${row.documentApproved || 0}</td>
+              <td>${row.documentPending || 0}</td>
+              <td>${FL.esc(row.preparationStatus || "—")}</td>
+              <td><a class="btn btn-small btn-ghost" href="documents.html?facultyId=${FL.esc(row.id)}">Evidence</a></td>
             </tr>`;
-          }).join("")}</tbody>
+          }).join("") : `<tr><td colspan="7">${FL.ui.empty("No faculty yet", "Create faculty accounts to begin tracking progress.")}</td></tr>`}
+          </tbody>
         </table></div>
       </article>
-      <div class="split">
-        <article class="card">
-          <div class="card-head"><h2>Recent documents</h2><a href="documents.html">All documents</a></div>
-          <div class="table-wrap"><table class="data">
-            <thead><tr><th>Document</th><th>Faculty</th><th>Status</th><th>Date</th></tr></thead>
-            <tbody>${docs.slice().sort(function (a, b) { return a.dateSubmitted < b.dateSubmitted ? 1 : -1; }).slice(0, 6).map(function (doc) {
-              const person = FL.store.facultyById(doc.facultyId);
-              return `<tr><td><a href="document-view.html?id=${FL.esc(doc.id)}">${FL.esc(doc.id)}</a><div class="sub">${FL.esc(doc.name)}</div></td><td>${FL.esc(person ? person.name : "")}</td><td>${FL.ui.statusBadge(doc.status)}</td><td>${FL.esc(FL.formatWhen(doc.dateSubmitted))}</td></tr>`;
-            }).join("")}</tbody>
-          </table></div>
-        </article>
-        <article class="card">
-          <div class="card-head"><h2>Reviewer activity</h2><a href="reviewers.html">Manage reviewers</a></div>
-          <ul class="activity">${FL.store.users.filter(function (user) { return user.role === "reviewer"; }).map(function (reviewer) {
-            const assigned = FL.store.faculty.filter(function (person) { return person.reviewerId === reviewer.id; }).length;
-            const open = FL.store.documents.filter(function (doc) { return doc.reviewerId === reviewer.id && FL.documents.needsAction(doc); }).length;
-            return `<li><strong>${FL.esc(reviewer.name)}</strong><span>${assigned} faculty · ${open} documents needing action</span></li>`;
-          }).join("")}</ul>
-        </article>
-      </div>
+      <article class="card">
+        <div class="card-head"><h2>Recent submissions</h2><a href="documents.html">All documents</a></div>
+        ${recent.length ? `<div class="table-wrap"><table class="data"><thead><tr><th>Document</th><th>Faculty</th><th>Status</th><th>Date</th></tr></thead><tbody>
+          ${recent.map(function (doc) {
+            return `<tr><td><a href="document-view.html?id=${FL.esc(doc.id)}">${FL.esc(doc.title || doc.id)}</a></td><td>${FL.esc(doc.facultyName || "")}</td><td>${FL.ui.statusBadge(doc.status)}</td><td>${FL.esc(FL.formatWhen(doc.submittedAt))}</td></tr>`;
+          }).join("")}
+        </tbody></table></div>` : FL.ui.empty("No submissions yet", "Documents will appear here when faculty upload evidence.")}
+      </article>
       </div>`;
+  },
+
+  _paintLegacyDashboard: function () {
+    const faculty = FL.store.faculty;
+    const docs = FL.store.documents;
+    const pending = docs.filter(function (doc) { return doc.status === "pending-review" || doc.status === "reviewer-required"; }).length;
+    const approved = docs.filter(function (doc) { return doc.status === "approved"; }).length;
+    FL.admin._paintLiveDashboard({
+      summary: {
+        totalFaculty: faculty.length,
+        submittedDocuments: docs.length,
+        waitingForReview: pending,
+        approvedDocuments: approved
+      },
+      kraOverview: { estimated: FL.rules.kras.map(function (kra) {
+        return { label: kra.code, averagePoints: null, maxPoints: kra.maxPoints };
+      }) },
+      facultyProgress: faculty.map(function (person) {
+        const item = FL.compliance(person.id);
+        return {
+          id: person.id,
+          name: person.name,
+          rank: person.rank,
+          documentTotal: item.submitted,
+          documentApproved: item.validated,
+          documentPending: item.missing,
+          preparationStatus: item.status
+        };
+      }),
+      attentionRequired: [],
+      recentDocuments: docs.slice(0, 6).map(function (doc) {
+        const person = FL.store.facultyById(doc.facultyId);
+        return {
+          id: doc.id,
+          title: doc.name,
+          facultyName: person ? person.name : "",
+          status: doc.status,
+          submittedAt: doc.dateSubmitted
+        };
+      })
+    });
   },
 
   refreshReviewerDirectory: function (draw) {
@@ -156,7 +194,7 @@ FL.admin = {
         host.innerHTML = FL.ui.empty("No reviewers", "Add a reviewer to begin assigning faculty.");
         return;
       }
-      host.innerHTML = `<table class="data"><thead><tr><th>Reviewer</th><th>Assigned faculty</th><th>Assigned documents</th><th>Review status</th><th></th></tr></thead><tbody>
+      host.innerHTML = `<table class="data portal-data-table"><thead><tr><th>Reviewer</th><th>Assigned faculty</th><th>Assigned documents</th><th>Review status</th><th class="action-cell"></th></tr></thead><tbody>
         ${reviewers.map(function (reviewer) {
           let facultyCount;
           let documentCount;
@@ -596,59 +634,101 @@ FL.admin = {
 
   renderReports: function () {
     const page = document.getElementById("page");
-    const colleges = {};
-    FL.store.faculty.forEach(function (person) { colleges[person.college] = true; });
-    page.innerHTML = `
+    page.innerHTML = FL.ui.loading("Loading reports", "Fetching analytics from PostgreSQL…");
+    const shell = function (colleges) {
+      page.innerHTML = `
       <div class="page-head"><div>
         <p class="eyebrow">Reports and analytics</p>
         <h1>Reports & Analytics</h1>
-        <p class="lede">Faculty readiness, KRA scores, submissions, validation, compliance, and evaluation-support results.</p>
+        <p class="lede">Faculty readiness, document status, and estimated rank simulation scores.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn btn-ghost" id="report-export-csv" href="#">Export CSV</a>
       </div></div>
       <div class="toolbar">
         <label class="filter"><span>College</span>
-          <select id="report-college"><option value="">All colleges</option>${Object.keys(colleges).sort().map(function (college) {
-            return `<option>${FL.esc(college)}</option>`;
+          <select id="report-college"><option value="">All colleges</option>${(colleges || []).map(function (college) {
+            return `<option value="${FL.esc(college)}">${FL.esc(college)}</option>`;
           }).join("")}</select>
         </label>
       </div>
       <div id="report-body"></div>`;
+      document.getElementById("report-college").addEventListener("change", draw);
+      const exportBtn = document.getElementById("report-export-csv");
+      if (exportBtn) {
+        exportBtn.addEventListener("click", function (event) {
+          event.preventDefault();
+          if (!FL.portal || !FL.store.usesRealAdminApi()) return;
+          const college = document.getElementById("report-college").value;
+          window.open(FL.portal.reportsCsvUrl({ college: college }), "_blank");
+        });
+      }
+      draw();
+    };
     const draw = function () {
       const college = document.getElementById("report-college").value;
-      const faculty = FL.store.faculty.filter(function (person) { return !college || person.college === college; });
-      const ids = {};
-      faculty.forEach(function (person) { ids[person.id] = true; });
-      const docs = FL.store.documents.filter(function (doc) { return ids[doc.facultyId]; });
-      const statusCounts = {};
-      docs.forEach(function (doc) { statusCounts[doc.status] = (statusCounts[doc.status] || 0) + 1; });
-      document.getElementById("report-body").innerHTML = `
-        <div class="stat-grid">
-          <article class="stat"><span>Faculty in view</span><strong>${faculty.length}</strong></article>
-          <article class="stat"><span>Document submissions</span><strong>${docs.length}</strong></article>
-          <article class="stat"><span>Approved</span><strong>${statusCounts.approved || 0}</strong></article>
-          <article class="stat"><span>Needs attention</span><strong>${faculty.filter(function (person) { return FL.compliance(person.id).status !== "On track"; }).length}</strong></article>
-        </div>
+      const body = document.getElementById("report-body");
+      body.innerHTML = FL.ui.loading("Updating report", "Applying filters…");
+      if (FL.portal && FL.store.usesRealAdminApi()) {
+        FL.portal.loadAdminReports({ college: college }).then(function (data) {
+          FL.admin._paintReportsBody(data);
+        }).catch(function (error) {
+          body.innerHTML = FL.ui.empty("Reports unavailable", error.message || "");
+        });
+        return;
+      }
+      FL.admin._paintReportsBody({
+        summary: { totalFaculty: FL.store.faculty.length, totalSubmissions: FL.store.documents.length, approvedDocuments: 0, needsAttention: 0 },
+        documentStatusCounts: {},
+        facultyReadiness: []
+      });
+    };
+    if (FL.portal && FL.store.usesRealAdminApi()) {
+      FL.portal.loadAdminReports({}).then(function (data) {
+        shell(data.colleges || []);
+      }).catch(function () { shell([]); });
+    } else {
+      const colleges = {};
+      FL.store.faculty.forEach(function (person) { if (person.college) colleges[person.college] = true; });
+      shell(Object.keys(colleges).sort());
+    }
+  },
+
+  _paintReportsBody: function (data) {
+    const summary = data.summary || {};
+    const statusCounts = data.documentStatusCounts || {};
+    const faculty = data.facultyReadiness || [];
+    const totalDocs = Object.keys(statusCounts).reduce(function (sum, key) { return sum + statusCounts[key]; }, 0);
+    document.getElementById("report-body").innerHTML = `
+        ${FL.ui.metricGrid([
+          { label: "Total faculty", value: summary.totalFaculty, iconKey: "faculty" },
+          { label: "Document submissions", value: summary.totalSubmissions, iconKey: "documents" },
+          { label: "Approved documents", value: summary.approvedDocuments, iconKey: "approved", accent: "ok" },
+          { label: "Needs attention", value: summary.needsAttention, iconKey: "validation", accent: "warn" }
+        ])}
         <article class="card">
-          <div class="card-head"><h2>Faculty readiness</h2></div>
+          <div class="card-head"><h2>Faculty readiness</h2><span class="badge badge-info">Estimated simulation</span></div>
           <div class="table-wrap"><table class="data">
-            <thead><tr><th>Faculty</th><th>College</th><th>Rank</th><th>KRA I</th><th>KRA II</th><th>KRA III</th><th>KRA IV</th><th>Computed score</th><th>Compliance</th></tr></thead>
-            <tbody>${faculty.map(function (person) {
-              const sim = FL.scoring.simulation(person.id);
-              const cells = sim.aggregate.kras.map(function (kra) { return `<td>${kra.credited}</td>`; }).join("");
-              return `<tr><td>${FL.esc(person.name)}</td><td>${FL.esc(person.college)}</td><td>${FL.esc(person.rank)}</td>${cells}<td>${sim.aggregate.total}</td><td>${FL.ui.statusBadge(FL.compliance(person.id).status)}</td></tr>`;
-            }).join("")}</tbody>
+            <thead><tr><th>Faculty</th><th>College</th><th>Rank</th><th>KRA I</th><th>KRA II</th><th>KRA III</th><th>KRA IV</th><th>Weighted</th><th>Readiness %</th><th>Status</th></tr></thead>
+            <tbody>${faculty.length ? faculty.map(function (row) {
+              return `<tr><td>${FL.esc(row.name)}</td><td>${FL.esc(row.college || "")}</td><td>${FL.esc(row.rank || "")}</td>
+                <td>${row.kra1 == null ? "—" : row.kra1}</td><td>${row.kra2 == null ? "—" : row.kra2}</td>
+                <td>${row.kra3 == null ? "—" : row.kra3}</td><td>${row.kra4 == null ? "—" : row.kra4}</td>
+                <td>${row.weightedScore == null ? "—" : row.weightedScore}</td>
+                <td>${row.preparationReadiness == null ? "N/A" : row.preparationReadiness}</td>
+                <td>${FL.esc(row.status || "")}</td></tr>`;
+            }).join("") : `<tr><td colspan="10">${FL.ui.empty("No faculty in this view", "Adjust filters or add faculty accounts.")}</td></tr>`}
+            </tbody>
           </table></div>
-          <p class="note">Scores are simulation estimates from approved documents. They are not the official sub-rank result.</p>
+          <p class="note">Weighted scores and KRA columns come from the backend rank simulation engine (estimated). Not official promotion decisions.</p>
         </article>
         <article class="card">
-          <div class="card-head"><h2>Document validation and submissions</h2></div>
-          <div class="bars">${Object.keys(statusCounts).map(function (status) {
-            const width = docs.length ? (statusCounts[status] / docs.length) * 100 : 0;
-            return `<div class="bar-row"><span>${FL.esc(status)}</span><div class="track"><span style="width:${width}%"></span></div><strong>${statusCounts[status]}</strong></div>`;
-          }).join("")}</div>
+          <div class="card-head"><h2>Document status</h2></div>
+          ${Object.keys(statusCounts).length ? `<div class="bars">${Object.keys(statusCounts).map(function (status) {
+            const width = totalDocs ? (statusCounts[status] / totalDocs) * 100 : 0;
+            return `<div class="bar-row"><span>${FL.esc(FL.portal ? FL.portal.statusLabel(status) : status)}</span><div class="track"><span style="width:${width}%"></span></div><strong>${statusCounts[status]}</strong></div>`;
+          }).join("")}</div>` : FL.ui.empty("No documents yet", "Submission activity will appear here.")}
         </article>`;
-    };
-    document.getElementById("report-college").addEventListener("change", draw);
-    draw();
   },
 
   renderProfile: function (session) {
@@ -816,9 +896,16 @@ FL.pages["admin-notifications"] = function (session) {
   const user = FL.store.userById(session.userId);
   const draw = function () {
     document.getElementById("page").innerHTML = FL.notifications.render(user);
-    FL.notifications.bind(user, draw);
+    FL.notifications.bind(user, draw, session);
   };
-  draw();
+  if (FL.portal && FL.store.usesRealAdminApi()) {
+    document.getElementById("page").innerHTML = FL.ui.loading("Loading notifications", "Fetching your alerts…");
+    FL.portal.loadNotifications(session).then(draw).catch(function (error) {
+      document.getElementById("page").innerHTML = FL.ui.empty("Notifications unavailable", error.message || "");
+    });
+  } else {
+    draw();
+  }
 };
 FL.pages["admin-audit"] = function () {
   document.getElementById("page").innerHTML = FL.audit.render();

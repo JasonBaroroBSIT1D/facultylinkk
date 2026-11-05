@@ -384,6 +384,8 @@ FL.store = {
       const rows = (data.documents || []).map(function (row) { return store._normalizeLiveDocument(row); });
       const others = store.documents.filter(function (d) { return d.facultyId !== facultyId; });
       store.documents = others.concat(rows);
+      store.facultyDocumentStats = store.facultyDocumentStats || {};
+      store.facultyDocumentStats[facultyId] = data.stats || null;
       return store.documents;
     });
   },
@@ -479,10 +481,24 @@ FL.store = {
       store.upsertDocument(saved);
       Object.assign(doc, saved);
       const facultyId = doc.facultyId || saved.facultyId;
+      const after = function (result) {
+        if (FL.portal && FL.portal.afterWorkspaceMutation) {
+          return FL.portal.afterWorkspaceMutation(session, { facultyId: facultyId }).then(function () { return result; });
+        }
+        return result;
+      };
+      const refreshEvidence = function (result) {
+        if (FL.evidence && FL.evidence.refreshCountsAfterReview) {
+          return FL.evidence.refreshCountsAfterReview(session, facultyId).then(function () { return result; });
+        }
+        return result;
+      };
       if (facultyId) {
-        return store.loadEstimatedAssessment(facultyId).then(function () { return saved; });
+        return store.loadEstimatedAssessment(facultyId).then(function () {
+          return refreshEvidence(saved);
+        }).then(function (result) { return after(result); });
       }
-      return saved;
+      return after(saved);
     });
   },
 
@@ -669,6 +685,9 @@ FL.store = {
       { reviewerId: reviewerId }
     ).then(function (data) {
       if (data.faculty) store.upsertServerFaculty(data.faculty);
+      if (FL.portal && FL.portal.afterWorkspaceMutation) {
+        return FL.portal.afterWorkspaceMutation(null, { facultyId: facultyId }).then(function () { return data; });
+      }
       return data;
     });
   },
@@ -914,7 +933,7 @@ FL.store = {
 
   loadEvaluationPeriods: function (session) {
     const store = this;
-    if (!store.usesRealAdminApi()) {
+    if (!store.usesRealAdminApi() && !store.usesLiveReviewerApi()) {
       return Promise.resolve(store.evaluationPeriods);
     }
     const role = session && session.role;
@@ -931,6 +950,9 @@ FL.store = {
     if (store.usesRealAdminApi()) {
       return FL.apiClient.adminRequest("PUT", "/api/admin/evaluation-periods", { periods: periods }).then(function (data) {
         store.evaluationPeriods = data.evaluationPeriods || periods;
+        if (FL.portal && FL.portal.afterWorkspaceMutation) {
+          return FL.portal.afterWorkspaceMutation(null, { scope: "schedule" }).then(function () { return data; });
+        }
         return data;
       });
     }

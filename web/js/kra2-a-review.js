@@ -9,11 +9,20 @@ function _flEvidenceApiForDoc(doc) {
 
 function _flEvidenceApiForCriterion(criterionKey) {
   var cid = criterionKey || "";
-  if (cid.indexOf("kra3-") === 0 && FL.kra3Evidence) return FL.kra3Evidence;
+  if (cid.indexOf("kra4-") === 0) {
+    if (!FL.kra4Evidence) throw new Error("KRA IV evidence module is not loaded on this page.");
+    return FL.kra4Evidence;
+  }
+  if (cid.indexOf("kra3-") === 0) {
+    if (!FL.kra3Evidence) throw new Error("KRA III evidence module is not loaded on this page.");
+    return FL.kra3Evidence;
+  }
+  if (!FL.kra2Evidence) throw new Error("KRA II evidence module is not loaded on this page.");
   return FL.kra2Evidence;
 }
 
 function _flKraLabelForCriterion(criterionKey) {
+  if (criterionKey && criterionKey.indexOf("kra4-") === 0) return "KRA IV";
   return criterionKey && criterionKey.indexOf("kra3-") === 0 ? "KRA III" : "KRA II";
 }
 
@@ -25,15 +34,69 @@ FL.kra2AReview = {
   _pageDelegationBound: false,
 
   _reviewHref: function (doc) {
-    var crit = (doc && doc.criterionId) || "kra2-a";
-    var kra = crit.indexOf("kra3-") === 0 ? "kra3" : "kra2";
-    var base = "document-review.html?id=" + encodeURIComponent(doc.id || doc.documentId);
-    var q = [
-      doc.facultyId ? "faculty=" + encodeURIComponent(doc.facultyId) : "",
-      "kra=" + kra,
-      "criterion=" + encodeURIComponent(crit)
-    ].filter(Boolean).join("&");
-    return base + "&" + q;
+    if (FL.reviewerNav && FL.reviewerNav.accomplishmentReviewUrl) {
+      return FL.reviewerNav.accomplishmentReviewUrl(
+        Object.assign({}, doc, { id: doc.id || doc.documentId })
+      );
+    }
+    return "documents.html";
+  },
+
+  mountWorkspaceAccomplishmentReview: function (session, state, isAdmin, host, docId, criterion, scrollDocId) {
+    if (!docId || !host) {
+      return FL.kra2AReview.mountAccomplishmentListInWorkspace(session, state, isAdmin, host, criterion);
+    }
+    var back = FL.reviewerNav.criterionWorkspaceUrl({
+      facultyId: state.facultyId,
+      kraId: state.kraId || FL.reviewerNav.criterionToKra(state.criterionId),
+      criterionId: state.criterionId,
+      docFilter: state.docFilter || "all"
+    });
+    var liveHost = function () {
+      return document.getElementById("evidence-body") || host;
+    };
+    liveHost().innerHTML = FL.ui.loading("Loading accomplishment", "Fetching documents and scoring…");
+    var cached = FL.store.documentById(docId);
+    var docPromise = cached
+      ? Promise.resolve(cached)
+      : FL.store.refreshLiveDocument(session, docId);
+    docPromise.then(function (doc) {
+      if (!doc) throw new Error("Document was not found.");
+      if (!doc.criterionId && state.criterionId) doc.criterionId = state.criterionId;
+      if (!doc.facultyId && state.facultyId) doc.facultyId = state.facultyId;
+      if (!FL.reviewerNav.isAccomplishmentCriterion(doc.criterionId)) {
+        throw new Error("This document is not part of an accomplishment workspace. Open it from its KRA folder.");
+      }
+      return FL.kra2AReview.paintReviewPage(session, doc, !isAdmin && session.role === "reviewer", {
+        faculty: FL.store.facultyById(state.facultyId),
+        back: back,
+        backLabel: "Back to accomplishments",
+        mountHost: liveHost(),
+        skipFacultyDocsLoad: !!cached,
+        scrollDocId: scrollDocId || state.scrollDoc || ""
+      });
+    }).catch(function (err) {
+      var el = liveHost();
+      el.innerHTML = FL.ui.emptyWithRetry(
+        "Could not load accomplishment",
+        (err && err.message) || "Try again.",
+        "kra2-ws-review-retry"
+      );
+      var btn = document.getElementById("kra2-ws-review-retry");
+      if (btn) {
+        btn.addEventListener("click", function () {
+          FL.kra2AReview.mountWorkspaceAccomplishmentReview(
+            session,
+            state,
+            isAdmin,
+            liveHost(),
+            docId,
+            criterion,
+            scrollDocId
+          );
+        });
+      }
+    });
   },
 
   _isKra2Criterion: function (criterionKey) {
@@ -44,7 +107,11 @@ FL.kra2AReview = {
       criterionKey === "kra3-a" ||
       criterionKey === "kra3-b" ||
       criterionKey === "kra3-c" ||
-      criterionKey === "kra3-d"
+      criterionKey === "kra3-d" ||
+      criterionKey === "kra4-a" ||
+      criterionKey === "kra4-b" ||
+      criterionKey === "kra4-c" ||
+      criterionKey === "kra4-d"
     );
   },
 
@@ -80,6 +147,17 @@ FL.kra2AReview = {
   mountAccomplishmentListInWorkspace: function (session, state, isAdmin, host, criterion) {
     var facultyId = state.facultyId;
     var criterionKey = (state && state.criterionId) || "kra2-a";
+    if (state.focusDoc) {
+      return FL.kra2AReview.mountWorkspaceAccomplishmentReview(
+        session,
+        state,
+        isAdmin,
+        host,
+        state.focusDoc,
+        criterion,
+        state.scrollDoc
+      );
+    }
     var person = FL.store.facultyById(facultyId);
     var mountSeq = (FL.kra2AReview._workspaceMountSeq += 1);
 
@@ -121,11 +199,47 @@ FL.kra2AReview = {
             return FL.kra2AReview._reviewHref({
               id: row.documentId,
               facultyId: facultyId,
-              criterionId: criterionKey
+              criterionId: criterionKey,
+              kraId: state.kraId || FL.reviewerNav.criterionToKra(criterionKey)
             });
           }
         });
+        FL.kra2AReview._appendOrphanDocumentsSection(host, session, state, criterionKey, rows);
+        if (FL.evidence && FL.evidence.criterionScrollStorageKey) {
+          host.addEventListener(
+            "click",
+            function (ev) {
+              var link = ev.target && ev.target.closest ? ev.target.closest("a[href*=\"focusDoc=\"]") : null;
+              if (!link) return;
+              try {
+                sessionStorage.setItem(
+                  FL.evidence.criterionScrollStorageKey(facultyId, criterionKey),
+                  String(window.scrollY || 0)
+                );
+              } catch (_e) {
+                /* ignore */
+              }
+            },
+            true
+          );
+          try {
+            var scrollKey = FL.evidence.criterionScrollStorageKey(facultyId, criterionKey);
+            var savedY = sessionStorage.getItem(scrollKey);
+            if (savedY != null && savedY !== "") {
+              sessionStorage.removeItem(scrollKey);
+              var y = parseInt(savedY, 10) || 0;
+              requestAnimationFrame(function () {
+                window.scrollTo(0, y);
+              });
+            }
+          } catch (_e2) {
+            /* ignore */
+          }
+        }
         FL.kra2AReview._maybeShowApprovedToast();
+        if (state.highlightDoc && FL.evidence && FL.evidence.highlightAccomplishmentCard) {
+          FL.evidence.highlightAccomplishmentCard(state.highlightDoc);
+        }
         return _flEvidenceApiForCriterion(criterionKey).fetchFacultySummary(session, facultyId, criterionKey).catch(function () {
           return {};
         });
@@ -145,6 +259,34 @@ FL.kra2AReview = {
       });
   },
 
+  _appendOrphanDocumentsSection: function (host, session, state, criterionKey, rows) {
+    var listed = {};
+    (rows || []).forEach(function (row) {
+      if (row && row.documentId) listed[row.documentId] = true;
+    });
+    var orphans = FL.evidence._facultyDocs(session, state.facultyId, state).filter(function (d) {
+      if (d.criterionId !== criterionKey || listed[d.id]) return false;
+      if (FL.reviewerNav && FL.reviewerNav.isLinkedSupportingDocument(d)) return false;
+      return true;
+    });
+    if (!orphans.length) return;
+    var wrap = document.createElement("section");
+    wrap.className = "card evidence-orphan-docs";
+    wrap.innerHTML =
+      "<h3 class=\"evidence-section-title\">Needs classification</h3>" +
+      "<p class=\"note\">These PDFs are stored for this criterion but are not linked to an accomplishment bundle yet. Document validation or simulation status does not create an accomplishment link—classify or attach each file in the faculty accomplishment workflow.</p>" +
+      "<ul class=\"activity\">" +
+      orphans.map(function (doc) {
+        var href = FL.reviewerNav && FL.reviewerNav.accomplishmentReviewUrl
+          ? FL.reviewerNav.accomplishmentReviewUrl(doc)
+          : "documents.html?highlightDoc=" + encodeURIComponent(doc.id || "");
+        return "<li><a href=\"" + FL.esc(href) + "\"><strong>" + FL.esc(doc.fileName || doc.name || doc.id) + "</strong></a> " +
+          FL.evidence.documentReviewBadge(doc) + "</li>";
+      }).join("") +
+      "</ul>";
+    host.querySelector(".kra2-a-workspace").appendChild(wrap);
+  },
+
   _maybeShowApprovedToast: function () {
     try {
       if (typeof sessionStorage === "undefined") return;
@@ -156,27 +298,62 @@ FL.kra2AReview = {
     }
   },
 
+  _resolveMountEl: function (ctx) {
+    ctx = ctx || {};
+    if (ctx.mountHost && ctx.mountHost.isConnected) return ctx.mountHost;
+    if (ctx.mountHost) {
+      var live = document.getElementById("evidence-body");
+      if (live) return live;
+    }
+    return document.getElementById("page");
+  },
+
   paintReviewPage: function (session, doc, canDecide, ctx) {
+    ctx = ctx || {};
     FL.kra2AReview._ensurePageDelegation(session);
-    var page = document.getElementById("page");
-    page.innerHTML = FL.ui.loading("Loading submission…");
+    var mountEl = FL.kra2AReview._resolveMountEl(ctx);
+    if (!mountEl) return Promise.reject(new Error("Review view is not available."));
+    mountEl.innerHTML = FL.ui.loading("Loading submission…", "Fetching accomplishment details…");
     var configReady = FL.store.refreshScoringConfiguration({ force: false }).catch(function () {
       return null;
     });
     var facultyId = doc.facultyId || (ctx && ctx.faculty && ctx.faculty.id) || "";
-    var docsPromise =
-      facultyId && FL.store && FL.store.loadFacultyDocuments
-        ? FL.store.loadFacultyDocuments(session, facultyId).catch(function () {
-            return [];
-          })
-        : Promise.resolve([]);
-    Promise.all([configReady, _flEvidenceApiForDoc(doc).fetchBundle(session, doc.id), docsPromise]).then(function (results) {
+    var docsPromise;
+    if (ctx.skipFacultyDocsLoad) {
+      docsPromise = Promise.resolve(
+        (FL.store.documents || []).filter(function (d) { return d.facultyId === facultyId; })
+      );
+    } else if (facultyId && FL.store && FL.store.loadFacultyDocuments) {
+      docsPromise = FL.store.loadFacultyDocuments(session, facultyId).catch(function () {
+        return [];
+      });
+    } else {
+      docsPromise = Promise.resolve([]);
+    }
+    var api = _flEvidenceApiForDoc(doc);
+    var bundlePromise = api.fetchBundle(session, doc.id);
+    var timed =
+      api && typeof api._withTimeout === "function"
+        ? api._withTimeout(bundlePromise, 25000, "Accomplishment request")
+        : bundlePromise;
+    return Promise.all([configReady, timed, docsPromise]).then(function (results) {
+      if (ctx.mountHost && !ctx.mountHost.isConnected) {
+        ctx.mountHost = document.getElementById("evidence-body") || ctx.mountHost;
+      }
       FL.kra2AReview._renderReview(session, doc, canDecide, ctx, results[1], results[2]);
     }).catch(function (err) {
-      page.innerHTML = FL.ui.empty(
-        "Could not load",
-        (err && err.message) || "This submission could not be loaded. Try again from the faculty list."
+      var msg = (err && err.message) || "This submission could not be loaded.";
+      mountEl.innerHTML = FL.ui.emptyWithRetry(
+        "Could not load accomplishment",
+        msg,
+        "kra2-review-retry"
       );
+      var btn = document.getElementById("kra2-review-retry");
+      if (btn) {
+        btn.addEventListener("click", function () {
+          FL.kra2AReview.paintReviewPage(session, doc, canDecide, ctx);
+        });
+      }
     });
   },
 
@@ -213,6 +390,8 @@ FL.kra2AReview = {
       remarks: bundle.reviewerRemarks || "",
       backHref: ctx.back || "documents.html",
       backLabel: ctx.backLabel || "Back",
+      mountHost: ctx.mountHost || null,
+      scrollDocId: ctx.scrollDocId || "",
       facultyName: (ctx.faculty && ctx.faculty.name) || "Faculty",
       verificationSave: { pending: false, requestId: 0 },
       session: session,
@@ -399,7 +578,55 @@ FL.kra2AReview = {
         ev.preventDefault();
         FL.kra2AReview._handleSaveMetadata(activeSession, state, btn);
       }
+      var kra34Btn = ev.target && ev.target.closest ? ev.target.closest("[data-kra34-action]") : null;
+      if (kra34Btn) {
+        ev.preventDefault();
+        var k34 = kra34Btn.getAttribute("data-kra34-action");
+        if (k34 === "fill-ocr") FL.kra2AReview._handleKra34FillOcr(activeSession, state, kra34Btn);
+        if (k34 === "save-metadata") FL.kra2AReview._handleKra34SaveMetadata(activeSession, state, kra34Btn);
+      }
     });
+  },
+
+  _handleKra34FillOcr: function (session, state, btn) {
+    if (btn) btn.disabled = true;
+    FL.kra2AReview._setMetadataIndicator("kra34-save-metadata-indicator", "saving", "Applying…");
+    try {
+      var filled = FL.kra34Metadata.applyOcrToInputs(state, { onlyEmpty: true });
+      if (filled.length) {
+        FL.kra2AReview._setMetadataIndicator(
+          "kra34-save-metadata-indicator",
+          "saved",
+          "Applied OCR to: " + filled.join(", ")
+        );
+      } else {
+        FL.kra2AReview._setMetadataIndicator(
+          "kra34-save-metadata-indicator",
+          "error",
+          "No OCR values to apply."
+        );
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  },
+
+  _handleKra34SaveMetadata: function (session, state, btn) {
+    var body = FL.kra34Metadata.collectCorrectionBody(state);
+    if (btn) btn.disabled = true;
+    FL.kra2AReview._setMetadataIndicator("kra34-save-metadata-indicator", "saving");
+    return FL.kra2AReview._patchAndRefresh(session, state, body)
+      .then(function () {
+        FL.kra2AReview._setMetadataIndicator("kra34-save-metadata-indicator", "saved");
+        if (FL.ui && FL.ui.toast) FL.ui.toast("Corrections saved.", "ok");
+        FL.kra2AReview._renderPage(session, state);
+      })
+      .catch(function (err) {
+        if (btn) btn.disabled = false;
+        var msg = (err && err.message) || "Could not save corrections.";
+        FL.kra2AReview._setMetadataIndicator("kra34-save-metadata-indicator", "error", msg);
+        if (FL.ui && FL.ui.toast) FL.ui.toast(msg, "danger");
+      });
   },
 
   _setMetadataIndicator: function (elementId, phase, message) {
@@ -476,7 +703,9 @@ FL.kra2AReview = {
     FL.kra2AReview._activeReviewState = state;
     FL.kra2AReview._ensurePageDelegation(session);
     FL.kra2AReview._captureFormDraft(state);
-    var page = document.getElementById("page");
+    var page = FL.kra2AReview._resolveMountEl(state) || document.getElementById("page");
+    if (!page) return;
+    state.mountHost = page;
     page.innerHTML = FL.kra2AWorkspaceUi.compactReviewPageHtml(state);
     if (state._draftAssessedPoints != null) {
       var assessedEl = document.getElementById("kra2-assessed-points");
@@ -487,6 +716,22 @@ FL.kra2AReview = {
       if (reasonEl) reasonEl.value = state._draftAdjustmentReason;
     }
     FL.kra2AReview._bindPage(session, state);
+    FL.kra2AReview._scrollToSupportingDocument(state);
+  },
+
+  _scrollToSupportingDocument: function (state) {
+    var scrollId = (state && (state.scrollDocId || (state.ctx && state.ctx.scrollDocId))) || "";
+    if (!scrollId || scrollId === (state.doc && state.doc.id)) return;
+    var btn = document.querySelector('[data-kra2-preview-doc="' + scrollId.replace(/"/g, '\\"') + '"]');
+    if (btn) {
+      btn.closest(".cc-evidence-card") && btn.closest(".cc-evidence-card").classList.add("evidence-accomplishment-card--highlight");
+      btn.scrollIntoView({ behavior: "smooth", block: "center" });
+      btn.click();
+      return;
+    }
+    FL.kra2AReview._mountKra2DocumentPreview(state.session, state, scrollId, "");
+    var frame = document.querySelector(".kra2-section-documents");
+    if (frame) frame.scrollIntoView({ behavior: "smooth", block: "start" });
   },
 
   _setSaveIndicator: function (slotId, phase) {
@@ -497,6 +742,17 @@ FL.kra2AReview = {
   },
 
   _autoSaveSlot: function (session, state, slotId, status, selectEl) {
+    if (
+      FL.reviewerAccomplishmentState &&
+      !FL.reviewerAccomplishmentState.canVerifyEvidence(state)
+    ) {
+      if (selectEl && selectEl.value !== status) {
+        var items = state.evidenceItems || [];
+        var match = items.filter(function (it) { return it.slotId === slotId; })[0];
+        if (match && match.status) selectEl.value = match.status;
+      }
+      return Promise.resolve();
+    }
     if (FL.kra2AWorkspaceUi.isReviewDecisionLocked(state)) return Promise.resolve();
     if (state.verificationSave.pending) return Promise.resolve();
     state.verificationSave.pending = true;
@@ -505,7 +761,10 @@ FL.kra2AReview = {
     if (selectEl) selectEl.disabled = true;
     return _flEvidenceApiForDoc(state.doc)
       .patchBundle(session, state.doc.id, { evidenceSlot: slotId, status: status })
-      .then(function () {
+      .then(function (patchResp) {
+        if (patchResp && (patchResp.bundle || patchResp.validation || patchResp.scoring)) {
+          FL.kra2AReview._mergePayload(state, patchResp);
+        }
         return _flEvidenceApiForDoc(state.doc).fetchBundle(session, state.doc.id);
       })
       .then(function (fresh) {
@@ -515,14 +774,18 @@ FL.kra2AReview = {
         FL.kra2AReview._setSaveIndicator(slotId, "saved");
         if (selectEl) selectEl.disabled = false;
         FL.kra2AReview._updateReviewValidationUi(session, state);
+        if (FL.ui && FL.ui.toast) {
+          FL.ui.toast("Evidence verification saved.", "ok");
+        }
         return fresh;
       })
       .catch(function (err) {
         if (reqId !== state.verificationSave.requestId) throw err;
         FL.kra2AReview._setSaveIndicator(slotId, "error");
         if (selectEl) selectEl.disabled = false;
+        var msg = (err && err.message) || "Could not save verification.";
         if (FL.ui && FL.ui.toast) {
-          FL.ui.toast("Could not save verification. Try changing the status again.", "danger");
+          FL.ui.toast(msg, "danger");
         }
         throw err;
       })
@@ -750,12 +1013,39 @@ FL.kra2AReview = {
         FL.kra2AReview._mountKra2DocumentPreview(session, state, docId, label);
       });
     });
-    document.querySelectorAll(".kra2-slot-status").forEach(function (sel) {
-      sel.addEventListener("change", function () {
-        var slotId = sel.getAttribute("data-slot");
-        FL.kra2AReview._autoSaveSlot(session, state, slotId, sel.value, sel);
+    if (!FL.reviewerAccomplishmentState || FL.reviewerAccomplishmentState.canVerifyEvidence(state)) {
+      document.querySelectorAll(".kra2-slot-status").forEach(function (sel) {
+        sel.addEventListener("change", function () {
+          var slotId = sel.getAttribute("data-slot");
+          FL.kra2AReview._autoSaveSlot(session, state, slotId, sel.value, sel);
+        });
       });
-    });
+    }
+
+    var savePrepBtn = document.getElementById("kra2-save-prep-notes");
+    if (savePrepBtn) {
+      savePrepBtn.addEventListener("click", function () {
+        var indicator = document.getElementById("kra2-save-prep-notes-indicator");
+        var notesEl = document.getElementById("kra2-prep-notes");
+        var remarks = notesEl ? notesEl.value : "";
+        savePrepBtn.disabled = true;
+        if (indicator) indicator.textContent = "Saving…";
+        FL.kra2AReview._patchAndRefresh(session, state, { remarks: remarks })
+          .then(function () {
+            if (indicator) indicator.textContent = "Notes saved";
+            if (FL.ui && FL.ui.toast) FL.ui.toast("Preparation notes saved.", "ok");
+          })
+          .catch(function (err) {
+            if (indicator) indicator.textContent = "Could not save";
+            if (FL.ui && FL.ui.toast) {
+              FL.ui.toast((err && err.message) || "Could not save notes.", "danger");
+            }
+          })
+          .finally(function () {
+            savePrepBtn.disabled = false;
+          });
+      });
+    }
 
     var recalcBtn = document.getElementById("kra2-recalc-contribution");
     if (recalcBtn) {
@@ -827,7 +1117,7 @@ FL.kra2AReview = {
               } else if (st === "rejected") {
                 FL.ui.toast("Assessment saved. Rejection status is unchanged.", "ok");
               } else {
-                FL.ui.toast("Assessment saved (not approved).", "ok");
+                FL.ui.toast("Assessment saved successfully.", "ok");
               }
             }
           })

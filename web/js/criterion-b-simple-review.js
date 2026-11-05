@@ -27,16 +27,72 @@ FL.criterionBSimpleReview = {
   ],
 
   _reviewHref: function (doc) {
-    const base = "document-review.html?id=" + encodeURIComponent(doc.id);
-    const q = [
-      doc.facultyId ? "faculty=" + encodeURIComponent(doc.facultyId) : "",
-      "kra=" + encodeURIComponent(doc.kraId || "kra1"),
-      "criterion=kra1-b"
-    ].filter(Boolean).join("&");
-    return base + "&" + q;
+    if (FL.reviewerNav && FL.reviewerNav.accomplishmentReviewUrl) {
+      return FL.reviewerNav.accomplishmentReviewUrl(
+        Object.assign({}, doc, { criterionId: "kra1-b", kraId: doc.kraId || "kra1" })
+      );
+    }
+    return "documents.html";
+  },
+
+  mountWorkspaceAccomplishmentReview: function (session, state, isAdmin, host, docId, criterion, scrollDocId) {
+    const back = FL.reviewerNav.criterionWorkspaceUrl({
+      facultyId: state.facultyId,
+      kraId: state.kraId || "kra1",
+      criterionId: "kra1-b",
+      docFilter: state.docFilter || "all"
+    });
+    const liveHost = function () {
+      return document.getElementById("evidence-body") || host;
+    };
+    liveHost().innerHTML = FL.ui.loading("Loading accomplishment", "Fetching Criterion B evidence…");
+    const cached = FL.store.documentById(docId);
+    const docPromise = cached ? Promise.resolve(cached) : FL.store.refreshLiveDocument(session, docId);
+    docPromise.then(function (doc) {
+      if (!doc) throw new Error("Document was not found.");
+      return FL.criterionBSimpleReview.paintReviewPage(session, doc, !isAdmin && session.role === "reviewer", {
+        faculty: FL.store.facultyById(state.facultyId),
+        back: back,
+        backLabel: "Back to accomplishments",
+        mountHost: liveHost(),
+        skipFacultyDocsLoad: !!cached,
+        scrollDocId: scrollDocId || state.scrollDoc || ""
+      });
+    }).catch(function (err) {
+      liveHost().innerHTML = FL.ui.emptyWithRetry(
+        "Could not load accomplishment",
+        (err && err.message) || "Try again.",
+        "cb-ws-review-retry"
+      );
+      const btn = document.getElementById("cb-ws-review-retry");
+      if (btn) {
+        btn.addEventListener("click", function () {
+          FL.criterionBSimpleReview.mountWorkspaceAccomplishmentReview(
+            session,
+            state,
+            isAdmin,
+            liveHost(),
+            docId,
+            criterion,
+            scrollDocId
+          );
+        });
+      }
+    });
   },
 
   mountAccomplishmentListInWorkspace: function (session, state, isAdmin, host, criterion) {
+    if (state.focusDoc) {
+      return FL.criterionBSimpleReview.mountWorkspaceAccomplishmentReview(
+        session,
+        state,
+        isAdmin,
+        host,
+        state.focusDoc,
+        criterion,
+        state.scrollDoc
+      );
+    }
     const facultyId = state.facultyId;
     const person = FL.store.facultyById(facultyId);
     const docs = FL.evidence._facultyDocs(session, facultyId).filter(function (d) {
@@ -54,6 +110,9 @@ FL.criterionBSimpleReview = {
         return FL.criterionBSimpleReview._reviewHref(doc);
       }
     });
+    if (FL.evidence && FL.evidence.highlightAccomplishmentCard) {
+      FL.evidence.highlightAccomplishmentCard(state.highlightDoc);
+    }
   },
 
   _draftStorageKey: function (docId) {
@@ -97,10 +156,28 @@ FL.criterionBSimpleReview = {
   },
 
   paintReviewPage: function (session, doc, canDecide, ctx) {
-    const page = document.getElementById("page");
+    ctx = ctx || {};
+    const page = ctx.mountHost || document.getElementById("page");
+    if (!page) return Promise.reject(new Error("Review view is not available."));
     page.innerHTML = FL.ui.loading("Loading accomplishment…");
-    FL.criterionBEvidence.fetchBundle(session, doc.id).then(function (payload) {
+    var bundlePromise = FL.criterionBEvidence.fetchBundle(session, doc.id);
+    var timed =
+      FL.criterionBEvidence && typeof FL.criterionBEvidence._withTimeout === "function"
+        ? FL.criterionBEvidence._withTimeout(bundlePromise, 25000, "Accomplishment request")
+        : bundlePromise;
+    return timed.then(function (payload) {
       const state = FL.criterionBSimpleReview._createState(doc, payload, canDecide);
+      if (
+        FL.reviewerAccomplishmentState &&
+        FL.reviewerAccomplishmentState.isDraftAwaitingFaculty({
+          doc: doc,
+          bundle: state.bundle,
+          validation: state.validation,
+          canDecide: state.canDecide
+        })
+      ) {
+        state.step = "draft-prep";
+      }
       const stored = FL.criterionBSimpleReview._loadStoredDraft(doc.id);
       if (stored) {
         state.drafts = stored.drafts || state.drafts;
@@ -116,9 +193,20 @@ FL.criterionBSimpleReview = {
       state.facultyName = ctx.faculty ? ctx.faculty.name : "Faculty";
       state.backHref = ctx.back || "documents.html";
       state.backLabel = ctx.backLabel || "Back to Evidence Workspace";
+      state.mountHost = ctx.mountHost || null;
       FL.criterionBSimpleReview._renderStep(session, state);
     }).catch(function (err) {
-      page.innerHTML = FL.ui.empty("Could not load", FL.esc(err.message || "Try again."));
+      page.innerHTML = FL.ui.emptyWithRetry(
+        "Could not load accomplishment",
+        FL.esc(err.message || "Try again."),
+        "cb-review-retry"
+      );
+      const btn = document.getElementById("cb-review-retry");
+      if (btn) {
+        btn.addEventListener("click", function () {
+          FL.criterionBSimpleReview.paintReviewPage(session, doc, canDecide, ctx);
+        });
+      }
     });
   },
 
@@ -209,7 +297,13 @@ FL.criterionBSimpleReview = {
 
   _renderStep: function (session, state) {
     FL.criterionBSimpleReview._saveStoredDraft(state.doc.id, state);
-    const page = document.getElementById("page");
+    const page = state.mountHost || document.getElementById("page");
+    if (!page) return;
+    if (state.step === "draft-prep") {
+      page.innerHTML = FL.criterionBSimpleReview._draftPrepStepHtml(state);
+      FL.criterionBSimpleReview._bindDraftPrepStep(session, state);
+      return;
+    }
     if (state.step === "files") {
       page.innerHTML = FL.criterionBSimpleReview._filesStepHtml(state);
       FL.criterionBSimpleReview._bindFilesStep(session, state);
@@ -227,6 +321,80 @@ FL.criterionBSimpleReview = {
     }
     page.innerHTML = FL.criterionBSimpleReview._summaryStepHtml(state);
     FL.criterionBSimpleReview._bindSummaryStep(session, state);
+  },
+
+  _draftPrepStepHtml: function (state) {
+    const esc = FL.esc;
+    const ui = FL.criterionBWorkspaceUi;
+    const banner =
+      FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.draftBannerHtml
+        ? FL.reviewerAccomplishmentState.draftBannerHtml()
+        : "";
+    const prep =
+      FL.reviewerAccomplishmentState && FL.reviewerAccomplishmentState.preparationNotesSectionHtml
+        ? FL.reviewerAccomplishmentState.preparationNotesSectionHtml({
+            doc: state.doc,
+            bundle: state.bundle,
+            validation: state.validation,
+            canDecide: state.canDecide,
+            remarks: state.bundleRemarks,
+            scoring: state.scoring
+          })
+        : "";
+    const fileList = state.items
+      .map(function (item) {
+        const fileDoc = item.fileDoc || state.doc;
+        const name = fileDoc ? fileDoc.name || fileDoc.title || item.slotId : "—";
+        return "<li><strong>" + esc(item.label) + "</strong> — " + esc(name) + "</li>";
+      })
+      .join("");
+    return (
+      '<div class="portal-page cb-simple-review">' +
+      '<header class="card cb-simple-head">' +
+      '<a class="btn btn-ghost btn-small" href="' +
+      esc(state.backHref) +
+      '">' +
+      esc(state.backLabel) +
+      "</a>" +
+      "<h1>" +
+      esc(ui.claimTitle(state.bundle)) +
+      "</h1>" +
+      '<p class="sub">' +
+      esc(state.facultyName) +
+      "</p></header>" +
+      banner +
+      '<section class="card"><h2 class="cb-subhead">Uploaded evidence (view only)</h2><ul class="plain">' +
+      (fileList || "<li>No linked files yet.</li>") +
+      "</ul></section>" +
+      prep +
+      "</div>"
+    );
+  },
+
+  _bindDraftPrepStep: function (session, state) {
+    const savePrepBtn = document.getElementById("kra2-save-prep-notes");
+    if (!savePrepBtn) return;
+    savePrepBtn.addEventListener("click", function () {
+      const indicator = document.getElementById("kra2-save-prep-notes-indicator");
+      const notesEl = document.getElementById("kra2-prep-notes");
+      const remarks = notesEl ? notesEl.value : "";
+      savePrepBtn.disabled = true;
+      if (indicator) indicator.textContent = "Saving…";
+      FL.criterionBEvidence.patchBundle(session, state.doc.id, { remarks: remarks })
+        .then(function () {
+          if (indicator) indicator.textContent = "Notes saved";
+          if (FL.ui && FL.ui.toast) FL.ui.toast("Preparation notes saved.", "ok");
+        })
+        .catch(function (err) {
+          if (indicator) indicator.textContent = "Could not save";
+          if (FL.ui && FL.ui.toast) {
+            FL.ui.toast((err && err.message) || "Could not save notes.", "danger");
+          }
+        })
+        .finally(function () {
+          savePrepBtn.disabled = false;
+        });
+    });
   },
 
   _filesStepHtml: function (state) {
@@ -695,6 +863,19 @@ FL.criterionBSimpleReview = {
 
   _persistReview: function (session, state, options) {
     options = options || {};
+    if (
+      FL.reviewerAccomplishmentState &&
+      !FL.reviewerAccomplishmentState.canVerifyEvidence({
+        doc: state.doc,
+        bundle: state.bundle,
+        validation: state.validation,
+        canDecide: state.canDecide
+      }) &&
+      options.includeAssessment !== true &&
+      !(options.remarksOnly === true)
+    ) {
+      return Promise.resolve();
+    }
     const includeAssessment = options.includeAssessment === true;
     const docId = state.doc.id;
     let chain = Promise.resolve();
